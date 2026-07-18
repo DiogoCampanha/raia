@@ -16,4 +16,18 @@ Package layout
 * :mod:`raia.pipeline`    -- LangGraph orchestration with human checkpoints.
 """
 
+# --- Hosted-platform compatibility shim -------------------------------------
+# Chroma requires sqlite3 >= 3.35, but some hosting platforms (notably
+# Streamlit Community Cloud) ship an older system sqlite3. When the
+# `pysqlite3-binary` package is available (installed on Linux via
+# requirements.txt), transparently swap it in BEFORE chromadb is imported
+# anywhere. Harmless no-op on machines with a modern sqlite3.
+try:  # pragma: no cover - only takes effect on hosted Linux platforms
+    __import__("pysqlite3")
+    import sys as _sys
+
+    _sys.modules["sqlite3"] = _sys.modules.pop("pysqlite3")
+except ImportError:
+    pass
+
 __version__ = "0.1.0"

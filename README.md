@@ -146,6 +146,39 @@ precedence rule work correctly.
 | `RAIA_RAG_TOP_K` | `6` | Excerpts retrieved per agent query |
 | `RAIA_WORKSPACE_DIR` | `./workspace` | Where project blackboards live |
 
+## Hosted Deployment for Testers (Streamlit Community Cloud)
+
+Testers only need a URL — nothing to install. The app is self-bootstrapping
+on hosted platforms: it bridges platform secrets into its configuration,
+builds the RAG index automatically on first start, ships a modern sqlite
+for Chroma, and falls back to a clearly-labeled demo mode if no API key is
+configured.
+
+To deploy (once, by the repo owner):
+
+1. Go to https://share.streamlit.io and sign in **with GitHub**.
+2. **Create app** → *Deploy a public app from GitHub* → repository
+   `DiogoCampanha/raia`, branch `main`, main file `app.py`.
+3. Under **Advanced settings → Secrets**, paste:
+
+   ```toml
+   ANTHROPIC_API_KEY = "sk-ant-..."
+   RAIA_LLM_PROVIDER = "anthropic"
+   RAIA_LLM_MODEL = "claude-sonnet-4-5"
+   ```
+
+4. Deploy. The app gets a public URL (e.g. `https://raia.streamlit.app`)
+   and **redeploys automatically on every push to `main`** — the deployment
+   stays linked to this GitHub repo.
+
+Share the URL together with [`docs/TESTERS.md`](docs/TESTERS.md), a
+15-minute guided walkthrough for evaluation panels.
+
+Notes for hosted use: the container's filesystem is ephemeral, so project
+workspaces and their Git audit trails reset on redeploys/restarts — fine
+for evaluation sessions, not for production use. All testers share the
+maintainer's LLM key; keep an eye on API usage.
+
 ## Testing
 
 ```bash

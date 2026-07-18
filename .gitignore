@@ -1,0 +1,17 @@
+# Secrets
+.env
+
+# Vector store & per-project workspaces (local data, never committed)
+.chroma/
+workspace/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

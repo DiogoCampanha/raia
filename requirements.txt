@@ -14,6 +14,9 @@ langchain-anthropic>=0.3
 
 # RAG vector store
 chromadb>=0.5.5
+# Hosted platforms (Streamlit Community Cloud) ship an old system sqlite3;
+# this provides a modern one, swapped in by raia/__init__.py. Linux-only.
+pysqlite3-binary; sys_platform == "linux"
 
 # Data handling (Drift Monitor fairness metrics)
 pandas>=2.0

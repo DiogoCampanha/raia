@@ -16,14 +16,44 @@ The UI is organized around the paper's Figure 1:
 The UI NEVER persists an agent output without explicit human approval:
 approval/rejection buttons resume the paused LangGraph run (see
 raia/pipeline.py). Rejections loop the agent with the reviewer's feedback.
+
+Hosted-deployment ready (e.g. Streamlit Community Cloud): secrets are
+bridged from st.secrets to the environment, the RAG index self-builds on
+first startup, and the app degrades to mock mode when no API key is set --
+so testers only need the URL, nothing local.
 """
+
+import os
 
 import streamlit as st
 
-from raia import config
-from raia.agents import AGENTS
-from raia.pipeline import StageRunner
-from raia.repository import ARTIFACT_FILES, ArtifactRepository
+# --- Secrets bridge (MUST run before importing raia.*) ----------------------
+# On Streamlit Community Cloud, configuration lives in st.secrets rather than
+# a .env file. raia.config reads the environment at import time, so we copy
+# secrets into the environment first. Locally (no secrets.toml) this is a
+# silent no-op and .env keeps working as before.
+try:
+    for _key, _value in st.secrets.items():
+        if isinstance(_value, str) and _key not in os.environ:
+            os.environ[_key] = _value
+except Exception:
+    pass  # no secrets file configured — normal for local runs
+
+from raia import config                                   # noqa: E402
+from raia.agents import AGENTS                            # noqa: E402
+from raia.pipeline import StageRunner                     # noqa: E402
+from raia.repository import ARTIFACT_FILES, ArtifactRepository  # noqa: E402
+
+# --- Graceful key fallback ---------------------------------------------------
+# If a real provider is selected but its API key is missing (e.g. a fork of
+# the repo deployed without secrets), fall back to mock mode instead of
+# crashing on the first agent run. The sidebar shows a clear notice.
+_KEY_VARS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
+MISSING_KEY = (
+    config.LLM_PROVIDER in _KEY_VARS and not os.environ.get(_KEY_VARS[config.LLM_PROVIDER])
+)
+if MISSING_KEY:
+    config.LLM_PROVIDER = "mock"
 
 # ---------------------------------------------------------------------------
 # Example inputs (the resume-screening scenario from the paper, Section 3.2)
@@ -112,6 +142,21 @@ def get_runner() -> StageRunner:
     return StageRunner()
 
 
+@st.cache_resource
+def ensure_normative_index() -> bool:
+    """Self-bootstrap the RAG index on hosted platforms.
+
+    Fresh containers (Streamlit Cloud redeploys, restarts) have no Chroma
+    index; build it from the bundled corpus automatically so testers never
+    run ingest.py themselves. Cached so it happens once per process.
+    """
+    from raia.rag import index_exists, ingest_corpus
+
+    if not index_exists():
+        ingest_corpus(verbose=False)
+    return True
+
+
 def get_repo() -> ArtifactRepository:
     return ArtifactRepository(st.session_state["project"])
 
@@ -143,7 +188,13 @@ def sidebar() -> str:
         st.session_state["project"] = choice
 
     # Provider notice ------------------------------------------------------
-    if config.LLM_PROVIDER == "mock":
+    if MISSING_KEY:
+        st.sidebar.warning(
+            "Demo mode: no API key configured, so agent outputs are canned "
+            "placeholders. The maintainer can enable real analyses by adding "
+            "ANTHROPIC_API_KEY to the deployment secrets."
+        )
+    elif config.LLM_PROVIDER == "mock":
         st.sidebar.warning(
             "Mock mode: outputs are canned. Set RAIA_LLM_PROVIDER=anthropic "
             "and an ANTHROPIC_API_KEY in .env for real analyses."
@@ -326,6 +377,11 @@ def page_audit_trail() -> None:
 
 def main() -> None:
     st.set_page_config(page_title="RAIA", page_icon="🛡️", layout="wide")
+
+    # Self-bootstrap the RAG index (no-op if already built).
+    with st.spinner("Preparing the normative knowledge base (first start only)…"):
+        ensure_normative_index()
+
     page = sidebar()
 
     if page == "Overview":

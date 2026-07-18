@@ -193,6 +193,21 @@ def ingest_corpus(verbose: bool = True) -> int:
     return n
 
 
+def index_exists() -> bool:
+    """True if the normative Chroma collection has already been built.
+
+    Used by the web UI to bootstrap itself on hosted platforms: when the
+    index is missing (fresh container), the app runs :func:`ingest_corpus`
+    automatically so testers never need to execute anything locally.
+    """
+    try:
+        client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
+        client.get_collection(config.CHROMA_COLLECTION)
+        return True
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Retrieval
 # ---------------------------------------------------------------------------
