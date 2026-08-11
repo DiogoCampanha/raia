@@ -73,7 +73,7 @@ outputs and no network calls.
 5. **Inspect the Audit Trail** page: every approval is a Git commit; every
    artifact records who approved it and when.
 
-## How Reliability Is Handled (paper §3.4)
+## How Reliability Is Handled
 
 - **(a) Mandatory human checkpoints** — implemented with LangGraph's native
   `interrupt()`; the persistence node is unreachable without an explicit
@@ -190,7 +190,7 @@ human-interrupt checkpoint, the rejection loop, Git persistence with
 approval provenance, and the deterministic fairness metrics — fully
 offline.
 
-## Roadmap (from the paper)
+## Roadmap (next developments)
 
 - [ ] Jira / Confluence integration via MCP connectors
 - [ ] Input sanitization and least-privilege hardening against prompt
