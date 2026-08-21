@@ -107,9 +107,9 @@ def main() -> None:
     print("== 10. All five agents registered in pipeline order ==")
     check(list(AGENTS) == ["risk_classifier", "requirements_reviewer",
                            "story_refiner", "auditor", "drift_monitor"],
-          "agent registry order matches Figure 1")
+          "agent registry order matches the RAIA pipeline")
 
-    print("== 11. Input sanitization (paper §3.4e) ==")
+    print("== 11. Input sanitization ==")
     from raia.sanitize import sanitize_free_text
 
     res = sanitize_free_text("A normal product brief about resume screening.")

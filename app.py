@@ -5,7 +5,7 @@ app.py — RAIA Streamlit user interface.
 Run with:
     streamlit run app.py
 
-The UI is organized around the paper's Figure 1:
+The UI is organized around the RAIA pipeline:
 
 * a sidebar to select/create a project (each project = one Git-versioned
   artifact repository, the blackboard);
@@ -56,7 +56,7 @@ if MISSING_KEY:
     config.LLM_PROVIDER = "mock"
 
 # ---------------------------------------------------------------------------
-# Example inputs (the resume-screening scenario from the paper, Section 3.2)
+# Example inputs (the project's canonical resume-screening scenario)
 # ---------------------------------------------------------------------------
 
 EXAMPLES = {
@@ -314,7 +314,7 @@ _STATUS_LABEL = {
 
 
 def _pipeline_figure(repo) -> str:
-    """The paper's Figure 1 as HTML: agent cards separated by H gates."""
+    """The RAIA pipeline as HTML: agent cards separated by H gates."""
     done = set(repo.existing_artifacts())
     cards = []
     for key, agent in AGENTS.items():
@@ -369,7 +369,7 @@ Git-versioned and become the context for downstream agents.
     st.info(
         "Suggested walkthrough (~15 min): start with **Risk Classifier** in "
         "the sidebar and use the **Load example** button on each agent page "
-        "to explore the paper's resume-screening scenario end to end."
+        "to explore the resume-screening example scenario end to end."
     )
 
 
@@ -429,7 +429,7 @@ def page_agent(agent_key: str) -> None:
 
     repo = get_repo()
 
-    # Stage gate (Figure 1 ordering) ---------------------------------------
+    # Stage gate (pipeline ordering) ---------------------------------------
     missing = agent.missing_prerequisites(repo)
     if missing:
         producers = ", ".join(
@@ -458,7 +458,7 @@ def page_agent(agent_key: str) -> None:
 
     # Input form -------------------------------------------------------------
     st.subheader("Inputs")
-    if st.button("📋 Load example (paper's resume-screening scenario)", key=f"ex_{agent_key}"):
+    if st.button("📋 Load example (resume-screening scenario)", key=f"ex_{agent_key}"):
         for f in spec.input_fields:
             st.session_state[f"in_{agent_key}_{f.key}"] = EXAMPLES.get(agent_key, {}).get(f.key, "")
         st.rerun()

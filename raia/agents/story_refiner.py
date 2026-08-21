@@ -1,7 +1,7 @@
 """
 User Story Refiner agent (Dev layer -- Iterative development / sprints).
 
-Paper Table 2:
+RAIA agent specification:
   Inputs   : backlog user stories, ethical requirements
   Outputs  : refined stories with ethical acceptance criteria
   Grounding: ECCOLA themes; MS RAI v2 verifiable requirements
@@ -22,7 +22,7 @@ class UserStoryRefinerAgent(BaseAgent):
         ),
         grounding_sources=["eccola", "ms_rai_v2"],
         upstream_keys=["risk_classification", "requirements_review"],
-        required_upstream=["requirements_review"],  # stage gate (Figure 1)
+        required_upstream=["requirements_review"],  # stage gate (pipeline order)
         output_key="refined_stories",
         input_fields=[
             InputField(

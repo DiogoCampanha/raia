@@ -1,9 +1,9 @@
 # RAIA — Architecture & UML Diagrams
 
 This document describes the structure of the RAIA proof of concept and maps
-it back to the paper *"RAIA: A Multi-Agent Architecture to Operationalize
-Responsible AI across the Software Development Life Cycle"*. All diagrams
-are in Mermaid and render natively on GitHub.
+it back to the RAIA architecture as specified in the master's research
+project it implements. All diagrams are in Mermaid and render natively on
+GitHub.
 
 ## 1. Component Diagram (system overview)
 
@@ -219,21 +219,21 @@ stateDiagram-v2
     end note
 ```
 
-## 5. Design Decisions (traceability to the paper)
+## 5. Design Decisions (traceability to the RAIA architecture)
 
-| Paper element | Implementation |
+| Architecture element | Implementation |
 |---|---|
-| Five agents, three layers (Table 2) | `raia/agents/` — one module per agent; `AGENTS` registry in pipeline order |
-| Blackboard shared state, Git-versioned (§3.3) | `raia/repository.py` — every approval = one local Git commit; approval provenance stamped in the artifact header |
-| Mandatory human checkpoints "H" (§3.4a) | LangGraph `interrupt()` in the `human_review` node; persistence unreachable without an approve decision |
-| Grounded recommendations via RAG (§3.4b) | `raia/rag.py` — Chroma; every chunk carries source/section/authority metadata; agents must cite excerpt tags |
-| Conflict precedence legal > standard > advisory (§3.4c) | Authority levels in `config.AUTHORITY_LEVELS`, enforced in the shared system preamble; same-level conflicts routed to "Open Issues" |
-| Data protection (§3.4d) | Artifacts stay in local `workspace/`; nothing leaves the machine except LLM API calls; no retraining |
-| Input sanitization (§3.4e) | `raia/sanitize.py` — control-char stripping, length caps, deterministic injection-pattern flagging; findings prepended to the draft so they are visible at the H gate; inputs wrapped in neutralized `<user_input>` data envelopes |
-| Provider-agnostic LLM (§3.3) | `raia/llm.py` factory — Claude default, OpenAI or mock via one env var |
-| Anti-ethics-washing Auditor (§5) | Auditor prompt forbids "satisfied" verdicts without quoted evidence from versioned artifacts |
+| Five agents, three layers | `raia/agents/` — one module per agent; `AGENTS` registry in pipeline order |
+| Blackboard shared state, Git-versioned | `raia/repository.py` — every approval = one local Git commit; approval provenance stamped in the artifact header |
+| Mandatory human checkpoints "H" | LangGraph `interrupt()` in the `human_review` node; persistence unreachable without an approve decision |
+| Grounded recommendations via RAG | `raia/rag.py` — Chroma; every chunk carries source/section/authority metadata; agents must cite excerpt tags |
+| Conflict precedence legal > standard > advisory | Authority levels in `config.AUTHORITY_LEVELS`, enforced in the shared system preamble; same-level conflicts routed to "Open Issues" |
+| Data protection | Artifacts stay in local `workspace/`; nothing leaves the machine except LLM API calls; no retraining |
+| Input sanitization | `raia/sanitize.py` — control-char stripping, length caps, deterministic injection-pattern flagging; findings prepended to the draft so they are visible at the H gate; inputs wrapped in neutralized `<user_input>` data envelopes |
+| Provider-agnostic LLM | `raia/llm.py` factory — Claude default, OpenAI or mock via one env var |
+| Anti-ethics-washing Auditor | Auditor prompt forbids "satisfied" verdicts without quoted evidence from versioned artifacts |
 | Hallucination-free metrics (Ops) | Drift Monitor computes fairness numbers with pandas; the LLM only interprets |
 
 **Not yet implemented** (future work tracked in the README): Jira/Confluence
-MCP connectors, and least-privilege tool-permission hardening (§3.4e,
-beyond the input sanitization now implemented in `raia/sanitize.py`).
+MCP connectors, and least-privilege tool-permission hardening (a
+continuation of the input sanitization implemented in `raia/sanitize.py`).

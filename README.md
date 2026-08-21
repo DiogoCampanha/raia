@@ -2,9 +2,9 @@
 
 Proof-of-concept implementation of **RAIA**, a multi-agent, LLM-based
 architecture that operationalizes Responsible AI (RAI) across the Software
-Development Life Cycle, as proposed in the paper *"RAIA: A Multi-Agent
-Architecture to Operationalize Responsible AI across the Software
-Development Life Cycle"*.
+Development Life Cycle. RAIA is the artifact of a master's research project
+on Responsible AI (Mackenzie Presbyterian University), developed under the
+Design Science Research method.
 
 RAIA does not invent new RAI principles. It integrates the complementary
 strengths of four consolidated frameworks — **IEEE 7000-2021**, **NIST AI
@@ -60,15 +60,20 @@ outputs and no network calls.
 1. **Create a project** in the sidebar. Each project gets its own local
    Git repository under `workspace/`.
 2. **Run the Risk Classifier** with your product brief. Every agent page
-   has a **Load example** button with the paper's resume-screening
+   has a **Load example** button with a resume-screening example
    scenario, so you can explore the full pipeline in minutes.
-3. **Review the draft** at the mandatory human checkpoint: edit it, approve
-   it (your name is recorded in the audit trail), or reject it with
-   feedback — the agent regenerates addressing your feedback.
+3. **Review the draft** at the mandatory human checkpoint: read it
+   rendered, edit it if needed, approve it (your name is recorded in the
+   audit trail), or reject it with feedback — the agent regenerates
+   addressing your feedback. If sanitization flagged anything suspicious
+   in the inputs, a warning is attached to the top of the draft.
+   After approving you return to the Overview, which shows the live
+   pipeline (agent cards separated by the mandatory human gates) and the
+   next suggested stage.
 4. **Move down the pipeline.** Stage gates keep the order honest: e.g. the
    Requirements Reviewer stays locked until a risk classification is
    approved. The Drift Monitor only needs the risk classification, so the
-   Ops layer is adoptable early — mirroring the paper's incremental
+   Ops layer is adoptable early — mirroring RAIA's incremental
    adoption design.
 5. **Inspect the Audit Trail** page: every approval is a Git commit; every
    artifact records who approved it and when.
@@ -88,7 +93,12 @@ outputs and no network calls.
   for human arbitration, never resolved silently.
 - **(d) Data protection** — all project artifacts stay on your machine in
   `workspace/` (git-ignored); nothing is used to retrain models.
-- **(e) Deterministic metrics** — the Drift Monitor computes fairness
+- **(e) Input sanitization** — free-text inputs are cleaned (control
+  characters, length caps) and screened for prompt-injection patterns
+  (instruction overrides, role reassignment, spoofed citation tags) by
+  `raia/sanitize.py`; findings are flagged, never silently removed, and
+  appear as a warning attached to the draft at the review gate.
+- **(f) Deterministic metrics** — the Drift Monitor computes fairness
   numbers (demographic parity difference, accuracy gaps) with pandas; the
   LLM interprets but never produces metric values.
 
@@ -194,16 +204,17 @@ offline.
 
 - [ ] Jira / Confluence integration via MCP connectors
 - [x] Input sanitization against prompt injection through project
-      artifacts (§3.4e) — `raia/sanitize.py`: control-char stripping,
-      length caps, injection-pattern flagging surfaced at the review gate
-- [ ] Least-privilege tool-permission hardening (§3.4e, continued)
+      artifacts — `raia/sanitize.py`: control-char stripping, length
+      caps, injection-pattern flagging surfaced at the review gate
+- [ ] Least-privilege tool-permission hardening (continuation of the
+      input-sanitization mechanism)
 - [ ] Expert-panel evaluation (Design Science Research)
 - [ ] Case studies in real development environments
 
 ## Citation & License
 
-If you use this software in academic work, please cite the RAIA paper
-(reference to be added after publication). Code released under the MIT
+If you use this software in academic work, please cite the RAIA research
+project (reference to be added after publication). Code released under the MIT
 License.
 
 > **Disclaimer**: RAIA is a research prototype. Its outputs are grounded

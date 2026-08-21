@@ -7,7 +7,7 @@ Central configuration for the RAIA system.
 Everything that can vary between deployments (LLM provider, model name,
 paths, RAG parameters) is read from environment variables so that switching
 providers or storage locations is a configuration change, not a code change
--- as stated in the paper (Section 3.3): "the LangChain abstraction keeps
+-- a RAIA design requirement: "the LangChain abstraction keeps
 the system provider-agnostic".
 
 A `.env` file at the project root is loaded automatically (via python-dotenv)
@@ -75,7 +75,7 @@ FAKE_EMBEDDINGS: bool = os.getenv("RAIA_FAKE_EMBED", "0") == "1"
 WORKSPACE_DIR: Path = Path(os.getenv("RAIA_WORKSPACE_DIR", PROJECT_ROOT / "workspace"))
 
 # ---------------------------------------------------------------------------
-# Normative authority levels (paper Section 3.4, mechanism (c))
+# Normative authority levels (RAIA conflict-precedence rule)
 # ---------------------------------------------------------------------------
 # Conflicts across levels resolve by precedence: legal > standard > advisory.
 # Conflicts within a level are surfaced as open issues for human arbitration.

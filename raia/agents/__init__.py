@@ -2,7 +2,7 @@
 raia.agents
 ===========
 
-The five specialized RAIA agents (paper, Table 2), organized in three
+The five specialized RAIA agents, organized in three
 functional layers:
 
 * **Product**: Risk Classifier, Requirements Reviewer

@@ -2,13 +2,13 @@
 raia.sanitize
 =============
 
-Input sanitization for free-text project artifacts (paper Section 3.4,
-mechanism (e)): prompt injection through free-text inputs is a recognized
-threat, so human-provided text is sanitized before it reaches an agent
+Input sanitization for free-text project artifacts, one of RAIA's
+governance and reliability mechanisms: prompt injection through free-text
+inputs is a recognized threat, so human-provided text is sanitized before it reaches an agent
 prompt, and suspicious patterns are *surfaced at the human review gate*
 rather than silently removed.
 
-Design choices (aligned with §3.4b's philosophy that problems must be
+Design choices (aligned with RAIA's principle that problems must be
 *detectable at review time*):
 
 * Control characters are stripped and inputs are length-capped —
@@ -76,7 +76,7 @@ def sanitize_free_text(text: str) -> SanitizationResult:
 
     Strips control characters, caps length, and flags (without removing)
     patterns commonly used for prompt injection. Findings are meant to be
-    shown to the human reviewer alongside the draft (§3.4e).
+    shown to the human reviewer alongside the draft.
     """
     clean = _CONTROL_CHARS.sub("", text or "")
     findings: List[str] = []
@@ -106,7 +106,7 @@ def sanitization_notice(findings: List[str]) -> str:
     approves, preserved in the Git-versioned artifact (audit evidence)."""
     bullets = "\n".join(f"> - {f}" for f in findings)
     return (
-        "> ⚠️ **Input sanitization notice (§3.4e)** — patterns often used for\n"
+        "> ⚠️ **Input sanitization notice** — patterns often used for\n"
         "> prompt injection were detected in the human-provided inputs. Review\n"
         "> the draft below with extra care before approving:\n"
         f"{bullets}\n\n"

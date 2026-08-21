@@ -21,6 +21,11 @@ Five specialized AI agents, each tied to a phase of the development cycle:
 5. **Drift Monitor** (Ops) — analyzes production fairness telemetry;
    the numbers are computed by code, the agent only interprets them.
 
+The **Overview** page shows the whole pipeline: five agent cards
+separated by Ⓗ circles — the mandatory human approval gates. In the
+sidebar, ✅ means a stage is approved, ▶️ means it is ready to run, and
+🔒 means it is waiting on an upstream approval.
+
 Two things to watch for while testing — they are the core of the design:
 
 - **You are the checkpoint.** No agent output is saved until you approve
@@ -34,11 +39,14 @@ Two things to watch for while testing — they are the core of the design:
 
 1. In the sidebar, create a project (any name).
 2. Open **Risk Classifier** → click **Load example** (a resume-screening
-   product) → **Run**. Read the draft: are the classification and
-   obligations plausible and properly cited?
+   product) → **Run**. Read the draft in the **📖 Rendered draft** tab: are
+   the classification and obligations plausible and properly cited? (The
+   **✏️ Edit** tab lets you change the text before approving.)
 3. Try **rejecting** it with feedback (e.g. "consider candidates with
    disabilities explicitly") — check whether the revision addresses it.
 4. **Approve** the revision. Note your name goes into the audit trail.
+   You will land back on the Overview with a confirmation and the next
+   suggested stage — the pipeline view now shows the stage as approved.
 5. Continue down the sidebar: Requirements Reviewer → User Story Refiner →
    Auditor → Drift Monitor, using **Load example** each time.
 6. Open **📜 Audit Trail**: every approval you made is a Git commit.

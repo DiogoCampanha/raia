@@ -1,12 +1,12 @@
 """
 Auditor agent (Dev layer -- Development / validation).
 
-Paper Table 2:
+RAIA agent specification:
   Inputs   : sprint outcomes, planned epics, ethical requirements
   Outputs  : progress audit; accountability documentation
   Grounding: MS RAI v2 accountability; NIST *Govern*
 
-Ethics-washing safeguard (paper Section 5): "requiring audit reports to be
+Ethics-washing safeguard (a RAIA design commitment): "requiring audit reports to be
 grounded in versioned evidence from the shared repository mitigates this
 risk" -- hence the explicit evidence-linking instructions below.
 """
@@ -26,7 +26,7 @@ class AuditorAgent(BaseAgent):
         ),
         grounding_sources=["ms_rai_v2", "nist_ai_rmf"],
         upstream_keys=["risk_classification", "requirements_review", "refined_stories"],
-        required_upstream=["requirements_review"],  # stage gate (Figure 1)
+        required_upstream=["requirements_review"],  # stage gate (pipeline order)
         output_key="audit_report",
         input_fields=[
             InputField(

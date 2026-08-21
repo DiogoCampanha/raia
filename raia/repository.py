@@ -4,7 +4,7 @@ raia.repository
 
 The **shared artifact repository** -- RAIA's blackboard.
 
-From the paper (Section 3.3): "The agents form a linear pipeline coordinated
+From the RAIA architecture: "The agents form a linear pipeline coordinated
 through a blackboard-style shared state: a repository of Markdown/JSON
 artifacts versioned in Git. [...] With the blackboard design, the audit
 trail is structural: every recommendation, decision, and revision is a
@@ -54,7 +54,7 @@ class ArtifactRepository:
     One instance == one project folder under ``workspace/``. All methods
     are synchronous and cheap; commits are local only (nothing is pushed),
     keeping project data in organization-controlled storage as required by
-    governance mechanism (d) of the paper.
+    one of RAIA's governance mechanisms (data protection).
     """
 
     def __init__(self, project: str) -> None:
@@ -105,7 +105,7 @@ class ArtifactRepository:
         """Concatenate a set of upstream artifacts as prompt context.
 
         This is how "downstream agents inherit the full context of upstream
-        classifications and requirements" (paper, Section 3.2).
+        classifications and requirements" (RAIA architecture).
         """
         parts = []
         for key in keys:
