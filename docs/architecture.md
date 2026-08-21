@@ -229,10 +229,11 @@ stateDiagram-v2
 | Grounded recommendations via RAG (§3.4b) | `raia/rag.py` — Chroma; every chunk carries source/section/authority metadata; agents must cite excerpt tags |
 | Conflict precedence legal > standard > advisory (§3.4c) | Authority levels in `config.AUTHORITY_LEVELS`, enforced in the shared system preamble; same-level conflicts routed to "Open Issues" |
 | Data protection (§3.4d) | Artifacts stay in local `workspace/`; nothing leaves the machine except LLM API calls; no retraining |
+| Input sanitization (§3.4e) | `raia/sanitize.py` — control-char stripping, length caps, deterministic injection-pattern flagging; findings prepended to the draft so they are visible at the H gate; inputs wrapped in neutralized `<user_input>` data envelopes |
 | Provider-agnostic LLM (§3.3) | `raia/llm.py` factory — Claude default, OpenAI or mock via one env var |
 | Anti-ethics-washing Auditor (§5) | Auditor prompt forbids "satisfied" verdicts without quoted evidence from versioned artifacts |
 | Hallucination-free metrics (Ops) | Drift Monitor computes fairness numbers with pandas; the LLM only interprets |
 
 **Not yet implemented** (future work tracked in the README): Jira/Confluence
-MCP connectors, and the input-sanitization / least-privilege hardening noted
-in §3.4e beyond prompt-level instructions.
+MCP connectors, and least-privilege tool-permission hardening (§3.4e,
+beyond the input sanitization now implemented in `raia/sanitize.py`).

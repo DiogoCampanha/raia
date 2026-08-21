@@ -193,8 +193,10 @@ offline.
 ## Roadmap (next developments)
 
 - [ ] Jira / Confluence integration via MCP connectors
-- [ ] Input sanitization and least-privilege hardening against prompt
-      injection through project artifacts (§3.4e)
+- [x] Input sanitization against prompt injection through project
+      artifacts (§3.4e) — `raia/sanitize.py`: control-char stripping,
+      length caps, injection-pattern flagging surfaced at the review gate
+- [ ] Least-privilege tool-permission hardening (§3.4e, continued)
 - [ ] Expert-panel evaluation (Design Science Research)
 - [ ] Case studies in real development environments
 

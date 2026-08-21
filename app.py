@@ -130,6 +130,26 @@ EXAMPLES = {
 }
 
 LAYER_BADGES = {"Product": "🟦 Product", "Dev": "🟩 Dev", "Ops": "🟧 Ops"}
+LAYER_COLORS = {"Product": "#2563eb", "Dev": "#16a34a", "Ops": "#ea580c"}
+
+# Maps artifact keys to the agent that produces them (for friendly gate messages).
+PRODUCER_OF = {agent.spec.output_key: agent.spec.name for agent in AGENTS.values()}
+
+
+def _flash() -> None:
+    """Show a one-shot success message that survives st.rerun()."""
+    msg = st.session_state.pop("flash", None)
+    if msg:
+        st.success(msg)
+
+
+def _next_step_hint(agent_key: str) -> str:
+    """Where the walkthrough goes after this agent is approved."""
+    keys = list(AGENTS)
+    i = keys.index(agent_key)
+    if i + 1 < len(keys):
+        return f"Next stage: **{AGENTS[keys[i + 1]].spec.name}** (sidebar)."
+    return "Pipeline complete — see the **📜 Audit Trail** for the full Git history."
 
 # ---------------------------------------------------------------------------
 # Session-level singletons
@@ -166,9 +186,9 @@ def get_repo() -> ArtifactRepository:
 # ---------------------------------------------------------------------------
 
 
-def sidebar() -> str:
-    """Render the sidebar; returns the chosen page name."""
-    st.sidebar.title("RAIA")
+def sidebar() -> "str | None":
+    """Render the sidebar; returns the chosen page name (None = no project yet)."""
+    st.sidebar.title("🛡️ RAIA")
     st.sidebar.caption("Responsible AI Assistant — multi-agent PoC")
 
     # Project picker -------------------------------------------------------
@@ -182,7 +202,7 @@ def sidebar() -> str:
         name = st.sidebar.text_input("New project name", placeholder="e.g. talentflow")
         if not name:
             st.sidebar.info("Name a project to begin.")
-            st.stop()
+            return None
         st.session_state["project"] = name
     else:
         st.session_state["project"] = choice
@@ -190,28 +210,41 @@ def sidebar() -> str:
     # Provider notice ------------------------------------------------------
     if MISSING_KEY:
         st.sidebar.warning(
-            "Demo mode: no API key configured, so agent outputs are canned "
-            "placeholders. The maintainer can enable real analyses by adding "
-            "ANTHROPIC_API_KEY to the deployment secrets."
+            "🧪 Demo mode: no LLM is connected, so agent outputs are canned "
+            "placeholders. The full workflow (reviews, approvals, audit "
+            "trail) still works — tell the study coordinator if you expected "
+            "real analyses."
         )
     elif config.LLM_PROVIDER == "mock":
         st.sidebar.warning(
-            "Mock mode: outputs are canned. Set RAIA_LLM_PROVIDER=anthropic "
-            "and an ANTHROPIC_API_KEY in .env for real analyses."
+            "🧪 Mock mode: outputs are canned placeholders (no LLM calls). "
+            "Maintainers: set RAIA_LLM_PROVIDER=anthropic and an API key in "
+            ".env for real analyses."
         )
 
     # Navigation with pipeline progress ------------------------------------
     repo = get_repo()
     done = set(repo.existing_artifacts())
-    pages = ["🏠 Overview"]
-    for key, agent in AGENTS.items():
-        mark = "✅" if agent.spec.output_key in done else "▫️"
-        pages.append(f"{mark} {agent.spec.name}")
-    pages.append("📜 Audit Trail")
+    n_done = sum(1 for a in AGENTS.values() if a.spec.output_key in done)
+    st.sidebar.progress(
+        n_done / len(AGENTS), text=f"{n_done}/{len(AGENTS)} stages approved"
+    )
 
-    page = st.sidebar.radio("Pipeline", pages, label_visibility="collapsed")
-    # Strip the status emoji to recover the logical page name.
-    return page.split(" ", 1)[1] if page[0] in "✅▫️🏠📜" else page
+    layer_dot = {"Product": "🟦", "Dev": "🟩", "Ops": "🟧"}
+    pages = {"🏠 Overview": "Overview"}
+    for key, agent in AGENTS.items():
+        if agent.spec.output_key in done:
+            mark = "✅"
+        elif agent.missing_prerequisites(repo):
+            mark = "🔒"
+        else:
+            mark = "▶️"
+        pages[f"{mark} {layer_dot[agent.spec.layer]} {agent.spec.name}"] = agent.spec.name
+    pages["📜 Audit Trail"] = "Audit Trail"
+
+    label = st.sidebar.radio("Pipeline", list(pages), label_visibility="collapsed")
+    st.sidebar.caption("✅ approved · ▶️ ready · 🔒 awaiting upstream approval")
+    return pages[label]
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +252,104 @@ def sidebar() -> str:
 # ---------------------------------------------------------------------------
 
 
+def page_welcome() -> None:
+    """Landing page shown before any project exists (never a blank screen)."""
+    st.title("🛡️ RAIA — Responsible AI Assistant")
+    st.markdown(
+        """
+RAIA helps development teams apply **Responsible AI** practices across the
+software life cycle. **Five specialized agents** — organized in Product,
+Dev, and Ops layers — analyze your project and draft recommendations
+grounded in four consolidated frameworks (IEEE 7000, NIST AI RMF,
+Microsoft RAI Standard v2, ECCOLA) and two legal texts (EU AI Act,
+Brazilian PL 2338/2023).
+
+Two design principles you will notice everywhere:
+
+- **You are the checkpoint** — no agent output is saved until a human
+  reviews and approves it, and no agent ever triggers another one.
+- **Everything is cited and versioned** — every claim carries a tag
+  pointing to the norm excerpt that grounds it, and every approval becomes
+  a Git commit in the project's audit trail.
+"""
+    )
+    cols = st.columns(3)
+    layer_blurbs = {
+        "Product": "Risk classification and ethical value requirements at conception time.",
+        "Dev": "Ethical acceptance criteria and accountability audits inside sprints.",
+        "Ops": "Fairness-drift monitoring after deployment.",
+    }
+    for col, (layer, blurb) in zip(cols, layer_blurbs.items()):
+        agents_in = [a.spec.name for a in AGENTS.values() if a.spec.layer == layer]
+        with col:
+            st.markdown(
+                f"""<div style="border:1px solid #e2e8f0;border-top:4px solid {LAYER_COLORS[layer]};
+border-radius:8px;padding:0.9rem 1rem;min-height:9.5rem;">
+<strong>{LAYER_BADGES[layer]}</strong><br>
+<span style="font-size:0.9rem;">{blurb}</span><br>
+<span style="font-size:0.85rem;color:#64748b;">{" · ".join(agents_in)}</span>
+</div>""",
+                unsafe_allow_html=True,
+            )
+    st.info(
+        "👈 **To begin, name a project in the sidebar** (any name works — "
+        "e.g. `talentflow`). Each project gets its own Git-versioned "
+        "artifact repository."
+    )
+
+
+def _agent_status(agent, repo, done: set) -> str:
+    if agent.spec.output_key in done:
+        return "approved"
+    if agent.missing_prerequisites(repo):
+        return "blocked"
+    return "ready"
+
+
+_STATUS_LABEL = {
+    "approved": ("✅ approved", "#16a34a"),
+    "ready": ("▶️ ready to run", "#2563eb"),
+    "blocked": ("🔒 awaiting upstream", "#94a3b8"),
+}
+
+
+def _pipeline_figure(repo) -> str:
+    """The paper's Figure 1 as HTML: agent cards separated by H gates."""
+    done = set(repo.existing_artifacts())
+    cards = []
+    for key, agent in AGENTS.items():
+        status = _agent_status(agent, repo, done)
+        label, color = _STATUS_LABEL[status]
+        cards.append(
+            f"""<div style="flex:1 1 150px;border:1px solid #e2e8f0;
+border-top:4px solid {LAYER_COLORS[agent.spec.layer]};border-radius:8px;
+padding:0.6rem 0.7rem;background:#ffffff;">
+<div style="font-size:0.75rem;color:{LAYER_COLORS[agent.spec.layer]};font-weight:600;">
+{LAYER_BADGES[agent.spec.layer]}</div>
+<div style="font-weight:700;line-height:1.25;margin:0.15rem 0;">{agent.spec.name}</div>
+<div style="font-size:0.8rem;color:{color};font-weight:600;">{label}</div>
+</div>"""
+        )
+    gate = (
+        '<div style="align-self:center;text-align:center;flex:0 0 auto;padding:0 0.15rem;" '
+        'title="Mandatory human approval gate">'
+        '<div style="width:1.7rem;height:1.7rem;border-radius:50%;border:2px solid #0f172a;'
+        'display:flex;align-items:center;justify-content:center;font-weight:700;'
+        'font-size:0.85rem;margin:0 auto;">H</div>'
+        '<div style="font-size:0.65rem;color:#64748b;">gate</div></div>'
+    )
+    return (
+        '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:stretch;">'
+        + gate.join(cards)
+        + "</div>"
+        + '<div style="font-size:0.8rem;color:#64748b;margin-top:0.4rem;">'
+        + "Ⓗ = mandatory human approval gate: nothing advances to the next stage "
+        + "until you review and approve it.</div>"
+    )
+
+
 def page_overview() -> None:
+    _flash()
     st.title("RAIA — Responsible AI Assistant")
     st.markdown(
         """
@@ -234,21 +364,12 @@ approve it** (the mandatory human checkpoint). Approved artifacts are
 Git-versioned and become the context for downstream agents.
 """
     )
-    repo = get_repo()
-    done = set(repo.existing_artifacts())
-    cols = st.columns(len(AGENTS))
-    for col, (key, agent) in zip(cols, AGENTS.items()):
-        with col:
-            ok = agent.spec.output_key in done
-            st.metric(
-                label=f"{LAYER_BADGES[agent.spec.layer]}",
-                value=agent.spec.name,
-                delta="approved" if ok else "pending",
-                delta_color="normal" if ok else "off",
-            )
+    st.subheader("Pipeline")
+    st.markdown(_pipeline_figure(get_repo()), unsafe_allow_html=True)
     st.info(
-        "Suggested walkthrough: use the **Load example** button on each agent "
-        "page to explore the paper's resume-screening scenario end to end."
+        "Suggested walkthrough (~15 min): start with **Risk Classifier** in "
+        "the sidebar and use the **Load example** button on each agent page "
+        "to explore the paper's resume-screening scenario end to end."
     )
 
 
@@ -259,7 +380,14 @@ def _review_widget(agent_key: str, payload: dict) -> None:
         f"Draft #{payload['attempt']} by **{payload['agent_name']}** — nothing is "
         "persisted until you approve. You may edit the text before approving."
     )
-    edited = st.text_area("Draft (editable)", payload["draft"], height=420, key=f"edit_{agent_key}")
+    tab_read, tab_edit = st.tabs(["📖 Rendered draft", "✏️ Edit before approving"])
+    with tab_edit:
+        edited = st.text_area(
+            "Draft (Markdown, editable)", payload["draft"], height=420,
+            key=f"edit_{agent_key}",
+        )
+    with tab_read:
+        st.markdown(edited)
 
     approver = st.text_input(
         "Your name (recorded in the audit trail)", key=f"approver_{agent_key}", value="reviewer"
@@ -267,12 +395,16 @@ def _review_widget(agent_key: str, payload: dict) -> None:
     col_a, col_r = st.columns(2)
     with col_a:
         if st.button("✅ Approve & commit", type="primary", key=f"approve_{agent_key}"):
-            result = get_runner().resume(
-                st.session_state["project"], agent_key,
-                {"action": "approve", "content": edited, "approver": approver},
-            )
+            with st.spinner("Committing to the audit trail…"):
+                result = get_runner().resume(
+                    st.session_state["project"], agent_key,
+                    {"action": "approve", "content": edited, "approver": approver},
+                )
             st.session_state.pop(f"pending_{agent_key}", None)
-            st.success(f"Artifact committed ({result.get('commit', '')}).")
+            st.session_state["flash"] = (
+                f"Approved and committed (`{result.get('commit', '')}`). "
+                + _next_step_hint(agent_key)
+            )
             st.rerun()
     with col_r:
         feedback = st.text_input("Rejection feedback", key=f"fb_{agent_key}",
@@ -290,6 +422,7 @@ def _review_widget(agent_key: str, payload: dict) -> None:
 def page_agent(agent_key: str) -> None:
     agent = AGENTS[agent_key]
     spec = agent.spec
+    _flash()
     st.title(spec.name)
     st.caption(f"{LAYER_BADGES[spec.layer]} · SDLC phase: {spec.sdlc_phase}")
     st.markdown(spec.description)
@@ -299,10 +432,15 @@ def page_agent(agent_key: str) -> None:
     # Stage gate (Figure 1 ordering) ---------------------------------------
     missing = agent.missing_prerequisites(repo)
     if missing:
-        names = ", ".join(f"`{m}`" for m in missing)
-        st.error(
-            f"⛔ Stage gate: approve the upstream artifact(s) {names} before "
-            "running this agent."
+        producers = ", ".join(
+            f"**{PRODUCER_OF.get(m, m)}**" + (f" (`{m}`)" if m in PRODUCER_OF else "")
+            for m in missing
+        )
+        st.warning(
+            f"🔒 **Stage gate** — this agent builds on upstream work that is "
+            f"not approved yet. First run and approve: {producers}. "
+            "This ordering is intentional: it is how RAIA guarantees each "
+            "stage inherits human-approved context."
         )
         return
 
@@ -350,17 +488,30 @@ def page_agent(agent_key: str) -> None:
 
 
 def page_audit_trail() -> None:
+    _flash()
     st.title("📜 Audit Trail")
     repo = get_repo()
-    st.caption(f"Project workspace: `{repo.path}` (local Git repository)")
+    st.caption(
+        f"Project `{st.session_state['project']}` — every artifact below is a "
+        "file in a Git repository; every approval is a commit."
+    )
 
     st.subheader("Artifacts")
     existing = repo.existing_artifacts()
     if not existing:
-        st.info("No approved artifacts yet.")
+        st.info(
+            "No approved artifacts yet. Approve an agent draft (e.g. the "
+            "Risk Classifier's) and it will appear here."
+        )
     for key in existing:
-        with st.expander(f"{ARTIFACT_FILES[key]}"):
-            st.markdown(repo.read_artifact(key))
+        content = repo.read_artifact(key)
+        with st.expander(f"📄 {ARTIFACT_FILES[key]}"):
+            st.markdown(content)
+            st.download_button(
+                "⬇ Download Markdown", content or "",
+                file_name=ARTIFACT_FILES[key], mime="text/markdown",
+                key=f"dl_{key}",
+            )
 
     st.subheader("Git history (every approval is a commit)")
     history = repo.history()
@@ -384,7 +535,9 @@ def main() -> None:
 
     page = sidebar()
 
-    if page == "Overview":
+    if page is None:
+        page_welcome()
+    elif page == "Overview":
         page_overview()
     elif page == "Audit Trail":
         page_audit_trail()
