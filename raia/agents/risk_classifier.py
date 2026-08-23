@@ -1,7 +1,7 @@
 """
 Risk Classifier agent (Product layer -- Conception / value definition).
 
-Paper Table 2:
+RAIA agent specification:
   Inputs   : product brief, intended use, target users
   Outputs  : risk classification with applicable legal obligations
              and recommendations

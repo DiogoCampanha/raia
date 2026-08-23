@@ -2,9 +2,9 @@
 
 Proof-of-concept implementation of **RAIA**, a multi-agent, LLM-based
 architecture that operationalizes Responsible AI (RAI) across the Software
-Development Life Cycle, as proposed in the paper *"RAIA: A Multi-Agent
-Architecture to Operationalize Responsible AI across the Software
-Development Life Cycle"*.
+Development Life Cycle. RAIA is the artifact of a master's research project
+on Responsible AI (Mackenzie Presbyterian University), developed under the
+Design Science Research method.
 
 RAIA does not invent new RAI principles. It integrates the complementary
 strengths of four consolidated frameworks — **IEEE 7000-2021**, **NIST AI
@@ -57,18 +57,25 @@ outputs and no network calls.
 
 ## Using RAIA
 
-1. **Create a project** in the sidebar. Each project gets its own local
-   Git repository under `workspace/`.
+1. **Open the app.** A private workspace — its own local Git repository
+   under `workspace/` — is created for your browser session automatically;
+   there is nothing to name or configure. **Start over** in the sidebar
+   erases it and begins a clean run.
 2. **Run the Risk Classifier** with your product brief. Every agent page
-   has a **Load example** button with the paper's resume-screening
+   has a **Load example** button with a resume-screening example
    scenario, so you can explore the full pipeline in minutes.
-3. **Review the draft** at the mandatory human checkpoint: edit it, approve
-   it (your name is recorded in the audit trail), or reject it with
-   feedback — the agent regenerates addressing your feedback.
+3. **Review the draft** at the mandatory human checkpoint: read it
+   rendered, edit it if needed, approve it (your name is recorded in the
+   audit trail), or reject it with feedback — the agent regenerates
+   addressing your feedback. If sanitization flagged anything suspicious
+   in the inputs, a warning is attached to the top of the draft.
+   After approving you return to the Overview, which shows the live
+   pipeline (agent cards separated by the mandatory human gates) and the
+   next suggested stage.
 4. **Move down the pipeline.** Stage gates keep the order honest: e.g. the
    Requirements Reviewer stays locked until a risk classification is
    approved. The Drift Monitor only needs the risk classification, so the
-   Ops layer is adoptable early — mirroring the paper's incremental
+   Ops layer is adoptable early — mirroring RAIA's incremental
    adoption design.
 5. **Inspect the Audit Trail** page: every approval is a Git commit; every
    artifact records who approved it and when.
@@ -88,7 +95,12 @@ outputs and no network calls.
   for human arbitration, never resolved silently.
 - **(d) Data protection** — all project artifacts stay on your machine in
   `workspace/` (git-ignored); nothing is used to retrain models.
-- **(e) Deterministic metrics** — the Drift Monitor computes fairness
+- **(e) Input sanitization** — free-text inputs are cleaned (control
+  characters, length caps) and screened for prompt-injection patterns
+  (instruction overrides, role reassignment, spoofed citation tags) by
+  `raia/sanitize.py`; findings are flagged, never silently removed, and
+  appear as a warning attached to the draft at the review gate.
+- **(f) Deterministic metrics** — the Drift Monitor computes fairness
   numbers (demographic parity difference, accuracy gaps) with pandas; the
   LLM interprets but never produces metric values.
 
@@ -99,9 +111,10 @@ raia/
 ├── app.py                     # Streamlit UI (entry point)
 ├── ingest.py                  # Builds the Chroma normative index
 ├── requirements.txt
-├── .env.example               # Configuration template
+├── .env.example               # Configuration template (local runs)
 ├── raia/
 │   ├── config.py              # Env-driven settings; authority levels
+│   ├── deploy.py              # Streamlit-secrets bridge + readiness reporting
 │   ├── llm.py                 # Provider-agnostic LLM factory (Claude default)
 │   ├── rag.py                 # Chroma RAG: ingestion + cited retrieval
 │   ├── repository.py          # Git-versioned artifact blackboard
@@ -148,36 +161,72 @@ precedence rule work correctly.
 
 ## Hosted Deployment for Testers (Streamlit Community Cloud)
 
-Testers only need a URL — nothing to install. The app is self-bootstrapping
-on hosted platforms: it bridges platform secrets into its configuration,
-builds the RAG index automatically on first start, ships a modern sqlite
-for Chroma, and falls back to a clearly-labeled demo mode if no API key is
-configured.
+**Testers need nothing at all — just the URL.** No install, no key, no
+account, no project setup. The app bootstraps itself: it reads its
+configuration from the platform's secrets, builds the RAG index on first
+start, ships a modern sqlite for Chroma, and hands each browser session its
+own private artifact repository so a whole panel can test concurrently
+without seeing or overwriting each other's work.
 
-To deploy (once, by the repo owner):
+### The only configuration step: one secret
+
+The API key is set **entirely from the Streamlit UI** — no `.env` file, no
+code change, no redeploy:
+
+> **share.streamlit.io → your app → ⋮ → Settings → Secrets**, paste, **Save**.
+> The app restarts on its own.
+
+```toml
+ANTHROPIC_API_KEY = "sk-ant-..."
+```
+
+That single line is the whole setup. `raia/deploy.py` bridges it into the
+process environment before configuration is read, and it accepts every shape
+a maintainer might reasonably type — `anthropic_api_key`, `CLAUDE_API_KEY`,
+a provider-neutral `LLM_API_KEY`, or a section:
+
+```toml
+[anthropic]
+api_key = "sk-ant-..."
+```
+
+Surrounding quotes and stray whitespace from the paste are stripped. An
+`OPENAI_API_KEY` on its own also works — the provider switches automatically.
+Optional overrides, if you want them:
+
+```toml
+RAIA_LLM_MODEL    = "claude-sonnet-4-5"   # any Claude / GPT model id
+RAIA_LLM_PROVIDER = "anthropic"           # or "openai", or "mock"
+```
+
+**RAIA never silently degrades to canned output.** If the key is missing or
+malformed, the app shows a plain "not configured yet" screen with these
+instructions instead of serving mock text a tester could mistake for a real
+analysis. Mock mode exists, but only as an explicit choice
+(`RAIA_LLM_PROVIDER = "mock"`), and it is labeled on every page.
+
+### First-time deployment
 
 1. Go to https://share.streamlit.io and sign in **with GitHub**.
 2. **Create app** → *Deploy a public app from GitHub* → repository
    `DiogoCampanha/raia`, branch `main`, main file `app.py`.
-3. Under **Advanced settings → Secrets**, paste:
-
-   ```toml
-   ANTHROPIC_API_KEY = "sk-ant-..."
-   RAIA_LLM_PROVIDER = "anthropic"
-   RAIA_LLM_MODEL = "claude-sonnet-4-5"
-   ```
-
-4. Deploy. The app gets a public URL (e.g. `https://raia.streamlit.app`)
-   and **redeploys automatically on every push to `main`** — the deployment
-   stays linked to this GitHub repo.
+3. Paste the `ANTHROPIC_API_KEY` line under **Advanced settings → Secrets**.
+4. Deploy. The app gets a public URL and **redeploys automatically on every
+   push to `main`**.
 
 Share the URL together with [`docs/TESTERS.md`](docs/TESTERS.md), a
 15-minute guided walkthrough for evaluation panels.
 
-Notes for hosted use: the container's filesystem is ephemeral, so project
-workspaces and their Git audit trails reset on redeploys/restarts — fine
-for evaluation sessions, not for production use. All testers share the
-maintainer's LLM key; keep an eye on API usage.
+### Notes for hosted use
+
+- Each browser session gets a private workspace, keyed by an id carried in
+  the URL, so a refresh returns the tester to their own work. **Start over**
+  in the sidebar erases it and begins a clean run.
+- The container filesystem is ephemeral: workspaces and their Git audit
+  trails reset on redeploy or restart. Fine for evaluation sessions, not for
+  production use — testers should download any artifact they want to keep
+  from the Audit Trail page.
+- All testers share the maintainer's LLM key; keep an eye on API usage.
 
 ## Testing
 
@@ -193,15 +242,18 @@ offline.
 ## Roadmap (next developments)
 
 - [ ] Jira / Confluence integration via MCP connectors
-- [ ] Input sanitization and least-privilege hardening against prompt
-      injection through project artifacts (§3.4e)
+- [x] Input sanitization against prompt injection through project
+      artifacts — `raia/sanitize.py`: control-char stripping, length
+      caps, injection-pattern flagging surfaced at the review gate
+- [ ] Least-privilege tool-permission hardening (continuation of the
+      input-sanitization mechanism)
 - [ ] Expert-panel evaluation (Design Science Research)
 - [ ] Case studies in real development environments
 
 ## Citation & License
 
-If you use this software in academic work, please cite the RAIA paper
-(reference to be added after publication). Code released under the MIT
+If you use this software in academic work, please cite the RAIA research
+project (reference to be added after publication). Code released under the MIT
 License.
 
 > **Disclaimer**: RAIA is a research prototype. Its outputs are grounded

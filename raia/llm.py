@@ -4,7 +4,7 @@ raia.llm
 
 Provider-agnostic LLM factory.
 
-The paper (Section 3.3) specifies Claude as the reference LLM but requires
+The RAIA architecture specifies Claude as the reference LLM but requires
 the system to remain provider-agnostic through the LangChain abstraction:
 "switching models is simply a configuration change". This module is that
 configuration point: every agent obtains its chat model exclusively through

@@ -4,9 +4,9 @@ raia.pipeline
 
 LangGraph orchestration with **mandatory human checkpoints**.
 
-Paper, Section 3.4, mechanism (a): "no agent ever triggers another
+A core RAIA governance rule: "no agent ever triggers another
 autonomously; every output requires explicit human review and approval
-before being persisted and consumed downstream (the 'H' gates in Figure 1)."
+before being persisted and consumed downstream (the 'H' gates)."
 
 Consequently RAIA is NOT one long autonomous chain. Each agent run is a
 small LangGraph state graph:
@@ -24,7 +24,7 @@ small LangGraph state graph:
 
 Sequencing BETWEEN agents is enforced by stage gates (each agent's
 ``required_upstream``), not by automatic triggering -- faithfully mirroring
-the paper's human-driven pipeline.
+RAIA's human-driven pipeline design.
 """
 
 from typing import Any, Dict, List, Optional, TypedDict
@@ -111,7 +111,7 @@ def _persist(state: StageState) -> StageState:
 
 
 def build_stage_graph(checkpointer: Optional[MemorySaver] = None):
-    """Compile the generate -> review -> persist graph (Figure 1's pattern)."""
+    """Compile the generate -> review -> persist graph (the RAIA stage pattern)."""
     g = StateGraph(StageState)
     g.add_node("generate", _generate)
     g.add_node("human_review", _human_review)

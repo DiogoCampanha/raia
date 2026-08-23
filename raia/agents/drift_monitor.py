@@ -1,7 +1,7 @@
 """
 Drift Monitor agent (Ops layer -- Deployment / monitoring).
 
-Paper Table 2:
+RAIA agent specification:
   Inputs   : production telemetry, fairness metrics
   Outputs  : drift alerts focused on fairness and representativeness
   Grounding: NIST *Measure* / *Manage*

@@ -4,14 +4,14 @@ raia.rag
 
 Retrieval-Augmented Generation layer over the normative corpus.
 
-Implements mechanism (b) of the paper's governance section: "agents answer
+Implements RAIA's grounding mechanism: "agents answer
 through RAG over the normative corpora, and each recommendation must link
 to the specific norm excerpt that grounds it, making hallucinated
 obligations detectable at review time."
 
 Design choices
 --------------
-* **Chroma** persistent client (as specified in the paper, Section 3.3).
+* **Chroma** persistent client (as specified by the RAIA architecture).
 * **Default embedding function** (all-MiniLM-L6-v2 via ONNX) shipped with
   Chroma -- no extra API key needed for retrieval, which keeps setup light.
 * Every chunk carries metadata: ``source`` (corpus file id), ``source_name``
@@ -217,7 +217,7 @@ class NormativeRetriever:
     """Thin retrieval wrapper used by every agent.
 
     Agents may restrict retrieval to the sources that ground them (their
-    "normative grounding" column in Table 2 of the paper) via ``sources``.
+    "normative grounding" defined in the RAIA agent specification) via ``sources``.
     """
 
     def __init__(self) -> None:

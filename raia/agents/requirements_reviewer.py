@@ -1,7 +1,7 @@
 """
 Requirements Reviewer agent (Product layer -- Requirements definition).
 
-Paper Table 2:
+RAIA agent specification:
   Inputs   : software requirements, risk classification
   Outputs  : gap analysis; proposed ethical value requirements
   Grounding: IEEE 7000 VBE; Microsoft Impact Assessments
@@ -22,7 +22,7 @@ class RequirementsReviewerAgent(BaseAgent):
         ),
         grounding_sources=["ieee_7000", "ms_rai_v2"],
         upstream_keys=["product_brief", "risk_classification"],
-        required_upstream=["risk_classification"],  # stage gate (Figure 1)
+        required_upstream=["risk_classification"],  # stage gate (pipeline order)
         output_key="requirements_review",
         input_fields=[
             InputField(
