@@ -1,5 +1,6 @@
 # Secrets
 .env
+.streamlit/secrets.toml
 
 # Vector store & per-project workspaces (local data, never committed)
 .chroma/

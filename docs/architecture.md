@@ -116,8 +116,13 @@ classDiagram
         +save_artifact(key, content, approved_by) str
         +append_open_issue(issue, raised_by)
         +history(limit) List
+        +reset()
         +list_projects() List~str~
     }
+    note for ArtifactRepository "One instance == one project folder. The hosted
+    evaluation deployment gives each browser session its own project, so a
+    whole panel can test concurrently without sharing a blackboard"
+
 
     class NormativeRetriever {
         +retrieve(query, top_k, sources) List~NormChunk~

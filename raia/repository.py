@@ -188,6 +188,19 @@ class ArtifactRepository:
             ]
         return []
 
+    def reset(self) -> None:
+        """Delete this project's repository entirely (a fresh start).
+
+        Used by the hosted evaluation deployment, where each tester works in
+        a private, disposable workspace and may want to restart the
+        walkthrough from zero. Refuses to touch anything that is not a
+        folder inside ``WORKSPACE_DIR``.
+        """
+        root = config.WORKSPACE_DIR.resolve()
+        target = self.path.resolve()
+        if target != root and root in target.parents:
+            shutil.rmtree(target, ignore_errors=True)
+
     @staticmethod
     def list_projects() -> List[str]:
         """List project slugs that already exist in the workspace."""

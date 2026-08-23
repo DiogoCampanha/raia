@@ -7,53 +7,45 @@ Run with:
 
 The UI is organized around the RAIA pipeline:
 
-* a sidebar to select/create a project (each project = one Git-versioned
-  artifact repository, the blackboard);
+* an **Overview** page showing the five agents and the mandatory human
+  approval gates ("H") that separate them;
 * one page per agent, ordered by pipeline stage and grouped by layer
-  (Product / Dev / Ops), each with the mandatory human-approval gate;
-* an Audit Trail page showing artifacts and the Git commit history.
+  (Product / Dev / Ops), each with its human-approval gate;
+* an **Audit Trail** page showing artifacts and the Git commit history.
 
 The UI NEVER persists an agent output without explicit human approval:
 approval/rejection buttons resume the paused LangGraph run (see
 raia/pipeline.py). Rejections loop the agent with the reviewer's feedback.
 
-Hosted-deployment ready (e.g. Streamlit Community Cloud): secrets are
-bridged from st.secrets to the environment, the RAG index self-builds on
-first startup, and the app degrades to mock mode when no API key is set --
-so testers only need the URL, nothing local.
+Built for zero-setup evaluation
+-------------------------------
+Testers only need the URL. Configuration comes from Streamlit secrets
+(see raia/deploy.py), the RAG index self-builds on first startup, and every
+browser session gets its own private, disposable artifact repository, so
+concurrent testers never see or overwrite each other's work. If the
+deployment is missing its API key the app says so plainly rather than
+quietly serving canned text.
 """
 
-import os
+import re
+import uuid
 
 import streamlit as st
 
-# --- Secrets bridge (MUST run before importing raia.*) ----------------------
-# On Streamlit Community Cloud, configuration lives in st.secrets rather than
-# a .env file. raia.config reads the environment at import time, so we copy
-# secrets into the environment first. Locally (no secrets.toml) this is a
-# silent no-op and .env keeps working as before.
-try:
-    for _key, _value in st.secrets.items():
-        if isinstance(_value, str) and _key not in os.environ:
-            os.environ[_key] = _value
-except Exception:
-    pass  # no secrets file configured — normal for local runs
+# --- Configuration bridge (MUST run before importing raia.config) ----------
+# On Streamlit Community Cloud there is no .env file: the maintainer pastes
+# configuration into the app's Secrets box. raia.config snapshots the
+# environment at import time, so secrets are copied into it first. Locally
+# (no secrets.toml) this is a silent no-op and .env keeps working.
+from raia.deploy import apply_secrets  # noqa: E402
 
-from raia import config                                   # noqa: E402
-from raia.agents import AGENTS                            # noqa: E402
-from raia.pipeline import StageRunner                     # noqa: E402
+apply_secrets()
+
+from raia import config                                     # noqa: E402
+from raia.agents import AGENTS                              # noqa: E402
+from raia.deploy import friendly_llm_error, runtime_status  # noqa: E402
+from raia.pipeline import StageRunner                       # noqa: E402
 from raia.repository import ARTIFACT_FILES, ArtifactRepository  # noqa: E402
-
-# --- Graceful key fallback ---------------------------------------------------
-# If a real provider is selected but its API key is missing (e.g. a fork of
-# the repo deployed without secrets), fall back to mock mode instead of
-# crashing on the first agent run. The sidebar shows a clear notice.
-_KEY_VARS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
-MISSING_KEY = (
-    config.LLM_PROVIDER in _KEY_VARS and not os.environ.get(_KEY_VARS[config.LLM_PROVIDER])
-)
-if MISSING_KEY:
-    config.LLM_PROVIDER = "mock"
 
 # ---------------------------------------------------------------------------
 # Example inputs (the project's canonical resume-screening scenario)
@@ -129,11 +121,64 @@ EXAMPLES = {
     },
 }
 
+# Layer identity. These three hues are mid-tones chosen to stay legible on
+# both the light and the dark Streamlit themes.
+LAYER_COLORS = {"Product": "#3b82f6", "Dev": "#22c55e", "Ops": "#f97316"}
 LAYER_BADGES = {"Product": "🟦 Product", "Dev": "🟩 Dev", "Ops": "🟧 Ops"}
-LAYER_COLORS = {"Product": "#2563eb", "Dev": "#16a34a", "Ops": "#ea580c"}
+
+# Status vocabulary, used identically by the sidebar and the pipeline figure.
+STATUS_COLORS = {"approved": "#22c55e", "ready": "#3b82f6", "blocked": "#94a3b8"}
+STATUS_LABELS = {
+    "approved": "Approved",
+    "ready": "Ready to run",
+    "blocked": "Awaiting upstream",
+}
+STATUS_ICONS = {"approved": "✅", "ready": "▶️", "blocked": "🔒"}
 
 # Maps artifact keys to the agent that produces them (for friendly gate messages).
 PRODUCER_OF = {agent.spec.output_key: agent.spec.name for agent in AGENTS.values()}
+
+
+# ---------------------------------------------------------------------------
+# Per-tester session workspace
+# ---------------------------------------------------------------------------
+
+
+def session_project() -> str:
+    """Return this browser session's private project id.
+
+    The hosted deployment is evaluated by several people at the same URL at
+    the same time. Each session therefore gets its own artifact repository:
+    testers never see, block, or overwrite one another's work, and nobody has
+    to invent a project name before starting.
+
+    The id is mirrored into the URL query string so an accidental page
+    refresh returns the tester to their own workspace instead of a blank one.
+    """
+    sid = st.session_state.get("sid")
+    if sid:
+        return f"session-{sid}"
+
+    raw = str(st.query_params.get("s", ""))
+    if not re.fullmatch(r"[0-9a-f]{12}", raw):
+        raw = uuid.uuid4().hex[:12]
+        st.query_params["s"] = raw
+    st.session_state["sid"] = raw
+    return f"session-{raw}"
+
+
+def reset_session() -> None:
+    """Discard this tester's workspace and start a clean one."""
+    try:
+        ArtifactRepository(session_project()).reset()
+    except Exception:  # noqa: BLE001 - a failed cleanup must not block the reset
+        pass
+    for key in list(st.session_state):
+        del st.session_state[key]
+    # Dropping the id retires the old LangGraph threads too, so no paused
+    # draft can leak into the fresh walkthrough.
+    st.query_params.clear()
+    st.session_state["flash"] = "Fresh workspace ready — the walkthrough is reset."
 
 
 def _flash() -> None:
@@ -151,6 +196,7 @@ def _next_step_hint(agent_key: str) -> str:
         return f"Next stage: **{AGENTS[keys[i + 1]].spec.name}** (sidebar)."
     return "Pipeline complete — see the **📜 Audit Trail** for the full Git history."
 
+
 # ---------------------------------------------------------------------------
 # Session-level singletons
 # ---------------------------------------------------------------------------
@@ -158,7 +204,11 @@ def _next_step_hint(agent_key: str) -> str:
 
 @st.cache_resource
 def get_runner() -> StageRunner:
-    """One StageRunner (and its LangGraph checkpointer) per server process."""
+    """One StageRunner (and its LangGraph checkpointer) per server process.
+
+    Shared safely across concurrent testers because every graph thread is
+    keyed by ``(project, agent)`` and each session has its own project.
+    """
     return StageRunner()
 
 
@@ -178,124 +228,7 @@ def ensure_normative_index() -> bool:
 
 
 def get_repo() -> ArtifactRepository:
-    return ArtifactRepository(st.session_state["project"])
-
-
-# ---------------------------------------------------------------------------
-# Sidebar: project selection + pipeline status
-# ---------------------------------------------------------------------------
-
-
-def sidebar() -> "str | None":
-    """Render the sidebar; returns the chosen page name (None = no project yet)."""
-    st.sidebar.title("🛡️ RAIA")
-    st.sidebar.caption("Responsible AI Assistant — multi-agent PoC")
-
-    # Project picker -------------------------------------------------------
-    projects = ArtifactRepository.list_projects()
-    choice = st.sidebar.selectbox(
-        "Project", ["➕ New project…", *projects],
-        index=1 if projects else 0,
-        help="Each project has its own Git-versioned artifact repository.",
-    )
-    if choice == "➕ New project…":
-        name = st.sidebar.text_input("New project name", placeholder="e.g. talentflow")
-        if not name:
-            st.sidebar.info("Name a project to begin.")
-            return None
-        st.session_state["project"] = name
-    else:
-        st.session_state["project"] = choice
-
-    # Provider notice ------------------------------------------------------
-    if MISSING_KEY:
-        st.sidebar.warning(
-            "🧪 Demo mode: no LLM is connected, so agent outputs are canned "
-            "placeholders. The full workflow (reviews, approvals, audit "
-            "trail) still works — tell the study coordinator if you expected "
-            "real analyses."
-        )
-    elif config.LLM_PROVIDER == "mock":
-        st.sidebar.warning(
-            "🧪 Mock mode: outputs are canned placeholders (no LLM calls). "
-            "Maintainers: set RAIA_LLM_PROVIDER=anthropic and an API key in "
-            ".env for real analyses."
-        )
-
-    # Navigation with pipeline progress ------------------------------------
-    repo = get_repo()
-    done = set(repo.existing_artifacts())
-    n_done = sum(1 for a in AGENTS.values() if a.spec.output_key in done)
-    st.sidebar.progress(
-        n_done / len(AGENTS), text=f"{n_done}/{len(AGENTS)} stages approved"
-    )
-
-    layer_dot = {"Product": "🟦", "Dev": "🟩", "Ops": "🟧"}
-    pages = {"🏠 Overview": "Overview"}
-    for key, agent in AGENTS.items():
-        if agent.spec.output_key in done:
-            mark = "✅"
-        elif agent.missing_prerequisites(repo):
-            mark = "🔒"
-        else:
-            mark = "▶️"
-        pages[f"{mark} {layer_dot[agent.spec.layer]} {agent.spec.name}"] = agent.spec.name
-    pages["📜 Audit Trail"] = "Audit Trail"
-
-    label = st.sidebar.radio("Pipeline", list(pages), label_visibility="collapsed")
-    st.sidebar.caption("✅ approved · ▶️ ready · 🔒 awaiting upstream approval")
-    return pages[label]
-
-
-# ---------------------------------------------------------------------------
-# Pages
-# ---------------------------------------------------------------------------
-
-
-def page_welcome() -> None:
-    """Landing page shown before any project exists (never a blank screen)."""
-    st.title("🛡️ RAIA — Responsible AI Assistant")
-    st.markdown(
-        """
-RAIA helps development teams apply **Responsible AI** practices across the
-software life cycle. **Five specialized agents** — organized in Product,
-Dev, and Ops layers — analyze your project and draft recommendations
-grounded in four consolidated frameworks (IEEE 7000, NIST AI RMF,
-Microsoft RAI Standard v2, ECCOLA) and two legal texts (EU AI Act,
-Brazilian PL 2338/2023).
-
-Two design principles you will notice everywhere:
-
-- **You are the checkpoint** — no agent output is saved until a human
-  reviews and approves it, and no agent ever triggers another one.
-- **Everything is cited and versioned** — every claim carries a tag
-  pointing to the norm excerpt that grounds it, and every approval becomes
-  a Git commit in the project's audit trail.
-"""
-    )
-    cols = st.columns(3)
-    layer_blurbs = {
-        "Product": "Risk classification and ethical value requirements at conception time.",
-        "Dev": "Ethical acceptance criteria and accountability audits inside sprints.",
-        "Ops": "Fairness-drift monitoring after deployment.",
-    }
-    for col, (layer, blurb) in zip(cols, layer_blurbs.items()):
-        agents_in = [a.spec.name for a in AGENTS.values() if a.spec.layer == layer]
-        with col:
-            st.markdown(
-                f"""<div style="border:1px solid #e2e8f0;border-top:4px solid {LAYER_COLORS[layer]};
-border-radius:8px;padding:0.9rem 1rem;min-height:9.5rem;">
-<strong>{LAYER_BADGES[layer]}</strong><br>
-<span style="font-size:0.9rem;">{blurb}</span><br>
-<span style="font-size:0.85rem;color:#64748b;">{" · ".join(agents_in)}</span>
-</div>""",
-                unsafe_allow_html=True,
-            )
-    st.info(
-        "👈 **To begin, name a project in the sidebar** (any name works — "
-        "e.g. `talentflow`). Each project gets its own Git-versioned "
-        "artifact repository."
-    )
+    return ArtifactRepository(session_project())
 
 
 def _agent_status(agent, repo, done: set) -> str:
@@ -306,46 +239,240 @@ def _agent_status(agent, repo, done: set) -> str:
     return "ready"
 
 
-_STATUS_LABEL = {
-    "approved": ("✅ approved", "#16a34a"),
-    "ready": ("▶️ ready to run", "#2563eb"),
-    "blocked": ("🔒 awaiting upstream", "#94a3b8"),
+# ---------------------------------------------------------------------------
+# The pipeline figure
+# ---------------------------------------------------------------------------
+
+# One stylesheet, injected with the figure. Design constraints:
+#   * theme-proof -- no hard-coded text or surface colours; text inherits the
+#     Streamlit theme's foreground and depth comes from translucent greys, so
+#     the figure is legible on both the light and the dark themes;
+#   * never truncated -- the layout is a *container* query, so the five
+#     stages sit in a row only when the content area is genuinely wide enough
+#     for the agent names, and stack vertically otherwise (which is also what
+#     happens on a phone);
+#   * aligned -- stretched cards with bottom-pinned status lines, so the five
+#     stages read as one row however long a name or SDLC phase runs.
+PIPELINE_CSS = """
+<style>
+.raia-wrap { container-type: inline-size; margin: .1rem 0 .35rem; }
+.raia-flow { display: flex; flex-direction: column; gap: .1rem; }
+
+.raia-stage {
+  border: 1px solid rgba(128,128,128,.28);
+  border-top: 3px solid var(--raia-accent);
+  border-radius: 12px;
+  background: rgba(128,128,128,.06);
+  padding: .6rem .8rem .7rem;
+  display: flex; flex-direction: column; gap: .25rem;
+  overflow-wrap: break-word; hyphens: none;
+}
+.raia-stage.is-blocked { opacity: .6; }
+
+.raia-head { display: flex; align-items: center; gap: .4rem; }
+.raia-dot { width: .55rem; height: .55rem; border-radius: 50%;
+            background: var(--raia-accent); flex: 0 0 auto; }
+.raia-layer { font-size: .68rem; font-weight: 700; letter-spacing: .07em;
+              text-transform: uppercase; opacity: .75; }
+.raia-num { margin-left: auto; font-size: .72rem; font-weight: 700; opacity: .45; }
+.raia-name { font-weight: 700; font-size: 1rem; line-height: 1.25; }
+.raia-phase { font-size: .74rem; line-height: 1.3; opacity: .6; }
+.raia-status { display: flex; align-items: center; gap: .38rem;
+               font-size: .78rem; font-weight: 600; margin-top: .15rem; }
+.raia-sdot { width: .5rem; height: .5rem; border-radius: 50%;
+             background: var(--raia-state); flex: 0 0 auto; }
+
+.raia-gate { position: relative; display: flex; align-items: center;
+             gap: .5rem; padding: .1rem 0 .1rem 1.15rem; }
+.raia-h { width: 1.55rem; height: 1.55rem; border-radius: 50%; flex: 0 0 auto;
+          border: 2px solid currentColor; opacity: .8;
+          display: flex; align-items: center; justify-content: center;
+          font-size: .78rem; font-weight: 800; line-height: 1; }
+.raia-gate-label { font-size: .72rem; font-weight: 600; opacity: .6; }
+
+.raia-legend { font-size: .8rem; opacity: .7; margin-top: .55rem; line-height: 1.5; }
+
+/* Wide content area: lay the pipeline out left-to-right.
+   `align-items: stretch` equalises the card heights and `margin-top: auto`
+   pins every status line to the bottom, so the five stages read as one row
+   however many lines an agent's name or SDLC phase happens to take. */
+@container (min-width: 820px) {
+  .raia-flow { flex-direction: row; align-items: stretch; gap: 0; }
+  .raia-stage { flex: 1 1 0; min-width: 0; padding: .6rem .7rem .65rem; }
+  .raia-name { font-size: .95rem; }
+  .raia-status { margin-top: auto; padding-top: .35rem; }
+  .raia-gate { flex: 0 0 auto; padding: 0 .35rem; }
+  .raia-gate-label { display: none; }
+  .raia-gate::before, .raia-gate::after {
+    content: ""; position: absolute; top: 50%; height: 1px; width: .35rem;
+    background: rgba(128,128,128,.4);
+  }
+  .raia-gate::before { left: 0; }
+  .raia-gate::after { right: 0; }
 }
 
+/* The three-layer strip above the pipeline. */
+.raia-layers { display: flex; flex-wrap: wrap; gap: .6rem; }
+.raia-layer-card {
+  flex: 1 1 230px; border: 1px solid rgba(128,128,128,.28);
+  border-top: 3px solid var(--raia-accent); border-radius: 12px;
+  background: rgba(128,128,128,.06); padding: .7rem .85rem .8rem;
+}
+.raia-blurb { font-size: .88rem; line-height: 1.45; margin-top: .25rem; }
+.raia-members { font-size: .78rem; opacity: .6; margin-top: .4rem; }
+</style>
+"""
 
-def _pipeline_figure(repo) -> str:
-    """The RAIA pipeline as HTML: agent cards separated by H gates."""
+
+def _stage_card(index: int, agent, status: str) -> str:
+    accent = LAYER_COLORS[agent.spec.layer]
+    state = STATUS_COLORS[status]
+    blocked = " is-blocked" if status == "blocked" else ""
+    return f"""<div class="raia-stage{blocked}" style="--raia-accent:{accent};--raia-state:{state};">
+  <div class="raia-head">
+    <span class="raia-dot"></span>
+    <span class="raia-layer">{agent.spec.layer}</span>
+    <span class="raia-num">{index}</span>
+  </div>
+  <div class="raia-name">{agent.spec.name}</div>
+  <div class="raia-phase">{agent.spec.sdlc_phase}</div>
+  <div class="raia-status"><span class="raia-sdot"></span>{STATUS_LABELS[status]}</div>
+</div>"""
+
+
+_GATE = """<div class="raia-gate" title="Mandatory human approval gate">
+  <span class="raia-h">H</span><span class="raia-gate-label">human approval gate</span>
+</div>"""
+
+
+def pipeline_figure(repo) -> str:
+    """The RAIA pipeline: five agent cards separated by the H gates."""
     done = set(repo.existing_artifacts())
+    cards = [
+        _stage_card(i, agent, _agent_status(agent, repo, done))
+        for i, agent in enumerate(AGENTS.values(), start=1)
+    ]
+    return (
+        PIPELINE_CSS
+        + '<div class="raia-wrap"><div class="raia-flow">'
+        + _GATE.join(cards)
+        + "</div>"
+        + '<div class="raia-legend"><strong>H</strong> = mandatory human approval '
+        + "gate. Nothing advances to the next stage until you review and approve "
+        + "it, and no agent ever triggers another one.</div></div>"
+    )
+
+
+def layer_cards() -> str:
+    """The three RAIA layers, as an intro strip above the pipeline."""
+    blurbs = {
+        "Product": "Risk classification and ethical value requirements, at conception time.",
+        "Dev": "Ethical acceptance criteria and accountability audits, inside sprints.",
+        "Ops": "Fairness-drift monitoring, after deployment.",
+    }
     cards = []
-    for key, agent in AGENTS.items():
-        status = _agent_status(agent, repo, done)
-        label, color = _STATUS_LABEL[status]
+    for layer, blurb in blurbs.items():
+        members = " · ".join(a.spec.name for a in AGENTS.values() if a.spec.layer == layer)
         cards.append(
-            f"""<div style="flex:1 1 150px;border:1px solid #e2e8f0;
-border-top:4px solid {LAYER_COLORS[agent.spec.layer]};border-radius:8px;
-padding:0.6rem 0.7rem;background:#ffffff;">
-<div style="font-size:0.75rem;color:{LAYER_COLORS[agent.spec.layer]};font-weight:600;">
-{LAYER_BADGES[agent.spec.layer]}</div>
-<div style="font-weight:700;line-height:1.25;margin:0.15rem 0;">{agent.spec.name}</div>
-<div style="font-size:0.8rem;color:{color};font-weight:600;">{label}</div>
+            f"""<div class="raia-layer-card" style="--raia-accent:{LAYER_COLORS[layer]};">
+  <div class="raia-head"><span class="raia-dot"></span>
+    <span class="raia-layer">{layer}</span></div>
+  <div class="raia-blurb">{blurb}</div>
+  <div class="raia-members">{members}</div>
 </div>"""
         )
-    gate = (
-        '<div style="align-self:center;text-align:center;flex:0 0 auto;padding:0 0.15rem;" '
-        'title="Mandatory human approval gate">'
-        '<div style="width:1.7rem;height:1.7rem;border-radius:50%;border:2px solid #0f172a;'
-        'display:flex;align-items:center;justify-content:center;font-weight:700;'
-        'font-size:0.85rem;margin:0 auto;">H</div>'
-        '<div style="font-size:0.65rem;color:#64748b;">gate</div></div>'
+    return '<div class="raia-layers">' + "".join(cards) + "</div>"
+
+
+# ---------------------------------------------------------------------------
+# Sidebar
+# ---------------------------------------------------------------------------
+
+
+def sidebar(status) -> str:
+    """Render the sidebar; returns the chosen page name."""
+    st.sidebar.title("🛡️ RAIA")
+    st.sidebar.caption("Responsible AI Assistant — multi-agent PoC")
+
+    if status.explicit_mock:
+        st.sidebar.warning(
+            "🧪 **Mock mode is on.** Agent outputs are canned placeholders — "
+            "no model is being called. Maintainers: remove the "
+            "`RAIA_LLM_PROVIDER` line from the app's secrets to run for real."
+        )
+    else:
+        st.sidebar.caption(f"🟢 Connected · `{status.model}`")
+
+    repo = get_repo()
+    done = set(repo.existing_artifacts())
+    n_done = sum(1 for a in AGENTS.values() if a.spec.output_key in done)
+    st.sidebar.progress(
+        n_done / len(AGENTS), text=f"{n_done}/{len(AGENTS)} stages approved"
     )
-    return (
-        '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:stretch;">'
-        + gate.join(cards)
-        + "</div>"
-        + '<div style="font-size:0.8rem;color:#64748b;margin-top:0.4rem;">'
-        + "Ⓗ = mandatory human approval gate: nothing advances to the next stage "
-        + "until you review and approve it.</div>"
+
+    layer_dot = {"Product": "🟦", "Dev": "🟩", "Ops": "🟧"}
+    pages = {"🏠 Overview": "Overview"}
+    for agent in AGENTS.values():
+        mark = STATUS_ICONS[_agent_status(agent, repo, done)]
+        pages[f"{mark} {layer_dot[agent.spec.layer]} {agent.spec.name}"] = agent.spec.name
+    pages["📜 Audit Trail"] = "Audit Trail"
+
+    label = st.sidebar.radio("Pipeline", list(pages), label_visibility="collapsed")
+    st.sidebar.caption("✅ approved · ▶️ ready · 🔒 awaiting upstream approval")
+
+    st.sidebar.divider()
+    st.sidebar.caption(
+        "This is your own private workspace. Other testers cannot see it, and "
+        "it is discarded when the app restarts."
     )
+    if st.sidebar.button("🔄 Start over", help="Erase this workspace and begin again"):
+        reset_session()
+        st.rerun()
+
+    return pages[label]
+
+
+# ---------------------------------------------------------------------------
+# Pages
+# ---------------------------------------------------------------------------
+
+
+def page_not_configured(status) -> None:
+    """Shown instead of the app when no usable model credential is present.
+
+    RAIA deliberately does NOT fall back to canned output here: a tester who
+    could not tell mock text from a real analysis would end up evaluating the
+    wrong artifact.
+    """
+    st.title("🛡️ RAIA")
+    st.error(
+        "**This deployment is not fully configured yet, so the agents cannot "
+        "run.** Nothing is wrong on your side — please let the study "
+        "coordinator know you saw this screen."
+    )
+    st.caption(status.problem or "")
+    with st.expander("Maintainer setup (2 minutes)"):
+        st.markdown(
+            f"""
+Open the app on **share.streamlit.io → ⋮ → Settings → Secrets**, paste the
+line below, and click **Save**. The app restarts on its own.
+
+```toml
+{status.key_env_var or "ANTHROPIC_API_KEY"} = "sk-..."
+```
+
+That is the whole setup — no `.env` file, no redeploy, no code change.
+Optional overrides:
+
+```toml
+RAIA_LLM_MODEL    = "{config.LLM_MODEL}"   # any Claude / GPT model id
+RAIA_LLM_PROVIDER = "anthropic"            # or "openai", or "mock" for canned output
+```
+
+An `OPENAI_API_KEY` on its own also works: the provider switches to OpenAI
+automatically.
+"""
+        )
 
 
 def page_overview() -> None:
@@ -353,23 +480,33 @@ def page_overview() -> None:
     st.title("RAIA — Responsible AI Assistant")
     st.markdown(
         """
-RAIA operationalizes Responsible AI across the SDLC through **five
-specialized agents** in three layers, grounded via RAG in four consolidated
+RAIA helps development teams apply **Responsible AI** across the software
+life cycle. **Five specialized agents**, organized in three layers, analyze
+your project and draft recommendations grounded via RAG in four consolidated
 frameworks (IEEE 7000, NIST AI RMF, Microsoft RAI Standard v2, ECCOLA) and
 two legal texts (EU AI Act, Brazilian PL 2338/2023).
 
-**How it works** — pick an agent in the sidebar, provide its inputs, and
-review its draft. Nothing is written to the shared repository until **you
-approve it** (the mandatory human checkpoint). Approved artifacts are
-Git-versioned and become the context for downstream agents.
+Two design principles you will notice everywhere:
+
+- **You are the checkpoint.** No agent output is saved until you review and
+  approve it, and no agent ever triggers another one.
+- **Everything is cited and versioned.** Every claim carries a tag pointing
+  to the norm excerpt that grounds it, and every approval becomes a Git
+  commit in your audit trail.
 """
     )
-    st.subheader("Pipeline")
-    st.markdown(_pipeline_figure(get_repo()), unsafe_allow_html=True)
+
+    st.subheader("Three layers")
+    st.markdown(PIPELINE_CSS + layer_cards(), unsafe_allow_html=True)
+
+    st.subheader("Five stages, five human gates")
+    st.markdown(pipeline_figure(get_repo()), unsafe_allow_html=True)
+
     st.info(
-        "Suggested walkthrough (~15 min): start with **Risk Classifier** in "
-        "the sidebar and use the **Load example** button on each agent page "
-        "to explore the resume-screening example scenario end to end."
+        "**Start here (~15 min):** open **▶️ 🟦 Risk Classifier** in the "
+        "sidebar, press **Load example** to fill in a resume-screening "
+        "scenario, and run it. Then work down the sidebar approving each "
+        "stage, and finish at the **📜 Audit Trail**."
     )
 
 
@@ -397,7 +534,7 @@ def _review_widget(agent_key: str, payload: dict) -> None:
         if st.button("✅ Approve & commit", type="primary", key=f"approve_{agent_key}"):
             with st.spinner("Committing to the audit trail…"):
                 result = get_runner().resume(
-                    st.session_state["project"], agent_key,
+                    session_project(), agent_key,
                     {"action": "approve", "content": edited, "approver": approver},
                 )
             st.session_state.pop(f"pending_{agent_key}", None)
@@ -411,10 +548,14 @@ def _review_widget(agent_key: str, payload: dict) -> None:
                                  placeholder="What should the agent fix?")
         if st.button("❌ Reject & regenerate", key=f"reject_{agent_key}"):
             with st.spinner("Regenerating with your feedback…"):
-                result = get_runner().resume(
-                    st.session_state["project"], agent_key,
-                    {"action": "reject", "feedback": feedback or "Please revise."},
-                )
+                try:
+                    result = get_runner().resume(
+                        session_project(), agent_key,
+                        {"action": "reject", "feedback": feedback or "Please revise."},
+                    )
+                except Exception as exc:  # noqa: BLE001 - surfaced to the tester
+                    st.error(friendly_llm_error(exc))
+                    return
             st.session_state[f"pending_{agent_key}"] = result["payload"]
             st.rerun()
 
@@ -481,7 +622,11 @@ def page_agent(agent_key: str) -> None:
             )
             repo.save_artifact("product_brief", brief, approved_by="author")
         with st.spinner(f"{spec.name} is reading the norms and drafting…"):
-            result = get_runner().start(st.session_state["project"], agent_key, inputs)
+            try:
+                result = get_runner().start(session_project(), agent_key, inputs)
+            except Exception as exc:  # noqa: BLE001 - surfaced to the tester
+                st.error(friendly_llm_error(exc))
+                return
         if result["status"] == "awaiting_review":
             st.session_state[f"pending_{agent_key}"] = result["payload"]
             st.rerun()
@@ -492,8 +637,8 @@ def page_audit_trail() -> None:
     st.title("📜 Audit Trail")
     repo = get_repo()
     st.caption(
-        f"Project `{st.session_state['project']}` — every artifact below is a "
-        "file in a Git repository; every approval is a commit."
+        "Every artifact below is a file in a Git repository, and every "
+        "approval is a commit. This is your session's own repository."
     )
 
     st.subheader("Artifacts")
@@ -529,20 +674,22 @@ def page_audit_trail() -> None:
 def main() -> None:
     st.set_page_config(page_title="RAIA", page_icon="🛡️", layout="wide")
 
+    status = runtime_status()
+    if not status.ready:
+        page_not_configured(status)
+        return
+
     # Self-bootstrap the RAG index (no-op if already built).
     with st.spinner("Preparing the normative knowledge base (first start only)…"):
         ensure_normative_index()
 
-    page = sidebar()
+    page = sidebar(status)
 
-    if page is None:
-        page_welcome()
-    elif page == "Overview":
+    if page == "Overview":
         page_overview()
     elif page == "Audit Trail":
         page_audit_trail()
     else:
-        # Map the agent display name back to its key.
         for key, agent in AGENTS.items():
             if agent.spec.name == page:
                 page_agent(key)

@@ -144,6 +144,51 @@ def main() -> None:
     check("Input sanitization notice" in result["payload"]["draft"],
           "sanitization notice visible in draft at the review gate")
 
+    print("== 12. Streamlit-secrets configuration bridge ==")
+    from raia import deploy
+
+    env = deploy.collect({"ANTHROPIC_API_KEY": "sk-ant-" + "x" * 40})
+    check(env["ANTHROPIC_API_KEY"].startswith("sk-ant-"), "canonical key accepted")
+
+    env = deploy.collect({"anthropic": {"api_key": "sk-ant-" + "y" * 40}})
+    check("ANTHROPIC_API_KEY" in env, "sectioned [anthropic] api_key accepted")
+
+    env = deploy.collect({"CLAUDE_API_KEY": '  "sk-ant-' + "z" * 40 + '"  '})
+    check(env["ANTHROPIC_API_KEY"] == "sk-ant-" + "z" * 40,
+          "alias accepted, quotes and whitespace stripped")
+
+    env = deploy.collect({"OPENAI_API_KEY": "sk-" + "o" * 40}, current_env={})
+    check(env.get("RAIA_LLM_PROVIDER") == "openai",
+          "provider inferred from an OpenAI-only key")
+
+    env = deploy.collect({"RAIA_LLM_PROVIDER": "mock"}, current_env={"RAIA_LLM_PROVIDER": "anthropic"})
+    check(env["RAIA_LLM_PROVIDER"] == "mock",
+          "an explicit provider in secrets is passed through verbatim")
+
+    env = deploy.collect({"LLM_API_KEY": "sk-ant-" + "g" * 40}, current_env={})
+    check(env["ANTHROPIC_API_KEY"].startswith("sk-ant-"),
+          "provider-neutral key routed to the default provider")
+
+    check(deploy.collect({}) == {}, "empty/missing secrets are a no-op")
+
+    status = deploy.runtime_status()
+    check(status.explicit_mock and status.ready,
+          "explicit mock mode is reported as ready (never a silent fallback)")
+    check(deploy.RuntimeStatus("anthropic", "m", "ANTHROPIC_API_KEY",
+                               False, False, False).problem is not None,
+          "a missing key is reported as a problem, not mocked away")
+
+    print("== 13. Per-session workspace isolation ==")
+    repo_a = ArtifactRepository("session-aaaaaaaaaaaa")
+    repo_b = ArtifactRepository("session-bbbbbbbbbbbb")
+    repo_a.save_artifact("product_brief", "brief A", approved_by="tester-a")
+    check(repo_b.read_artifact("product_brief") is None,
+          "one session's artifacts are invisible to another session")
+    repo_a.reset()
+    check(not repo_a.path.exists(), "reset() erases only the caller's workspace")
+    check(ArtifactRepository("session-bbbbbbbbbbbb").path.exists(),
+          "reset() leaves other sessions untouched")
+
     print("\nAll smoke tests passed.")
 
 
