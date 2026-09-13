@@ -225,6 +225,10 @@ traceability register and the threshold checks all read the sidecar.
 - The UI itself was exercised headlessly with Streamlit's app-test harness: the
   full five-stage walkthrough, including the empty-form refusal, the
   approver-name gate and the open-issues page.
+- The pushed branch was verified independently: cloned from GitHub into a clean
+  environment, installed from `requirements.txt` alone, and run end to end. This
+  is what surfaced defect 3 below, and it also confirms no needed file was
+  accidentally left untracked.
 
 #### Two defects the new tests found in the new code
 
@@ -237,6 +241,17 @@ Recorded because a log that only lists successes is not worth keeping.
    an identifier is not evidence of measurability. Fixed.
 2. Principle keyword matching was plain substring matching, so `log` matched
    `catalog`. Anchored to word boundaries.
+3. **A stale or half-written vector index was trusted.** Found by cloning the
+   pushed branch into a clean environment and running it from scratch: an
+   ingest that fails part-way leaves a collection that *exists*, so the
+   self-bootstrap skipped rebuilding it, and the app then failed at the first
+   retrieval with "collection not found" — permanently, until someone deleted
+   `.chroma` by hand. On a hosted deployment that is a dead app with a
+   confusing error, and it would have been triggered by any interrupted first
+   start or by a change to `RAIA_FAKE_EMBED` between deploys. The collection is
+   now stamped with the corpus version, the embedding function and the exact
+   chunk count it should hold, and any mismatch causes a rebuild instead of a
+   failure. Covered by a new smoke-test section.
 
 #### Still open, by decision
 

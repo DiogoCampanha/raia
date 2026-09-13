@@ -58,6 +58,24 @@ def main() -> None:
     n = ingest_corpus(verbose=False)
     check(n > 20, f"ingested {n} chunks (> 20)")
 
+    print("== 1b. A stale or foreign index is detected, not trusted ==")
+    from raia import config as _cfg
+    from raia import rag as _rag
+
+    check(_rag.index_exists(), "a freshly built index reports itself usable")
+    _cfg.FAKE_EMBEDDINGS = not _cfg.FAKE_EMBEDDINGS
+    try:
+        check(not _rag.index_exists(),
+              "an index built by a different embedding function is rejected")
+    finally:
+        _cfg.FAKE_EMBEDDINGS = not _cfg.FAKE_EMBEDDINGS
+    _real_version, _cfg.corpus_version = _cfg.corpus_version, lambda: "changed000000"
+    try:
+        check(not _rag.index_exists(), "an index built from a different corpus is rejected")
+    finally:
+        _cfg.corpus_version = _real_version
+    check(_rag.index_exists(), "and the current index is still accepted afterwards")
+
     print("== 2. Every pinned section exists in the corpus ==")
     sections = corpus_sections()
     bad = []

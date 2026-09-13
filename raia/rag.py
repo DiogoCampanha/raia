@@ -34,6 +34,18 @@ import chromadb
 
 from . import config
 
+#: Collection metadata used to decide whether a persisted index is still the
+#: one this configuration expects. Without these, an index built by a different
+#: embedding function, or left half-written by an interrupted ingest, looks
+#: present and then fails at the first retrieval.
+INDEX_META_VERSION = "raia_corpus_version"
+INDEX_META_EMBED = "raia_embedding"
+INDEX_META_COUNT = "raia_chunk_count"
+
+
+def _embedding_name() -> str:
+    return "raia-fake-embed" if config.FAKE_EMBEDDINGS else "chroma-default"
+
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -150,21 +162,18 @@ def _split_markdown(text: str, chunk_size: int, overlap: int) -> List[dict]:
 
 
 def ingest_corpus(verbose: bool = True) -> int:
-    """(Re)build the Chroma collection from the ``corpus/`` directory."""
-    client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
+    """(Re)build the Chroma collection from the ``corpus/`` directory.
 
-    try:
-        client.delete_collection(config.CHROMA_COLLECTION)
-    except Exception:
-        pass  # collection did not exist yet
+    Every chunk is prepared before the collection is created, so the collection
+    is stamped with the corpus version, the embedding function and the exact
+    chunk count it is supposed to hold. :func:`index_exists` checks those
+    stamps, which is what lets a stale or half-written index be detected and
+    rebuilt instead of failing later at retrieval time.
+    """
+    ids: List[str] = []
+    documents: List[str] = []
+    metadatas: List[dict] = []
 
-    collection = client.create_collection(
-        name=config.CHROMA_COLLECTION,
-        embedding_function=_embedding_function(),
-        metadata={"hnsw:space": "cosine"},
-    )
-
-    n = 0
     for md_file in sorted(config.CORPUS_DIR.glob("*.md")):
         source = md_file.stem
         authority = config.AUTHORITY_LEVELS.get(source, "advisory")
@@ -174,33 +183,67 @@ def ingest_corpus(verbose: bool = True) -> int:
         for i, chunk in enumerate(
             _split_markdown(text, config.RAG_CHUNK_SIZE, config.RAG_CHUNK_OVERLAP)
         ):
-            collection.add(
-                ids=[f"{source}-{i}"],
-                documents=[chunk["text"]],
-                metadatas=[
-                    {
-                        "source": source,
-                        "source_name": source_name,
-                        "authority": authority,
-                        "section": chunk["section"],
-                    }
-                ],
+            ids.append(f"{source}-{i}")
+            documents.append(chunk["text"])
+            metadatas.append(
+                {
+                    "source": source,
+                    "source_name": source_name,
+                    "authority": authority,
+                    "section": chunk["section"],
+                }
             )
-            n += 1
         if verbose:
             print(f"  indexed {source} ({source_name})")
 
+    client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
+    try:
+        client.delete_collection(config.CHROMA_COLLECTION)
+    except Exception:
+        pass  # collection did not exist yet
+
+    collection = client.create_collection(
+        name=config.CHROMA_COLLECTION,
+        embedding_function=_embedding_function(),
+        metadata={
+            "hnsw:space": "cosine",
+            INDEX_META_VERSION: config.corpus_version(),
+            INDEX_META_EMBED: _embedding_name(),
+            INDEX_META_COUNT: len(ids),
+        },
+    )
+    if ids:
+        collection.add(ids=ids, documents=documents, metadatas=metadatas)
+
     if verbose:
-        print(f"Ingested {n} chunks into '{config.CHROMA_COLLECTION}' at {config.CHROMA_DIR}")
-    return n
+        print(f"Ingested {len(ids)} chunks into '{config.CHROMA_COLLECTION}' "
+              f"at {config.CHROMA_DIR}")
+    return len(ids)
 
 
 def index_exists() -> bool:
-    """True if the normative Chroma collection has already been built."""
+    """True if a *usable, current* normative index is already built.
+
+    Used by the web UI to bootstrap itself on hosted platforms. Checking only
+    that a collection exists is not enough, and the difference is not
+    theoretical: an index written by a different embedding function, or left
+    half-written when an ingest was interrupted, reports itself as present and
+    then raises at the first retrieval — leaving the app broken until someone
+    deletes the directory by hand. Any mismatch here simply causes a rebuild.
+    """
     try:
         client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
-        client.get_collection(config.CHROMA_COLLECTION)
-        return True
+        collection = client.get_collection(
+            name=config.CHROMA_COLLECTION, embedding_function=_embedding_function()
+        )
+        meta = collection.metadata or {}
+        count = collection.count()
+        return (
+            count > 0
+            and meta.get(INDEX_META_EMBED) == _embedding_name()
+            and meta.get(INDEX_META_VERSION) == config.corpus_version()
+            and int(meta.get(INDEX_META_COUNT, -1)) == count
+        )
     except Exception:
         return False
 
@@ -241,8 +284,8 @@ class NormativeRetriever:
             )
         except Exception as exc:
             raise RuntimeError(
-                "Chroma collection not found. Run `python ingest.py` first "
-                "to build the normative index."
+                "The normative index is missing or was built for a different "
+                "configuration. Run `python ingest.py` to rebuild it."
             ) from exc
 
     # -- exact fetch (pins) -------------------------------------------------
