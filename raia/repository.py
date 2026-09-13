@@ -2,23 +2,26 @@
 raia.repository
 ===============
 
-The **shared artifact repository** -- RAIA's blackboard.
+The **shared artifact repository** — RAIA's blackboard.
 
-From the RAIA architecture: "The agents form a linear pipeline coordinated
-through a blackboard-style shared state: a repository of Markdown/JSON
-artifacts versioned in Git. [...] With the blackboard design, the audit
-trail is structural: every recommendation, decision, and revision is a
-versioned, human- and machine-readable document."
+Agents never talk to each other; they read from and, after human approval,
+write to this repository. Every write is a Git commit, so the full history of
+recommendations, approvals and revisions is preserved and auditable.
 
-Key properties implemented here:
+Two additions carry the weight of everything else in the system:
 
-* Agents **never** talk to each other directly; they only read from and
-  (after human approval) write to this repository.
-* Every write is a Git commit, so the full history of recommendations,
-  approvals, and revisions is preserved and auditable.
-* If Git is not installed, the repository degrades gracefully to plain
-  files and records history in a JSON log instead (with a warning), so
-  the tool remains usable everywhere.
+**A JSON sidecar for every artifact.** The blackboard used to hold prose, so
+nothing downstream could operate on a *value* — a risk tier, an obligation, a
+requirement identifier, a threshold. Every artifact is now written twice in the
+same commit: the Markdown a person reads, and a structured record the next
+agent's decision procedure consumes. This is what makes coverage matrices,
+traceability and threshold checks possible at all.
+
+**A real Open Issues register.** Same-level normative conflicts were supposed
+to be recorded as explicit open issues and escalated for human arbitration.
+The register now exists as a first-class artifact with its own file, its own
+structure and its own page in the UI, populated automatically from the rule
+engines and from each approved draft.
 """
 
 import datetime as _dt
@@ -26,12 +29,13 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from . import config
+from . import config, provenance
+from .sanitize import sanitize_artifact
 
-# Canonical artifact file names, in pipeline order. The two-digit prefix
-# makes the SDLC ordering visible in any file browser.
+# Canonical artifact file names, in pipeline order. The two-digit prefix makes
+# the SDLC ordering visible in any file browser.
 ARTIFACT_FILES: Dict[str, str] = {
     "product_brief": "01_product_brief.md",
     "risk_classification": "02_risk_classification.md",
@@ -42,29 +46,31 @@ ARTIFACT_FILES: Dict[str, str] = {
     "open_issues": "07_open_issues.md",
 }
 
+OPEN = "open"
+RESOLVED = "resolved"
+ACCEPTED = "accepted"
+ISSUE_STATUSES = (OPEN, RESOLVED, ACCEPTED)
+
+
+def _sidecar(filename: str) -> str:
+    return filename.rsplit(".", 1)[0] + ".json"
+
 
 def _git_available() -> bool:
-    """True if a `git` executable is on PATH."""
     return shutil.which("git") is not None
 
 
 class ArtifactRepository:
-    """Git-versioned blackboard for a single project.
-
-    One instance == one project folder under ``workspace/``. All methods
-    are synchronous and cheap; commits are local only (nothing is pushed),
-    keeping project data in organization-controlled storage as required by
-    one of RAIA's governance mechanisms (data protection).
-    """
+    """Git-versioned blackboard for a single project."""
 
     def __init__(self, project: str) -> None:
-        # Sanitize the project name into a safe folder slug.
         slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in project.strip())
         if not slug:
             raise ValueError("Project name must contain letters or digits.")
         self.project = project
         self.path: Path = config.WORKSPACE_DIR / slug
         self.artifacts_dir: Path = self.path / "artifacts"
+        self.pending_dir: Path = self.path / ".pending"
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         self._use_git = _git_available()
         if self._use_git:
@@ -73,40 +79,51 @@ class ArtifactRepository:
     # -- Git plumbing --------------------------------------------------------
 
     def _run_git(self, *args: str) -> subprocess.CompletedProcess:
-        """Run a git command inside the project repository."""
         return subprocess.run(
-            ["git", *args],
-            cwd=self.path,
-            capture_output=True,
-            text=True,
-            check=False,
+            ["git", *args], cwd=self.path, capture_output=True, text=True, check=False
         )
 
     def _init_git(self) -> None:
-        """Initialise a local Git repo for the project if needed."""
         if not (self.path / ".git").exists():
             self._run_git("init", "-q")
-            # A local identity so commits work on machines without global config.
             self._run_git("config", "user.name", "RAIA")
             self._run_git("config", "user.email", "raia@localhost")
+
+    def _commit(self, files: List[str], message: str) -> str:
+        stamp = _dt.datetime.now().isoformat(timespec="seconds")
+        if not self._use_git:
+            log = self.path / "history.json"
+            entries = json.loads(log.read_text()) if log.exists() else []
+            entries.append({"files": files, "message": message, "at": stamp})
+            log.write_text(json.dumps(entries, indent=2))
+            return stamp
+        for f in files:
+            self._run_git("add", str(Path("artifacts") / f))
+        self._run_git("commit", "-q", "-m", message)
+        rev = self._run_git("rev-parse", "--short", "HEAD")
+        return rev.stdout.strip() or stamp
 
     # -- Read side (what downstream agents consume) ---------------------------
 
     def read_artifact(self, key: str) -> Optional[str]:
-        """Return the current approved content of an artifact, or None."""
         f = self.artifacts_dir / ARTIFACT_FILES[key]
         return f.read_text(encoding="utf-8") if f.exists() else None
 
+    def read_data(self, key: str) -> Dict[str, Any]:
+        """The structured sidecar for an artifact, or ``{}`` if there is none."""
+        f = self.artifacts_dir / _sidecar(ARTIFACT_FILES[key])
+        if not f.exists():
+            return {}
+        try:
+            return json.loads(f.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return {}
+
     def existing_artifacts(self) -> List[str]:
-        """List the artifact keys that already have approved content."""
         return [k for k in ARTIFACT_FILES if (self.artifacts_dir / ARTIFACT_FILES[k]).exists()]
 
     def upstream_context(self, keys: List[str]) -> str:
-        """Concatenate a set of upstream artifacts as prompt context.
-
-        This is how "downstream agents inherit the full context of upstream
-        classifications and requirements" (RAIA architecture).
-        """
+        """Approved upstream artifacts, concatenated as prompt context."""
         parts = []
         for key in keys:
             content = self.read_artifact(key)
@@ -114,59 +131,245 @@ class ArtifactRepository:
                 parts.append(f"===== UPSTREAM ARTIFACT: {key} =====\n{content.strip()}")
         return "\n\n".join(parts) if parts else "(no upstream artifacts yet)"
 
+    def upstream_bundle(self, keys: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Text *and* structured payload for each upstream artifact.
+
+        This is what a decision procedure reads. Text alone was never enough to
+        compute a coverage matrix or a traceability register over.
+        """
+        bundle: Dict[str, Dict[str, Any]] = {}
+        for key in keys:
+            text = self.read_artifact(key)
+            if text is None:
+                continue
+            payload = self.read_data(key)
+            bundle[key] = {
+                "text": text,
+                "data": payload.get("structured", payload),
+                "provenance": payload.get("provenance", {}),
+            }
+        return bundle
+
     # -- Write side (only ever called AFTER human approval) -------------------
 
-    def save_artifact(self, key: str, content: str, approved_by: str = "human") -> str:
-        """Persist an approved artifact and commit it to Git.
+    def save_artifact(
+        self,
+        key: str,
+        content: str,
+        approved_by: str = "human",
+        structured: Optional[Dict[str, Any]] = None,
+        run_provenance: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Persist an approved artifact — Markdown and sidecar, one commit.
 
-        Returns the commit hash (or a timestamp id in the no-git fallback).
-        The metadata header stamped at the top of the file records approval
-        provenance -- part of the structural audit trail.
+        The content is sanitized on the way in, not only on the way in from the
+        form: a human-edited draft is the largest free-text surface in the
+        system, it is committed, and it is injected into every downstream
+        prompt. Findings are recorded, never silently removed.
         """
         filename = ARTIFACT_FILES[key]
-        timestamp = _dt.datetime.now().isoformat(timespec="seconds")
-        header = (
-            f"<!-- RAIA artifact: {key} | approved by: {approved_by} "
-            f"| approved at: {timestamp} -->\n\n"
+        cleaned = sanitize_artifact(content or "")
+        record = dict(run_provenance or {})
+        if cleaned.findings:
+            record.setdefault("artifact_sanitization", []).extend(cleaned.findings)
+
+        header = provenance.header_comment(key, record)
+        (self.artifacts_dir / filename).write_text(header + cleaned.text, encoding="utf-8")
+
+        payload = {
+            "artifact": key,
+            "file": filename,
+            "structured": structured or {},
+            "provenance": record,
+        }
+        (self.artifacts_dir / _sidecar(filename)).write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
         )
-        (self.artifacts_dir / filename).write_text(header + content, encoding="utf-8")
 
-        if self._use_git:
-            self._run_git("add", str(Path("artifacts") / filename))
-            msg = f"raia({key}): human-approved update by {approved_by}"
-            self._run_git("commit", "-q", "-m", msg)
-            rev = self._run_git("rev-parse", "--short", "HEAD")
-            return rev.stdout.strip() or timestamp
+        commit = self._commit(
+            [filename, _sidecar(filename)],
+            f"raia({key}): human-approved update by {approved_by}",
+        )
+        self.clear_pending_for(key)
+        return commit
 
-        # Fallback: append to a JSON history log when git is unavailable.
-        log = self.path / "history.json"
-        entries = json.loads(log.read_text()) if log.exists() else []
-        entries.append({"artifact": key, "approved_by": approved_by, "at": timestamp})
-        log.write_text(json.dumps(entries, indent=2))
-        return timestamp
+    # -- Open issues register --------------------------------------------------
 
-    def append_open_issue(self, issue: str, raised_by: str) -> None:
-        """Record a normative conflict as an explicit open issue.
+    def open_issues(self) -> List[Dict[str, Any]]:
+        f = self.artifacts_dir / _sidecar(ARTIFACT_FILES["open_issues"])
+        if not f.exists():
+            return []
+        try:
+            return json.loads(f.read_text(encoding="utf-8")).get("structured", {}).get("issues", [])
+        except (ValueError, OSError):
+            return []
 
-        Implements governance mechanism (c): same-level conflicts "are
-        recorded as explicit open issues in the shared repository and
-        escalated for human arbitration".
+    def append_open_issues(
+        self, issues: List[str], raised_by: str, artifact: str = "", commit: str = ""
+    ) -> int:
+        """Record normative conflicts as explicit, tracked open issues.
+
+        Same-level conflicts and rule-engine/model disagreements are escalated
+        for human arbitration rather than resolved silently — which means they
+        need somewhere to live, a status, and a way to be seen. Duplicates of an
+        already-recorded issue are skipped so a rejected-and-regenerated draft
+        does not multiply the register.
         """
-        f = self.artifacts_dir / ARTIFACT_FILES["open_issues"]
+        existing = self.open_issues()
+        known = {_fingerprint(i.get("text", "")) for i in existing}
         stamp = _dt.datetime.now().isoformat(timespec="seconds")
-        entry = f"\n- **[{stamp}]** (raised by *{raised_by}*): {issue.strip()}\n"
+        added = 0
+
+        for text in issues:
+            text = (text or "").strip()
+            if not text or _fingerprint(text) in known:
+                continue
+            known.add(_fingerprint(text))
+            existing.append(
+                {
+                    "id": f"ISSUE-{len(existing) + 1}",
+                    "text": text,
+                    "raised_by": raised_by,
+                    "artifact": artifact,
+                    "commit": commit,
+                    "raised_at": stamp,
+                    "status": OPEN,
+                }
+            )
+            added += 1
+
+        if added:
+            self._write_open_issues(existing, f"raia(open_issues): {added} raised by {raised_by}")
+        return added
+
+    def set_issue_status(self, issue_id: str, status: str, note: str = "", by: str = "human") -> bool:
+        if status not in ISSUE_STATUSES:
+            raise ValueError(f"Unknown status '{status}'. Use one of {ISSUE_STATUSES}.")
+        issues = self.open_issues()
+        for issue in issues:
+            if issue.get("id") == issue_id:
+                issue["status"] = status
+                issue["resolution_note"] = note
+                issue["resolved_by"] = by
+                issue["resolved_at"] = _dt.datetime.now().isoformat(timespec="seconds")
+                self._write_open_issues(
+                    issues, f"raia(open_issues): {issue_id} marked {status} by {by}"
+                )
+                return True
+        return False
+
+    def _write_open_issues(self, issues: List[Dict[str, Any]], message: str) -> None:
+        filename = ARTIFACT_FILES["open_issues"]
+        lines = [
+            "<!--  RAIA artifact: open_issues | maintained automatically from agent runs  -->",
+            "",
+            "# Open Issues (human arbitration required)",
+            "",
+            "Conflicts the system refused to resolve on its own: same-level normative",
+            "conflicts, disagreements between a rule engine and an agent, and gaps a",
+            "human has to close. Nothing here is settled by the software.",
+            "",
+        ]
+        for status, title in (
+            (OPEN, "Open"),
+            (ACCEPTED, "Accepted risk"),
+            (RESOLVED, "Resolved"),
+        ):
+            group = [i for i in issues if i.get("status") == status]
+            if not group:
+                continue
+            lines.append(f"## {title} ({len(group)})")
+            lines.append("")
+            for i in group:
+                lines.append(
+                    f"- **{i['id']}** — {i['text']}  \n"
+                    f"  _raised by {i.get('raised_by', '?')} on {i.get('raised_at', '?')}_"
+                    + (f" · _{i.get('resolution_note')}_" if i.get("resolution_note") else "")
+                )
+            lines.append("")
+
+        (self.artifacts_dir / filename).write_text("\n".join(lines), encoding="utf-8")
+        (self.artifacts_dir / _sidecar(filename)).write_text(
+            json.dumps({"artifact": "open_issues", "structured": {"issues": issues}}, indent=2,
+                       ensure_ascii=False),
+            encoding="utf-8",
+        )
+        self._commit([filename, _sidecar(filename)], message)
+
+    # -- Pending drafts (restart resilience) -----------------------------------
+
+    def save_pending(self, agent_key: str, payload: Dict[str, Any]) -> None:
+        """Keep an in-review draft on disk.
+
+        The graph checkpointer lives in the server process. When a hosted
+        deployment restarts mid-review, the paused thread is gone while the
+        browser still shows the draft — the tester presses Approve and the app
+        fails. The draft is therefore also written here, so the review can be
+        restored into a fresh graph run without re-calling the model.
+        """
+        self.pending_dir.mkdir(parents=True, exist_ok=True)
+        (self.pending_dir / f"{agent_key}.json").write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+        )
+
+    def load_pending(self, agent_key: str) -> Optional[Dict[str, Any]]:
+        f = self.pending_dir / f"{agent_key}.json"
+        if not f.exists():
+            return None
+        try:
+            return json.loads(f.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return None
+
+    def clear_pending_for(self, artifact_key: str) -> None:
+        for f in self.pending_dir.glob("*.json"):
+            try:
+                if json.loads(f.read_text(encoding="utf-8")).get("artifact_key") == artifact_key:
+                    f.unlink()
+            except (ValueError, OSError):
+                continue
+
+    def clear_pending(self, agent_key: str) -> None:
+        f = self.pending_dir / f"{agent_key}.json"
         if f.exists():
-            f.write_text(f.read_text(encoding="utf-8") + entry, encoding="utf-8")
-        else:
-            f.write_text("# Open Issues (human arbitration required)\n" + entry, encoding="utf-8")
-        if self._use_git:
-            self._run_git("add", str(Path("artifacts") / ARTIFACT_FILES["open_issues"]))
-            self._run_git("commit", "-q", "-m", f"raia(open_issues): conflict raised by {raised_by}")
+            f.unlink()
+
+    # -- Evaluation instrumentation -------------------------------------------
+
+    def record_event(self, kind: str, payload: Dict[str, Any]) -> None:
+        """Append one evaluation event (rejection, rating, restore).
+
+        The panel's interaction with the approval gate is the project's
+        evidence for the human-oversight claim, so it is captured as data
+        rather than reconstructed from memory afterwards. Stored outside the
+        artifact tree: it is research data about the session, not part of the
+        project's audit trail.
+        """
+        self.path.mkdir(parents=True, exist_ok=True)
+        log = self.path / "evaluation_events.jsonl"
+        entry = {
+            "at": _dt.datetime.now().isoformat(timespec="seconds"),
+            "kind": kind,
+            **payload,
+        }
+        with log.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+
+    def events(self) -> List[Dict[str, Any]]:
+        log = self.path / "evaluation_events.jsonl"
+        if not log.exists():
+            return []
+        out = []
+        for line in log.read_text(encoding="utf-8").splitlines():
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                continue
+        return out
 
     # -- Audit trail -----------------------------------------------------------
 
     def history(self, limit: int = 50) -> List[Dict[str, str]]:
-        """Return the commit history (newest first) for the audit trail view."""
         if self._use_git:
             res = self._run_git(
                 "log", f"-{limit}", "--pretty=format:%h|%ad|%s", "--date=format:%Y-%m-%d %H:%M"
@@ -183,19 +386,13 @@ class ArtifactRepository:
         if log.exists():
             entries = json.loads(log.read_text())
             return [
-                {"commit": "-", "date": e["at"], "message": f"raia({e['artifact']}) approved"}
+                {"commit": "-", "date": e["at"], "message": e["message"]}
                 for e in reversed(entries)
             ]
         return []
 
     def reset(self) -> None:
-        """Delete this project's repository entirely (a fresh start).
-
-        Used by the hosted evaluation deployment, where each tester works in
-        a private, disposable workspace and may want to restart the
-        walkthrough from zero. Refuses to touch anything that is not a
-        folder inside ``WORKSPACE_DIR``.
-        """
+        """Delete this project's repository entirely (a fresh start)."""
         root = config.WORKSPACE_DIR.resolve()
         target = self.path.resolve()
         if target != root and root in target.parents:
@@ -203,7 +400,10 @@ class ArtifactRepository:
 
     @staticmethod
     def list_projects() -> List[str]:
-        """List project slugs that already exist in the workspace."""
         if not config.WORKSPACE_DIR.exists():
             return []
         return sorted(p.name for p in config.WORKSPACE_DIR.iterdir() if p.is_dir())
+
+
+def _fingerprint(text: str) -> str:
+    return " ".join((text or "").lower().split())[:160]

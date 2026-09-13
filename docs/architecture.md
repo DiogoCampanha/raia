@@ -14,13 +14,14 @@ passes a mandatory human checkpoint (H) before persistence.
 ```mermaid
 flowchart TB
     subgraph UI["Streamlit UI (app.py)"]
-        FORM["Stage input forms"]
-        REVIEW["Human review widget<br/>(approve / edit / reject)"]
-        TRAIL["Audit trail viewer"]
+        FORM["Structured intake forms<br/>(raia/fields.py)"]
+        REVIEW["Human approval gate<br/>draft · evidence · rationale · checks"]
+        ISSUES["Open Issues register"]
+        TRAIL["Audit trail + provenance"]
     end
 
     subgraph PIPE["LangGraph Pipeline (raia/pipeline.py)"]
-        GEN["generate node"]
+        GEN["generate node<br/>(intake → rules → model → checks)"]
         HUM{{"human_review node<br/>interrupt() = H gate"}}
         PERS["persist node"]
         GEN --> HUM
@@ -42,6 +43,11 @@ flowchart TB
         end
     end
 
+    subgraph REASON["Deterministic reasoning (raia/rationale/, raia/validators.py)"]
+        ENG["Rule engines<br/>risk_screen · coverage · story_map<br/>traceability · drift"]
+        VAL["Validators<br/>citations · structure · coverage<br/>reconciliation · evidence discipline"]
+    end
+
     subgraph KNOW["Knowledge layer"]
         RAG["NormativeRetriever<br/>(raia/rag.py)"]
         CHROMA[("Chroma vector store<br/>.chroma/")]
@@ -57,7 +63,13 @@ flowchart TB
     FORM --> PIPE
     REVIEW <--> HUM
     TRAIL --> REPO
+    ISSUES <--> REPO
     GEN --> AGENTS
+    AGENTS -- "1. compute what is enumerable" --> ENG
+    ENG -- "pinned sections + query facets" --> RAG
+    AGENTS -- "3. check the result" --> VAL
+    VAL --> REVIEW
+    ENG --> REVIEW
     AGENTS --> RAG
     RAG --> CHROMA
     CORPUS -- "ingest.py" --> CHROMA
@@ -65,6 +77,35 @@ flowchart TB
     AGENTS -- "read upstream artifacts" --> REPO
     PERS -- "git commit (after approval only)" --> REPO
 ```
+
+## 1b. The Agent Turn (where the reasoning happens)
+
+Every agent runs the same five-step turn. Steps 1, 2 and 4 are deterministic;
+only step 3 calls a model, and step 5 is a person. This is the generalisation
+of the one place in the earliest version where a claim was enforced by code
+rather than requested in a prompt.
+
+```mermaid
+flowchart LR
+    A["1 · Structured intake<br/><i>typed fields a rule reads</i>"] --> B
+    B["2 · Rule engine<br/><i>verdict · tables · pins · checklist</i>"] --> C
+    C["3 · Model pass<br/><i>justify · judge · write</i>"] --> D
+    D["4 · Validators<br/><i>citations · structure · coverage</i>"] --> E
+    E{{"5 · Human approval gate"}}
+    E -- approve --> F[("Git commit:<br/>Markdown + JSON sidecar<br/>+ provenance")]
+    E -- reject + reason code --> C
+    B -. "conflicts" .-> G[["Open Issues register"]]
+    D -. "disagreements" .-> G
+    E -. "arbitration" .-> G
+```
+
+**The division of labour is the point.** Prohibition lists, high-risk area
+lists, obligation tables, coverage matrices, traceability registers and metric
+thresholds are enumerable, so they are computed. Whether a narrow-task
+exemption really holds, whether a harm is significant, whether a lexical match
+is real evidence — those are open-textured, so they are argued by the model and
+settled by a person. Where the two disagree, neither wins silently: the
+disagreement is recorded as an open issue.
 
 ## 2. Class Diagram (code structure)
 
@@ -226,19 +267,37 @@ stateDiagram-v2
 
 ## 5. Design Decisions (traceability to the RAIA architecture)
 
-| Architecture element | Implementation |
-|---|---|
-| Five agents, three layers | `raia/agents/` — one module per agent; `AGENTS` registry in pipeline order |
-| Blackboard shared state, Git-versioned | `raia/repository.py` — every approval = one local Git commit; approval provenance stamped in the artifact header |
-| Mandatory human checkpoints "H" | LangGraph `interrupt()` in the `human_review` node; persistence unreachable without an approve decision |
-| Grounded recommendations via RAG | `raia/rag.py` — Chroma; every chunk carries source/section/authority metadata; agents must cite excerpt tags |
-| Conflict precedence legal > standard > advisory | Authority levels in `config.AUTHORITY_LEVELS`, enforced in the shared system preamble; same-level conflicts routed to "Open Issues" |
-| Data protection | Artifacts stay in local `workspace/`; nothing leaves the machine except LLM API calls; no retraining |
-| Input sanitization | `raia/sanitize.py` — control-char stripping, length caps, deterministic injection-pattern flagging; findings prepended to the draft so they are visible at the H gate; inputs wrapped in neutralized `<user_input>` data envelopes |
-| Provider-agnostic LLM | `raia/llm.py` factory — Claude default, OpenAI or mock via one env var |
-| Anti-ethics-washing Auditor | Auditor prompt forbids "satisfied" verdicts without quoted evidence from versioned artifacts |
-| Hallucination-free metrics (Ops) | Drift Monitor computes fairness numbers with pandas; the LLM only interprets |
+| Architecture element | Implementation | Enforced by |
+|---|---|---|
+| Five agents, three layers | `raia/agents/` — one module per agent; `AGENTS` registry in pipeline order | structure |
+| Blackboard shared state, Git-versioned | `raia/repository.py` — every approval is one commit carrying the Markdown artifact *and* its JSON sidecar; approval provenance stamped in the header | code |
+| Mandatory human checkpoints "H" | `interrupt()` in the `human_review` node; the persist node is unreachable without an approve decision, including on the restart-recovery path | code + smoke test |
+| Agents never trigger agents | stage gates via `AgentSpec.required_upstream`; no agent-to-agent call exists | structure |
+| Grounded recommendations | `raia/rag.py` — excerpts carry source, section, authority and a stable id; agents must cite them | prompt |
+| Citations are real | `validators.check_citations` matches every tag against the excerpts actually retrieved for that run | code |
+| The decisive excerpt is never missing | each decision procedure declares `Pin`s, fetched by exact metadata match and merged ahead of similarity results | code + smoke test |
+| Decision procedures, not prompts | `raia/rationale/` — one rule engine per agent computes the verdict, the tables and the identifiers before any model call | code |
+| Verdicts are reconciled, not averaged | `validators.check_reconciliation` requires the agent to declare agreement or disagreement; disagreement becomes an open issue | code |
+| Conflict precedence legal > standard > advisory | `config.AUTHORITY_LEVELS`, reinforced by excerpt ordering in the prompt | prompt |
+| Same-level conflicts escalated | `ArtifactRepository.append_open_issues` — a tracked register with statuses, populated from both the engine and the approved draft | code |
+| Declared completeness | each engine emits a checklist; `validators.check_coverage` requires a status per key | code |
+| Anti-ethics-washing audit | `rationale/traceability.py` assigns NOT VERIFIED where no evidence exists; `validators.check_forbidden_verdicts` prevents an upgrade | code |
+| Metrics come from code | `rationale/drift.py` computes every figure; `validators.check_numbers` rejects any number not in the computed set | code |
+| Reproducible audit trail | `raia/provenance.py` — model, temperature, corpus version, excerpt ids, prompt hash, attempt, edits, rejection history, check results | code |
+| Data protection | artifacts stay in local `workspace/`; nothing leaves the machine except the model call; no retraining | structure |
+| Input sanitization | `raia/sanitize.py` — control characters, length caps, injection patterns in English and Portuguese; applied to form input *and* to the approved artifact | code |
+| Provider-agnostic LLM | `raia/llm.py` factory and a single `invoke_chat` call site | structure |
 
-**Not yet implemented** (future work tracked in the README): Jira/Confluence
-MCP connectors, and least-privilege tool-permission hardening (a
-continuation of the input sanitization implemented in `raia/sanitize.py`).
+**Not yet implemented** (tracked in the README roadmap): ingesting the official
+legal texts with article-level citation metadata, Jira/Confluence MCP
+connectors, and least-privilege tool-permission hardening.
+
+**Known limitations, stated plainly.** The corpus is a set of curated summaries
+prepared for this project, so a citation resolves to a section of a summary
+rather than to the official wording; sources in `config.DERIVED_SOURCES` are
+labelled as such in the prompt and at the approval gate. Injection detection is
+regex-based and will not catch a careful paraphrase — the controls that carry
+the weight are the approval gate and the citation validator, not the pattern
+list. The lexical matchers in the coverage and traceability engines are
+deliberately coarse and conservative: they produce candidate gaps and
+conservative verdicts for a human to review, and are not evidence of absence.
