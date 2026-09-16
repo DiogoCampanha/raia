@@ -152,6 +152,11 @@ def collect(
     for name, raw in _flatten(secrets):
         if raw is None or raw == "":
             continue
+        if name.startswith("AUTH_"):
+            # Streamlit's own login configuration ([auth] block). Streamlit
+            # reads it from st.secrets directly; it has no business in the
+            # process environment.
+            continue
         value = _clean(raw)
 
         if name in _ANTHROPIC_ALIASES:

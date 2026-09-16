@@ -96,6 +96,12 @@ Recorded so the log stays honest about its own errors.
 | D6 | Replace "answers as thorough as possible" with declared completeness. | Long drafts degrade review quality at the approval gate, which is the architecture's only real safety net. Each agent now publishes the checklist it must cover and declares, per item, whether it was covered, is not applicable, or is not grounded in the retrieved excerpts. |
 | D7 | Keep rules for what is enumerable; leave open-textured judgement to the model. | Prohibition lists, high-risk area lists and obligation tables are enumerable and belong in code. Narrow-task exemptions and "significant risk of harm" are judgement calls a rule table would get confidently wrong. |
 | D8 | When the rule engine and the model disagree, surface both and open an issue. | Never average them, never let either win silently. This reconciliation channel is the mechanism that makes grounded-and-human-arbitrated concrete rather than aspirational. |
+| D9 | Organize the software around projects owned by signed-in people, and land it **before** the panel. | A browser session was the only unit of work, so nobody could keep work across days or hold two projects at different stages. The panel had not started, so it evaluates this build and D1 still holds. |
+| D10 | Google sign-in via Streamlit's native OpenID Connect, not a home-made password system. | No password storage, resets or brute-force protection to get wrong; the verified email becomes the approver identity. |
+| D11 | PostgreSQL (Neon) for hosted deployments; Git per project stays the local backend. | The hosted disk is erased on redeploy. Both backends share every behaviour above the storage primitives, and the database backend keeps tamper evidence with a hash chain. |
+| D12 | Build reviewer invitations now: roles owner / editor / reviewer, plus an optional second-approver rule. | Separation of duties at the approval gate is a responsible-AI control in its own right, and it is cheap once identity exists. |
+| D13 | Evaluation events stay inside each project; research exports are pseudonymized. | Keeps the evidence next to the work it describes, and keeps names and emails out of the dataset. |
+| D14 | Replace the per-stage rating widget with one highlighted *Rate your experience* page. | One submission rating every stage gives comparable, complete responses and stops rating prompts from interrupting the walkthrough. |
 
 ---
 
@@ -104,6 +110,70 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-16 — Users, projects and durable storage on branch `projects`
+
+Decisions D9–D14.
+
+#### What was wrong
+
+- **UX-P1** The unit of work was the browser session: `session_project()` built a
+  throwaway project from a `?s=` URL parameter. Nobody could return to work,
+  hold two projects, or share one.
+- **SEC-P1** That URL parameter was the only access control — anyone with the
+  link opened the workspace.
+- **SEC-P2** Drafts and form answers were keyed by agent in `st.session_state`,
+  not by project, and form answers were never stored server-side.
+- **ACC-P1** The approver at every gate was a typed name.
+- **DEP-P1** The hosted filesystem and the in-memory checkpointer lose all data
+  on redeploy.
+
+#### What changed
+
+- `raia/auth.py` — Google sign-in through `st.login`; a `dev` identity for
+  laptops and tests; fails closed on a database-backed deployment without
+  sign-in.
+- `raia/db.py` — one small SQL layer over SQLite (local) and PostgreSQL
+  (hosted); schema created on start.
+- `raia/repository.py` — split into `BaseRepository` (all blackboard behaviour)
+  and the Git backend; `raia/storage.py` adds `DatabaseRepository`
+  (append-only, hash-chained, `verify_history()`), backend selection and the
+  PostgreSQL graph checkpointer.
+- `raia/projects.py` — users, projects, memberships, invitations by email,
+  roles, second-approver rule, derived stage summary, daily model-call
+  allowance, experience ratings, pseudonymized research export, account and
+  project deletion. Every operation authorized in one place.
+- `raia/pipeline.py` — runs carry the actor; drafts record who ran them and the
+  inputs used; the human-authored product brief is now committed inside the
+  classification's approval node instead of by the UI afterwards; approver id
+  and runner id land in provenance and events.
+- `app.py` — sign-in and consent pages; *My projects* (invitations, create,
+  demo project, progress cards); project switcher; project-scoped widget and
+  session keys; answers autosaved to the project; navigation by stable page
+  ids (approving a stage no longer resets the sidebar selection); *People &
+  settings*; audit trail shows the integrity check and attributes activity;
+  per-stage rating widget removed; highlighted *⭐ Rate your experience* page
+  rating every stage in one form; *Account & privacy* with account deletion;
+  admin-only research data page.
+- `raia/export.py` — project export with integrity statement, hash chain and
+  pseudonymized events.
+
+#### Tests
+
+- `tests/smoke_test.py` and `tests/test_engines.py` pass unchanged.
+- `tests/test_projects.py` (new) — isolation for eleven operations, a foreign
+  project indistinguishable from a missing one, independence of two projects at
+  different stages, identity-bound approvals (a forged approver name is
+  ignored), invitations (single-use, addressee-only), reviewer restrictions,
+  last-owner guard, second approver including after a restore, durability
+  across a simulated restart, tamper detection on content and on messages,
+  usage allowance, ratings, no identity leaks in research or project exports,
+  leaving and deleting, fail-closed sign-in configuration. Run on three
+  configurations: Git + SQLite, database store on SQLite, and PostgreSQL 16
+  (where the paused graph thread itself survives the restart).
+- `tests/test_ui.py` (new) — headless walkthrough: consent, demo project, run
+  and approve, second project with no bleed-through, switching, invitation,
+  whole-experience rating, audit trail attribution.
+
 ### 2026-09-13 — Hardening pass on branch `hardening`
 
 The whole of P0 plus the depth work from P1, implemented together because the

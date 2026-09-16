@@ -5,8 +5,11 @@ Responsible AI across the software development life cycle, implemented as a
 working proof of concept.
 
 Five specialized agents, organized in three layers (Product / Dev / Ops),
-communicate **exclusively** through a Git-versioned shared artifact repository
-and are separated by **mandatory human approval gates**. Recommendations are
+communicate **exclusively** through a versioned shared artifact repository
+and are separated by **mandatory human approval gates**. Work is organized in
+**projects**: each person signs in, and every project has its own stages,
+drafts, answers, open issues and audit trail, shared only with the people
+invited to it. Recommendations are
 grounded by retrieval over a normative corpus — four consolidated frameworks
 (IEEE 7000, NIST AI RMF, Microsoft RAI Standard v2, ECCOLA) and two legal texts
 (EU AI Act, Brazilian PL 2338/2023).
@@ -52,6 +55,12 @@ python ingest.py
 streamlit run app.py
 ```
 
+Locally there is nothing else to configure: users and projects live in a
+SQLite file under `workspace/`, each project's blackboard is a Git repository,
+and you are signed in as a fixed local developer identity. A shared deployment
+uses Google sign-in and PostgreSQL instead — see
+[Hosted deployment](#hosted-deployment-streamlit-community-cloud--neon--google-sign-in).
+
 ### No API key? Try mock mode
 
 Set `RAIA_LLM_PROVIDER=mock` in `.env`. The mock model reads the output
@@ -64,6 +73,11 @@ artifact.
 
 ## Using RAIA
 
+0. **Sign in and open a project.** *My projects* lists the projects you own or
+   were invited to, with each one's progress derived from its approved
+   artifacts. Create one, start from the pre-filled demo project, or accept an
+   invitation. Everything below happens inside the open project, and your form
+   answers are saved to it as you type.
 1. **Fill in the structured form.** The questions are the ones that decide the
    outcome — your role, target markets, purpose area, decision autonomy, data
    categories. Required fields are marked; the run is refused without them.
@@ -75,11 +89,18 @@ artifact.
    Above them, the result of the automated checks.
 4. **Approve or reject.** Rejections carry a reason code and free-text
    feedback, both recorded. Approval commits the Markdown artifact, its
-   structured sidecar and its provenance in one commit.
+   structured sidecar and its provenance in one recorded version, attributed to
+   your signed-in identity — never to a typed name.
 5. **Arbitrate the open issues.** Conflicts land in a register with a status
-   you set: resolved, or accepted risk, with a note and your name.
-6. **Export the session** before you finish — artifacts, structured records,
-   commit history and feedback in one zip.
+   you set: resolved, or accepted risk, with a note.
+6. **Work with others.** Under *People & settings* an owner invites people by
+   their sign-in email as **editor** (runs agents, approves) or **reviewer**
+   (reviews and approves, does not run agents), and can require a **second
+   approver**, so the person who ran a stage cannot approve it.
+7. **Rate your experience** — one page, highlighted in the sidebar, rates every
+   stage and RAIA as a whole in a single submission.
+8. **Export a project** — artifacts, structured records, version history with
+   its integrity check, and pseudonymized activity, in one zip.
 
 ## How Reliability Is Handled
 
@@ -95,8 +116,15 @@ artifact.
   advisory**) for cross-level conflicts; same-level conflicts, rule-engine
   disagreements and human-only decisions become tracked entries in the
   **Open Issues** register, each with a status and an arbitration note.
-- **(d) Data protection** — project artifacts stay in `workspace/`
-  (git-ignored); nothing is used to retrain models.
+- **(d) Data protection and access** — every project operation passes one
+  authorization check in the service layer (`ProjectService.authorize`), not
+  just in the UI; a foreign project is indistinguishable from a missing one.
+  Sign-in is delegated to Google, so no password is stored. Research exports
+  replace people with keyed participant codes. Nothing is used to retrain
+  models.
+- **(d′) Tamper-evident history** — locally every approval is a Git commit; in
+  the database every recorded version is hash-chained to its parent, and the
+  audit trail and each export state whether the chain verifies.
 - **(e) Input sanitization** — free text is cleaned and screened for
   prompt-injection patterns in English and Portuguese. Findings are flagged,
   never silently removed. The approved draft is sanitized on its way into the
@@ -137,10 +165,14 @@ raia/
 │   │   └── principles.py      #   the seven adopted principles, machine-readable
 │   ├── validators.py          # citations, structure, coverage, reconciliation
 │   ├── provenance.py          # the run record stamped into every artifact
-│   ├── repository.py          # Git blackboard: artifacts, sidecars, open issues
+│   ├── repository.py          # blackboard behaviour + the Git backend
+│   ├── storage.py             # backend selection; hash-chained database blackboard
+│   ├── db.py                  # SQLite locally, PostgreSQL hosted — one SQL dialect
+│   ├── projects.py            # people, projects, roles, invitations, authorization
+│   ├── auth.py                # Google sign-in via Streamlit, or a local dev identity
 │   ├── pipeline.py            # the graph: generate → human gate → persist
 │   ├── sanitize.py            # injection screening (EN + PT), flag-never-delete
-│   ├── export.py              # one-zip session export
+│   ├── export.py              # one-zip project export
 │   └── agents/                # the five agent specifications
 ├── corpus/                    # curated normative summaries (extensible)
 ├── docs/
@@ -149,7 +181,9 @@ raia/
 │   └── TESTERS.md             # guided walkthrough for the evaluation panel
 └── tests/
     ├── smoke_test.py          # offline end-to-end, including the invariants
-    └── test_engines.py        # deterministic unit checks
+    ├── test_engines.py        # deterministic unit checks
+    ├── test_projects.py       # isolation, roles, durability, tamper evidence
+    └── test_ui.py             # headless walkthrough of the project-based UI
 ```
 
 ## Extending the Normative Corpus
@@ -178,35 +212,55 @@ only when its file really is the official wording.
 | `RAIA_RAG_CHUNK_SIZE` / `_OVERLAP` | `1800` / `200` | chars, at ingestion |
 | `RAIA_MIN_GROUP_SAMPLES` | `30` | below this, a group figure is indicative only |
 | `RAIA_DEFAULT_PARITY_THRESHOLD` | `0.1` | used only when no approved artifact sets one |
-| `RAIA_WORKSPACE_DIR` | `./workspace` | per-project git blackboards (git-ignored) |
+| `RAIA_WORKSPACE_DIR` | `./workspace` | local git blackboards and SQLite registry (git-ignored) |
+| `RAIA_DATABASE_URL` | SQLite under the workspace | PostgreSQL URL (e.g. Neon) for a shared deployment |
+| `RAIA_STORE` | `git` locally, `database` with PostgreSQL | where project blackboards live |
+| `RAIA_AUTH` | `google` if `[auth]` is set, else `dev` | a PostgreSQL deployment never falls back to `dev` |
+| `RAIA_ADMIN_EMAILS` | — | may download the pseudonymized research dataset |
+| `RAIA_PSEUDONYM_KEY` | — | keyed participant codes, stable across exports |
+| `RAIA_MAX_RUNS_PER_DAY` | `60` | model calls per person per UTC day; `0` = unlimited |
 | `RAIA_CORPUS_DIR` / `RAIA_CHROMA_DIR` | `./corpus` / `./.chroma` | |
 | `RAIA_FAKE_EMBED` | `0` | `1` = hash embeddings for CI / offline |
 
-## Hosted Deployment for Testers (Streamlit Community Cloud)
+## Hosted Deployment (Streamlit Community Cloud + Neon + Google sign-in)
 
-Self-bootstrapping: platform secrets are bridged into configuration, the RAG
-index builds itself on first start, a modern sqlite is shimmed in, and every
-browser session gets its own private, disposable workspace so concurrent
-testers never collide.
-
-Deploy from GitHub with `app.py` as the entry point, and set one secret:
+A hosted Streamlit process has a disposable disk, so a shared deployment keeps
+everything — users, projects, artifacts, paused reviews — in PostgreSQL. Three
+pieces of configuration, all pasted into the app's **Secrets**:
 
 ```toml
 ANTHROPIC_API_KEY = "sk-..."
+
+# 1. Durable storage (Neon: Dashboard → Connect; prefer the direct, non-pooler host)
+RAIA_DATABASE_URL = "postgresql://user:password@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require"
+
+# 2. Google sign-in (Google Cloud Console → APIs & Services → Credentials → OAuth client ID, "Web application")
+[auth]
+redirect_uri = "https://<your-app>.streamlit.app/oauth2callback"
+cookie_secret = "<a long random string>"
+client_id = "<client id>"
+client_secret = "<client secret>"
+server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 ```
 
-Optional overrides: `RAIA_LLM_MODEL`, `RAIA_LLM_PROVIDER`.
+Plus, recommended: `RAIA_ADMIN_EMAILS` (who may export research data) and
+`RAIA_PSEUDONYM_KEY` (a long random string). Tables are created on first
+start; there is no migration step to run.
 
-⚠️ The hosted filesystem is ephemeral — workspaces reset on redeploy, which is
-fine for evaluation sessions. Testers should use **Export this session** before
-they finish. If the app restarts while a draft is under review, the draft is
-recovered from disk and the review re-enters the approval gate; nothing is ever
-persisted without an approval.
+The app **fails closed**: with a database configured and no sign-in, it refuses
+to open rather than serving projects to anyone with the link. A review paused
+at an approval gate is stored by the PostgreSQL graph checkpointer, so a
+restart does not lose it; the stored-draft restore path remains as a second
+line of defence and still re-enters the gate.
 
 ## Testing
 
 ```bash
 RAIA_LLM_PROVIDER=mock RAIA_FAKE_EMBED=1 python tests/smoke_test.py
+python tests/test_projects.py                      # git blackboards + SQLite
+RAIA_STORE=database python tests/test_projects.py  # database blackboard on SQLite
+RAIA_DATABASE_URL=postgresql://... python tests/test_projects.py   # on PostgreSQL
+python tests/test_ui.py                            # headless UI walkthrough
 ```
 
 Runs fully offline. Covers ingestion, pinned retrieval, stage gates, required
@@ -223,6 +277,8 @@ fabricated citation is detected.
 - [x] Open Issues register with arbitration
 - [x] Reproducible provenance and structured artifact sidecars
 - [x] Input sanitization against prompt injection, including the artifact path
+- [x] Projects owned by signed-in people, with editor/reviewer invitations and an optional second approver
+- [x] Durable, tamper-evident storage for hosted deployments (PostgreSQL, hash-chained versions)
 - [ ] Ingest the official legal texts with article-level citation metadata
 - [ ] Jira / Confluence integration via MCP connectors
 - [ ] Least-privilege tool-permission hardening
