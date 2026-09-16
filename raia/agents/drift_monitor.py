@@ -1,73 +1,42 @@
 """
-Drift Monitor agent (Ops layer -- Deployment / monitoring).
+Drift Monitor agent (Ops layer — Deployment / monitoring).
 
 RAIA agent specification:
-  Inputs   : production telemetry, fairness metrics
+  Inputs   : production telemetry, operational context, and the approved
+             classification and ethical requirements
   Outputs  : drift alerts focused on fairness and representativeness
-  Grounding: NIST *Measure* / *Manage*
+  Grounding: NIST AI RMF MEASURE / MANAGE
 
-Unlike the other agents, part of this agent's analysis is DETERMINISTIC:
-fairness metrics are computed with pandas from the telemetry CSV before the
-LLM is asked to interpret them. Numbers come from code, not from the model
--- another hallucination-mitigation measure: the LLM interprets and
-contextualizes; it never invents metric values.
+This agent's analysis was always deterministic, and it became the pattern for
+the rest of the system. It now also computes what used to be left implicit: the
+threshold it judges against is parsed out of the approved upstream artifacts
+rather than inferred from prose, breaches and trends are computed, alert
+severity follows a rule, and any group below a minimum sample size is labelled
+as unable to support a conclusion. Every figure in the narrative is checked
+against the computed set — the model interprets numbers, it never produces one.
 """
 
-import io
-from typing import Dict, List, Optional
+from typing import Any, Dict
 
-import pandas as pd
+from .. import validators
+from ..fields import InputField
+from ..rationale import drift
+from ..rationale.types import RationaleResult
+from .base import AgentSpec, BaseAgent
 
-from .base import AgentSpec, BaseAgent, InputField
+G_TELEMETRY = "1 · Telemetry"
+G_CONTEXT = "2 · Operational context"
 
 
 def compute_fairness_summary(csv_text: str) -> str:
-    """Compute per-window fairness metrics from telemetry CSV.
+    """Per-window fairness metrics as a Markdown table.
 
-    Expected columns (header required):
-        window          -- time window label (e.g. 2026-05, week-23)
-        group           -- demographic group (e.g. gender=F, race=black)
-        selection_rate  -- fraction of positive outcomes for the group (0..1)
-        accuracy        -- (optional) model accuracy for the group
-
-    Returns a Markdown table with, per window:
-        * demographic parity difference (max - min selection rate);
-        * the most/least selected groups;
-        * accuracy gap when accuracy is provided.
-    Raises ValueError with a friendly message when the CSV is malformed.
+    Kept as a standalone entry point: metric computation is the part of this
+    system that must be reproducible outside the UI, the graph and the model.
     """
-    try:
-        df = pd.read_csv(io.StringIO(csv_text.strip()))
-    except Exception as exc:
-        raise ValueError(f"Could not parse telemetry CSV: {exc}") from exc
-
-    required = {"window", "group", "selection_rate"}
-    missing = required - set(df.columns)
-    if missing:
-        raise ValueError(
-            f"Telemetry CSV is missing required column(s): {', '.join(sorted(missing))}. "
-            "Expected header: window,group,selection_rate[,accuracy]"
-        )
-
-    rows: List[str] = []
-    has_acc = "accuracy" in df.columns
-    header = "| Window | DP difference | Highest group | Lowest group |"
-    header += " Accuracy gap |" if has_acc else ""
-    sep = "|---" * (5 if has_acc else 4) + "|"
-
-    for window, g in df.groupby("window", sort=True):
-        sr = g.set_index("group")["selection_rate"]
-        dp_diff = float(sr.max() - sr.min())
-        hi, lo = sr.idxmax(), sr.idxmin()
-        row = (
-            f"| {window} | {dp_diff:.3f} | {hi} ({sr.max():.3f}) | {lo} ({sr.min():.3f}) |"
-        )
-        if has_acc:
-            acc = g.set_index("group")["accuracy"]
-            row += f" {float(acc.max() - acc.min()):.3f} |"
-        rows.append(row)
-
-    return "\n".join([header, sep, *rows])
+    thresholds = {"parity_difference": {"value": None, "source": "none", "quote": ""}}
+    analysis = drift.analyse(csv_text, {})
+    return drift.summary_table(analysis, thresholds["parity_difference"]["value"])
 
 
 class DriftMonitorAgent(BaseAgent):
@@ -77,65 +46,71 @@ class DriftMonitorAgent(BaseAgent):
         layer="Ops",
         sdlc_phase="Deployment and monitoring",
         description=(
-            "Watches production telemetry for fairness and representativeness "
-            "drift, instantiating the NIST Measure and Manage functions."
+            "Watches production telemetry for fairness and representativeness drift, "
+            "computing every metric in code and letting the model interpret only."
+        ),
+        intro=(
+            "Every number below the fold is computed from your telemetry, including the "
+            "threshold — which is read out of your approved ethical requirements rather than "
+            "assumed. Include an `n` column: without group sizes, a parity gap is a question, "
+            "not a finding."
         ),
         grounding_sources=["nist_ai_rmf"],
-        upstream_keys=["risk_classification", "requirements_review"],
-        required_upstream=["risk_classification"],  # Ops adoptable after Product
+        upstream_keys=["risk_classification", "requirements_review", "refined_stories"],
+        required_upstream=["risk_classification"],
         output_key="drift_report",
+        engine=drift.run,
+        verdict_keys=["windows"],
+        required_sections=[
+            "Drift Alerts",
+            "Fairness & Representativeness Analysis",
+            "Recommended Actions",
+            "Open Issues",
+        ],
         input_fields=[
             InputField(
-                key="telemetry_csv",
-                label="Production telemetry (CSV)",
-                help=(
-                    "Columns: window,group,selection_rate[,accuracy]. "
-                    "One row per time-window x demographic group."
-                ),
-                kind="csv",
+                key="telemetry_csv", label="Production telemetry", kind="csv", group=G_TELEMETRY,
+                required=True, height=200, file_types=("csv", "txt"),
+                help="Columns: window,group,selection_rate[,accuracy][,n]. One row per time "
+                     "window and demographic group. Upload a file or paste the rows.",
             ),
             InputField(
-                key="context_notes",
-                label="Operational context (optional)",
-                help="Anything the on-call team knows: data source changes, seasonality, incidents.",
+                key="incident", label="Did anything happen in this period?", kind="select",
+                group=G_CONTEXT, required=True, options=drift.INCIDENT_OPTIONS, default="none",
+                help="An operational event changes how a metric movement should be read, and is "
+                     "escalated for human judgement rather than explained away.",
+            ),
+            InputField(
+                key="context_notes", label="Operational context", kind="textarea", group=G_CONTEXT,
+                height=120,
+                help="Anything the on-call team knows: data-source changes, seasonality, "
+                     "releases, backfills.",
             ),
         ],
         task_prompt=(
-            "Analyze the fairness metrics computed below (computed by code from "
-            "the raw telemetry — treat the numbers as ground truth; NEVER alter "
-            "or invent metric values). Compare drift across windows against any "
-            "thresholds defined in the upstream ethical requirements (e.g. "
-            "demographic parity difference <= 0.1). Apply the NIST AI RMF "
-            "MEASURE and MANAGE functions. Structure as:\n"
-            "## Drift Alerts\n"
-            "(one alert per violated or trending-toward-violation threshold, with "
-            "severity and the NIST practice cited)\n"
-            "## Fairness & Representativeness Analysis\n"
-            "(interpretation of the computed metrics across windows)\n"
-            "## Recommended Actions\n"
-            "(MANAGE-grounded responses: e.g. retraining triggers, human review "
-            "of affected decisions, rollback criteria)\n"
-            "## Open Issues\n"
-            "(ambiguities requiring human arbitration)"
+            "Interpret the fairness metrics computed from the telemetry. The numbers, the "
+            "threshold, the breaches, the trend and the sample-adequacy flags are all given to "
+            "you and are ground truth: never restate a different figure, never estimate one, "
+            "and never introduce a number that is not in the computed table. Your job is "
+            "meaning, not measurement.\n\n"
+            "Under **Drift Alerts**, raise one alert per computed breach — the window, the "
+            "severity the engine assigned, what it means for affected people — citing the "
+            "management practice that grounds the response.\n\n"
+            "Under **Fairness & Representativeness Analysis**, read the movement across "
+            "windows: the direction of the trend, whether the population mix shifted, and "
+            "whether the operational context plausibly explains it. Where a group's sample is "
+            "too small to conclude from, say so plainly rather than hedging.\n\n"
+            "Under **Recommended Actions**, give responses grounded in the retrieved practices: "
+            "what to investigate, what to retrain, which decisions to review by hand, what "
+            "would justify a rollback.\n\n"
+            "Under **Open Issues**, carry forward every issue the engine raised, plus anything "
+            "the telemetry cannot settle."
         ),
     )
 
-    def run(
-        self,
-        repo,
-        inputs: Dict[str, str],
-        feedback: Optional[List[str]] = None,
-    ) -> str:
-        """Compute fairness metrics deterministically, then delegate to the LLM."""
-        csv_text = inputs.get("telemetry_csv", "")
-        try:
-            summary = compute_fairness_summary(csv_text)
-            summary_block = f"### Computed fairness metrics (by code)\n\n{summary}"
-        except ValueError as exc:
-            summary_block = f"### Telemetry problem\n\n{exc}"
-
-        # Inject the computed table as an extra input the LLM must rely on.
-        enriched = dict(inputs)
-        enriched["computed_metrics"] = summary_block
-        # Temporarily surface it as an input field so BaseAgent renders it.
-        return super().run(repo, {**enriched, "telemetry_csv": summary_block}, feedback)
+    def extra_checks(
+        self, report: validators.ValidationReport, draft: str, rationale: RationaleResult
+    ) -> None:
+        allowed = (rationale.data or {}).get("allowed_numbers") or []
+        if allowed:
+            report.add(validators.check_numbers(draft, allowed, "Reported figures"))
