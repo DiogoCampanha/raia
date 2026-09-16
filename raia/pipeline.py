@@ -38,13 +38,12 @@ anything ever reaches it. Nothing is written that a human did not approve.
 
 from typing import Any, Dict, List, Optional, TypedDict
 
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
 from . import validators
 from .agents import AGENTS
-from .repository import ArtifactRepository
+from .storage import build_checkpointer, open_repository
 
 
 class StageState(TypedDict, total=False):
@@ -52,6 +51,7 @@ class StageState(TypedDict, total=False):
 
     project: str
     agent_key: str
+    actor: Dict[str, Any]           # the authenticated person who started the run
     inputs: Dict[str, Any]
     preset: Dict[str, Any]          # restored review payload, used once
     run: Dict[str, Any]             # latest draft + evidence + checks
@@ -79,7 +79,7 @@ def _generate(state: StageState) -> StageState:
         payload["attempt"] = payload.get("attempt", attempt)
         return {"run": payload, "preset": {}}
 
-    repo = ArtifactRepository(state["project"])
+    repo = open_repository(state["project"])
     result = agent.run(repo, state["inputs"], feedback=state.get("feedback") or [])
     payload = result.to_payload(
         agent_key=agent.spec.key,
@@ -89,6 +89,13 @@ def _generate(state: StageState) -> StageState:
     )
     payload["required_sections"] = list(agent.spec.required_sections)
     payload["checklist_keys"] = result.rationale.checklist_keys() if result.rationale else []
+    # Who ran the stage and with which answers. The first lets a project
+    # require that a different person approves; the second lets a restored
+    # review still record the human-authored brief it was based on.
+    actor = state.get("actor") or {}
+    payload["run_by"] = actor.get("id", "")
+    payload["run_by_name"] = actor.get("name", "")
+    payload["inputs"] = state.get("inputs") or {}
     repo.save_pending(agent.spec.key, payload)
     return {"run": payload}
 
@@ -129,9 +136,9 @@ def _revise(state: StageState) -> StageState:
             "by": decision.get("approver", "reviewer"),
         }
     )
-    ArtifactRepository(state["project"]).record_event(
+    open_repository(state["project"]).record_event(
         "rejection",
-        {"agent": state["agent_key"], **rejections[-1]},
+        {"agent": state["agent_key"], "user": decision.get("approver_id", ""), **rejections[-1]},
     )
     return {"feedback": feedback, "rejections": rejections}
 
@@ -139,7 +146,7 @@ def _revise(state: StageState) -> StageState:
 def _persist(state: StageState) -> StageState:
     """Write the approved artifact to the Git-versioned blackboard."""
     agent = AGENTS[state["agent_key"]]
-    repo = ArtifactRepository(state["project"])
+    repo = open_repository(state["project"])
     run = state.get("run") or {}
     decision = state.get("decision") or {}
 
@@ -164,6 +171,10 @@ def _persist(state: StageState) -> StageState:
         validation=report.to_dict(),
         rejection_history=state.get("rejections") or [],
     )
+    if decision.get("approver_id"):
+        record["approval"]["approver_id"] = decision["approver_id"]
+    if run.get("run_by"):
+        record["approval"]["run_by"] = run["run_by"]
 
     commit = repo.save_artifact(
         agent.spec.output_key,
@@ -185,9 +196,14 @@ def _persist(state: StageState) -> StageState:
             issues, raised_by=agent.spec.name, artifact=agent.spec.output_key, commit=commit
         )
 
+    if agent.spec.key == "risk_classifier":
+        _persist_product_brief(repo, agent, run.get("inputs") or state.get("inputs") or {},
+                               approver, decision.get("approver_id", ""))
+
     repo.record_event(
         "approval",
         {
+            "user": decision.get("approver_id", ""),
             "agent": agent.spec.key,
             "commit": commit,
             "attempt": run.get("attempt", 1),
@@ -197,6 +213,30 @@ def _persist(state: StageState) -> StageState:
         },
     )
     return {"commit": commit, "approved_content": content}
+
+
+def _persist_product_brief(repo, agent, inputs: Dict[str, Any], approver: str,
+                           approver_id: str) -> None:
+    """Record the human-authored brief alongside the approved classification.
+
+    This is the one artifact a person writes rather than an agent. It is
+    committed inside the same approval that persists the classification, so it
+    passes through the gate like everything else and lands in the audit trail
+    next to the output it produced.
+    """
+    fields = [f for f in agent.spec.input_fields if f.is_text and f.group.endswith("The product")]
+    parts = [f"## {f.label}\n{inputs[f.key]}" for f in fields if inputs.get(f.key)]
+    if not parts:
+        return
+    structured = {f.key: inputs.get(f.key) for f in agent.spec.input_fields}
+    repo.save_artifact(
+        "product_brief",
+        "\n\n".join(parts),
+        approved_by=approver or "author",
+        structured={"intake": structured, "note": "human-authored input, not agent output"},
+        run_provenance={"rationale_engine": None, "attempt": 1,
+                        "approval": {"approved_by": approver, "approver_id": approver_id}},
+    )
 
 
 def revalidate(content: str, run: Dict[str, Any]) -> validators.ValidationReport:
@@ -225,7 +265,7 @@ def _rationale_stub(run: Dict[str, Any]):
     )
 
 
-def build_stage_graph(checkpointer: Optional[MemorySaver] = None):
+def build_stage_graph(checkpointer: Any = None):
     """Compile the generate -> review -> persist graph (the RAIA stage pattern)."""
     g = StateGraph(StageState)
     g.add_node("generate", _generate)
@@ -241,7 +281,11 @@ def build_stage_graph(checkpointer: Optional[MemorySaver] = None):
     g.add_edge("revise", "generate")
     g.add_edge("persist", END)
 
-    return g.compile(checkpointer=checkpointer or MemorySaver())
+    if checkpointer is None:
+        from langgraph.checkpoint.memory import MemorySaver
+
+        checkpointer = MemorySaver()
+    return g.compile(checkpointer=checkpointer)
 
 
 # ---------------------------------------------------------------------------
@@ -252,8 +296,8 @@ def build_stage_graph(checkpointer: Optional[MemorySaver] = None):
 class StageRunner:
     """Small facade so the UI never touches LangGraph internals."""
 
-    def __init__(self) -> None:
-        self._checkpointer = MemorySaver()
+    def __init__(self, checkpointer: Any = None) -> None:
+        self._checkpointer = checkpointer if checkpointer is not None else build_checkpointer()
         self._graph = build_stage_graph(self._checkpointer)
 
     def _config(self, project: str, agent_key: str) -> dict:
@@ -274,9 +318,10 @@ class StageRunner:
     def check_gate(self, project: str, agent_key: str) -> List[str]:
         """Return missing prerequisite artifacts (stage gate), if any."""
         agent = AGENTS[agent_key]
-        return agent.missing_prerequisites(ArtifactRepository(project))
+        return agent.missing_prerequisites(open_repository(project))
 
-    def start(self, project: str, agent_key: str, inputs: Dict[str, Any]) -> dict:
+    def start(self, project: str, agent_key: str, inputs: Dict[str, Any],
+              actor: Optional[Dict[str, Any]] = None) -> dict:
         """Kick off one agent run; returns the review payload."""
         missing = self.check_gate(project, agent_key)
         if missing:
@@ -289,6 +334,7 @@ class StageRunner:
                 "project": project,
                 "agent_key": agent_key,
                 "inputs": inputs,
+                "actor": actor or {},
                 "feedback": [],
                 "rejections": [],
             },
@@ -308,7 +354,8 @@ class StageRunner:
             {
                 "project": project,
                 "agent_key": agent_key,
-                "inputs": inputs or {},
+                "inputs": inputs or payload.get("inputs") or {},
+                "actor": {"id": payload.get("run_by", ""), "name": payload.get("run_by_name", "")},
                 "preset": payload,
                 "feedback": [],
                 "rejections": [],

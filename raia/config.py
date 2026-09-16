@@ -91,6 +91,49 @@ FAKE_EMBEDDINGS: bool = os.getenv("RAIA_FAKE_EMBED", "0") == "1"
 WORKSPACE_DIR: Path = Path(os.getenv("RAIA_WORKSPACE_DIR", PROJECT_ROOT / "workspace"))
 
 # ---------------------------------------------------------------------------
+# Users, projects and storage
+# ---------------------------------------------------------------------------
+
+#: Where users, projects, memberships, invitations and ratings live — and, when
+#: ``STORE_BACKEND`` is ``database``, the artifacts themselves. A PostgreSQL URL
+#: (e.g. a Neon connection string) on a hosted deployment; a local SQLite file
+#: otherwise, so a laptop needs nothing installed.
+DATABASE_URL: str = os.getenv("RAIA_DATABASE_URL", "") or f"sqlite:///{WORKSPACE_DIR / 'raia.db'}"
+
+#: Where a project's artifacts, drafts and events are stored:
+#:  * ``git``      — one Git repository per project under WORKSPACE_DIR (local default);
+#:  * ``database`` — append-only, hash-chained tables in DATABASE_URL (hosted default).
+#: A hosted filesystem is wiped on every redeploy, so a PostgreSQL URL selects
+#: ``database`` unless told otherwise.
+STORE_BACKEND: str = os.getenv(
+    "RAIA_STORE", "database" if DATABASE_URL.startswith(("postgres://", "postgresql://")) else "git"
+).lower()
+
+#: How people sign in: ``google`` (OpenID Connect via Streamlit's native login)
+#: or ``dev`` (a single fixed local user, for laptops and tests only). Empty
+#: means: ``google`` when an ``[auth]`` block is configured, ``dev`` otherwise —
+#: except that a PostgreSQL-backed deployment never falls back to ``dev``.
+AUTH_MODE: str = os.getenv("RAIA_AUTH", "").lower()
+
+#: The identity used in ``dev`` mode.
+DEV_USER_EMAIL: str = os.getenv("RAIA_DEV_USER_EMAIL", "developer@raia.local")
+DEV_USER_NAME: str = os.getenv("RAIA_DEV_USER_NAME", "Local developer")
+
+#: Accounts allowed to download the pseudonymized research dataset.
+ADMIN_EMAILS = {
+    e.strip().lower() for e in os.getenv("RAIA_ADMIN_EMAILS", "").split(",") if e.strip()
+}
+
+#: Model calls (runs and regenerations) one person may trigger per UTC day.
+#: Protects the deployment's API key from a runaway session. 0 disables it.
+MAX_RUNS_PER_DAY: int = int(os.getenv("RAIA_MAX_RUNS_PER_DAY", "60"))
+
+#: Secret used to derive stable pseudonyms in research exports. Without it the
+#: pseudonyms are still one-way, but a fixed secret keeps them stable across
+#: exports and prevents anyone re-deriving them from a known email address.
+PSEUDONYM_KEY: str = os.getenv("RAIA_PSEUDONYM_KEY", "")
+
+# ---------------------------------------------------------------------------
 # Analysis thresholds
 # ---------------------------------------------------------------------------
 

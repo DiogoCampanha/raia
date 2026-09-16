@@ -107,6 +107,59 @@ is real evidence — those are open-textured, so they are argued by the model an
 settled by a person. Where the two disagree, neither wins silently: the
 disagreement is recorded as an open issue.
 
+## 1c. People, Projects and Storage
+
+The blackboard belongs to a **project**, and a person reaches a project only
+through a membership. Every project operation — reading, running an agent,
+approving, arbitrating, inviting, exporting — goes through one authorization
+check in `ProjectService`, below the UI.
+
+```mermaid
+flowchart LR
+    ID["Google identity<br/>(st.login, OIDC)"] --> AUTH["raia/auth.py"]
+    AUTH --> SVC["ProjectService<br/>(raia/projects.py)<br/>authorize(user, project, action)"]
+    UI["app.py"] --> SVC
+    SVC --> RUN["StageRunner<br/>(raia/pipeline.py)"]
+    SVC --> OPENREPO["open_repository(project)<br/>(raia/storage.py)"]
+    RUN --> OPENREPO
+    OPENREPO -->|"RAIA_STORE=git"| GIT[("ArtifactRepository<br/>workspace/&lt;project&gt;/ — Git")]
+    OPENREPO -->|"RAIA_STORE=database"| DBR[("DatabaseRepository<br/>append-only, hash-chained")]
+    RUN --> CP[("Checkpointer<br/>PostgresSaver · MemorySaver")]
+    SVC --> REG[("Registry tables<br/>users · projects · members<br/>invitations · ratings · usage")]
+```
+
+```mermaid
+erDiagram
+    USERS ||--o{ PROJECT_MEMBERS : "belongs via"
+    PROJECTS ||--o{ PROJECT_MEMBERS : has
+    PROJECTS ||--o{ INVITATIONS : "invites by email"
+    PROJECTS ||--o{ PROJECT_COMMITS : "hash chain"
+    PROJECT_COMMITS ||--|{ PROJECT_FILES : writes
+    PROJECTS ||--o{ PENDING_REVIEWS : "drafts at the gate"
+    PROJECTS ||--o{ INTAKE_DRAFTS : "form answers"
+    PROJECTS ||--o{ PROJECT_EVENTS : "evaluation events"
+    USERS ||--o{ EXPERIENCE_RATINGS : submits
+```
+
+| Role | View | Run agents, edit answers | Approve / reject, arbitrate | Invite, settings, delete |
+|---|---|---|---|---|
+| owner | ✓ | ✓ | ✓ | ✓ |
+| editor | ✓ | ✓ | ✓ | |
+| reviewer | ✓ | | ✓ | |
+
+Three rules the tests enforce:
+
+- **Stage is derived, never stored.** A project's progress is computed from
+  its approved artifacts and pending drafts on every read.
+- **Identity comes from the session.** The approver recorded at a gate is the
+  signed-in person; any approver name in the caller's payload is overwritten.
+  With *require a second approver* set, the person who ran a stage cannot
+  approve it — including after a restore.
+- **History is tamper-evident on both backends.** Git objects locally; in the
+  database each version's digest covers its parent digest, its message, its
+  timestamp and the SHA-256 of every file it wrote, and `verify_history()`
+  recomputes all of them.
+
 ## 2. Class Diagram (code structure)
 
 ```mermaid
@@ -270,7 +323,7 @@ stateDiagram-v2
 | Architecture element | Implementation | Enforced by |
 |---|---|---|
 | Five agents, three layers | `raia/agents/` — one module per agent; `AGENTS` registry in pipeline order | structure |
-| Blackboard shared state, Git-versioned | `raia/repository.py` — every approval is one commit carrying the Markdown artifact *and* its JSON sidecar; approval provenance stamped in the header | code |
+| Blackboard per project, versioned | `raia/repository.py` (Git) and `raia/storage.py` (hash-chained database); every approval is one recorded version carrying the Markdown artifact *and* its JSON sidecar; approval provenance stamped in the header | code |
 | Mandatory human checkpoints "H" | `interrupt()` in the `human_review` node; the persist node is unreachable without an approve decision, including on the restart-recovery path | code + smoke test |
 | Agents never trigger agents | stage gates via `AgentSpec.required_upstream`; no agent-to-agent call exists | structure |
 | Grounded recommendations | `raia/rag.py` — excerpts carry source, section, authority and a stable id; agents must cite them | prompt |
@@ -284,7 +337,9 @@ stateDiagram-v2
 | Anti-ethics-washing audit | `rationale/traceability.py` assigns NOT VERIFIED where no evidence exists; `validators.check_forbidden_verdicts` prevents an upgrade | code |
 | Metrics come from code | `rationale/drift.py` computes every figure; `validators.check_numbers` rejects any number not in the computed set | code |
 | Reproducible audit trail | `raia/provenance.py` — model, temperature, corpus version, excerpt ids, prompt hash, attempt, edits, rejection history, check results | code |
-| Data protection | artifacts stay in local `workspace/`; nothing leaves the machine except the model call; no retraining | structure |
+| Data protection | projects are reachable only through a membership, checked in `ProjectService.authorize`; sign-in delegated to Google (no stored passwords); research exports pseudonymized with keyed participant codes; no retraining | code + test_projects |
+| Accountable approval | the approver is the authenticated identity; optional second-approver rule makes the runner ineligible to approve | code + test_projects |
+| Durable review state | `PostgresSaver` checkpointer and stored drafts; a restored review re-enters the gate | code + test_projects |
 | Input sanitization | `raia/sanitize.py` — control characters, length caps, injection patterns in English and Portuguese; applied to form input *and* to the approved artifact | code |
 | Provider-agnostic LLM | `raia/llm.py` factory and a single `invoke_chat` call site | structure |
 

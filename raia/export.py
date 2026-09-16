@@ -2,7 +2,7 @@
 raia.export
 ===========
 
-Session export: everything a tester saw, in one file.
+Project export: the whole blackboard of one project, in one file.
 
 The hosted deployment's storage is disposable — workspaces are discarded when
 the app restarts — and testers were being told to download artifacts one at a
@@ -22,13 +22,14 @@ import zipfile
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .repository import ArtifactRepository
+    from .repository import BaseRepository
 
-MANIFEST = """RAIA — evaluation session export
-================================
+MANIFEST = """RAIA — project export
+=====================
 
 Created: {created}
-Session workspace: {project}
+Project: {project}
+History integrity at export: {integrity}
 
 artifacts/            The approved artifacts. Each .md is what a human read and
                       approved; its provenance header records the model, the
@@ -36,31 +37,39 @@ artifacts/            The approved artifacts. Each .md is what a human read and
                       draft was edited, and the result of the automated checks.
                       Each .json is the structured record the next agent read.
 
-git_history.txt       One line per approval. Every approval is a commit.
+git_history.txt       One line per recorded version. Every approval is one.
+
+history_chain.json    (database-backed projects) the full hash chain, so the
+                      history can be re-verified offline.
 
 evaluation_events.jsonl
                       What happened during the session: every rejection with
                       its reason code, every approval, every rating. This is
                       the research data — it is about the session, not part of
-                      the project's audit trail.
+                      the project's audit trail. People appear as participant
+                      codes, not names.
 
-Nothing in this archive is sent anywhere. It is produced in your browser
-session and downloaded by you.
+Nothing in this archive is sent anywhere. It is produced on request and
+downloaded by you.
 """
 
 
-def session_bundle(repo: "ArtifactRepository") -> bytes:
-    """Zip the whole session: artifacts, sidecars, history and events."""
+def session_bundle(repo: "BaseRepository", project_label: str = "") -> bytes:
+    """Zip one project: artifacts, sidecars, history and pseudonymized events."""
+    from .projects import pseudonymize_event
+
     buffer = io.BytesIO()
     created = _dt.datetime.now().isoformat(timespec="seconds")
+    integrity = repo.verify_history()
 
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("MANIFEST.txt", MANIFEST.format(created=created, project=repo.project))
+        z.writestr("MANIFEST.txt", MANIFEST.format(
+            created=created, project=project_label or repo.project,
+            integrity=("OK — " if integrity["ok"] else "FAILED — ") + integrity["detail"],
+        ))
 
-        if repo.artifacts_dir.exists():
-            for path in sorted(repo.artifacts_dir.iterdir()):
-                if path.is_file():
-                    z.write(path, f"artifacts/{path.name}")
+        for name, content in repo.current_files().items():
+            z.writestr(f"artifacts/{name}", content)
 
         history = repo.history(limit=500)
         z.writestr(
@@ -68,8 +77,10 @@ def session_bundle(repo: "ArtifactRepository") -> bytes:
             "\n".join(f"{h['commit']}  {h['date']}  {h['message']}" for h in history)
             or "(no commits)",
         )
+        if hasattr(repo, "chain"):
+            z.writestr("history_chain.json", json.dumps(repo.chain(), indent=2, default=str))
 
-        events = repo.events()
+        events = [pseudonymize_event(e, "this-project") for e in repo.events()]
         z.writestr(
             "evaluation_events.jsonl",
             "\n".join(json.dumps(e, ensure_ascii=False, default=str) for e in events)
@@ -82,4 +93,5 @@ def session_bundle(repo: "ArtifactRepository") -> bytes:
 
 def bundle_name(project: str) -> str:
     stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M")
-    return f"raia-session-{project}-{stamp}.zip"
+    slug = "".join(c if c.isalnum() else "-" for c in project.lower()).strip("-")[:40] or "project"
+    return f"raia-{slug}-{stamp}.zip"

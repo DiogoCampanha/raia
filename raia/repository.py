@@ -5,8 +5,8 @@ raia.repository
 The **shared artifact repository** — RAIA's blackboard.
 
 Agents never talk to each other; they read from and, after human approval,
-write to this repository. Every write is a Git commit, so the full history of
-recommendations, approvals and revisions is preserved and auditable.
+write to this repository. Every write is a recorded version, so the full
+history of recommendations, approvals and revisions is preserved and auditable.
 
 Two additions carry the weight of everything else in the system:
 
@@ -22,6 +22,15 @@ to be recorded as explicit open issues and escalated for human arbitration.
 The register now exists as a first-class artifact with its own file, its own
 structure and its own page in the UI, populated automatically from the rule
 engines and from each approved draft.
+
+One blackboard belongs to one **project**. Everything that is not the storage
+mechanism itself — sanitization, provenance headers, sidecars, the register,
+deduplication — lives in :class:`BaseRepository`, so the two storage backends
+cannot drift apart in behaviour:
+
+* :class:`ArtifactRepository` — a Git repository per project on local disk;
+* :class:`raia.storage.DatabaseRepository` — append-only, hash-chained tables
+  in PostgreSQL, for hosted deployments whose disk does not survive a restart.
 """
 
 import datetime as _dt
@@ -60,67 +69,88 @@ def _git_available() -> bool:
     return shutil.which("git") is not None
 
 
-class ArtifactRepository:
-    """Git-versioned blackboard for a single project."""
+def _now() -> str:
+    return _dt.datetime.now().isoformat(timespec="seconds")
+
+
+class BaseRepository:
+    """Storage-independent blackboard behaviour for a single project.
+
+    A backend implements the primitives at the bottom of this class: read a
+    file, write a set of files as one recorded version, list history, and keep
+    the non-audited working state (pending drafts, intake drafts, events).
+    """
+
+    backend = "abstract"
 
     def __init__(self, project: str) -> None:
-        slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in project.strip())
-        if not slug:
-            raise ValueError("Project name must contain letters or digits.")
-        self.project = project
-        self.path: Path = config.WORKSPACE_DIR / slug
-        self.artifacts_dir: Path = self.path / "artifacts"
-        self.pending_dir: Path = self.path / ".pending"
-        self.artifacts_dir.mkdir(parents=True, exist_ok=True)
-        self._use_git = _git_available()
-        if self._use_git:
-            self._init_git()
+        if not project or not str(project).strip():
+            raise ValueError("Project id must not be empty.")
+        self.project = str(project)
 
-    # -- Git plumbing --------------------------------------------------------
+    # -- Backend primitives ----------------------------------------------------
 
-    def _run_git(self, *args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["git", *args], cwd=self.path, capture_output=True, text=True, check=False
-        )
+    def _read_file(self, name: str) -> Optional[str]:
+        raise NotImplementedError
 
-    def _init_git(self) -> None:
-        if not (self.path / ".git").exists():
-            self._run_git("init", "-q")
-            self._run_git("config", "user.name", "RAIA")
-            self._run_git("config", "user.email", "raia@localhost")
+    def _commit_files(self, files: Dict[str, str], message: str) -> str:
+        raise NotImplementedError
 
-    def _commit(self, files: List[str], message: str) -> str:
-        stamp = _dt.datetime.now().isoformat(timespec="seconds")
-        if not self._use_git:
-            log = self.path / "history.json"
-            entries = json.loads(log.read_text()) if log.exists() else []
-            entries.append({"files": files, "message": message, "at": stamp})
-            log.write_text(json.dumps(entries, indent=2))
-            return stamp
-        for f in files:
-            self._run_git("add", str(Path("artifacts") / f))
-        self._run_git("commit", "-q", "-m", message)
-        rev = self._run_git("rev-parse", "--short", "HEAD")
-        return rev.stdout.strip() or stamp
+    def history(self, limit: int = 50) -> List[Dict[str, str]]:
+        raise NotImplementedError
+
+    def current_files(self) -> Dict[str, str]:
+        """Every current artifact file, name -> content (used by exports)."""
+        raise NotImplementedError
+
+    def verify_history(self) -> Dict[str, Any]:
+        """Integrity of the version history: ``{"ok": bool, "detail": str}``."""
+        raise NotImplementedError
+
+    def _pending_write(self, agent_key: str, text: str) -> None:
+        raise NotImplementedError
+
+    def _pending_read(self, agent_key: str) -> Optional[str]:
+        raise NotImplementedError
+
+    def _pending_all(self) -> Dict[str, str]:
+        raise NotImplementedError
+
+    def _pending_delete(self, agent_key: str) -> None:
+        raise NotImplementedError
+
+    def save_intake(self, agent_key: str, values: Dict[str, Any], by: str = "") -> None:
+        raise NotImplementedError
+
+    def load_intake(self, agent_key: str) -> Dict[str, Any]:
+        raise NotImplementedError
+
+    def record_event(self, kind: str, payload: Dict[str, Any]) -> None:
+        raise NotImplementedError
+
+    def events(self) -> List[Dict[str, Any]]:
+        raise NotImplementedError
+
+    def reset(self) -> None:
+        raise NotImplementedError
 
     # -- Read side (what downstream agents consume) ---------------------------
 
     def read_artifact(self, key: str) -> Optional[str]:
-        f = self.artifacts_dir / ARTIFACT_FILES[key]
-        return f.read_text(encoding="utf-8") if f.exists() else None
+        return self._read_file(ARTIFACT_FILES[key])
 
     def read_data(self, key: str) -> Dict[str, Any]:
         """The structured sidecar for an artifact, or ``{}`` if there is none."""
-        f = self.artifacts_dir / _sidecar(ARTIFACT_FILES[key])
-        if not f.exists():
+        text = self._read_file(_sidecar(ARTIFACT_FILES[key]))
+        if not text:
             return {}
         try:
-            return json.loads(f.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
+            return json.loads(text)
+        except ValueError:
             return {}
 
     def existing_artifacts(self) -> List[str]:
-        return [k for k in ARTIFACT_FILES if (self.artifacts_dir / ARTIFACT_FILES[k]).exists()]
+        return [k for k in ARTIFACT_FILES if self.read_artifact(k) is not None]
 
     def upstream_context(self, keys: List[str]) -> str:
         """Approved upstream artifacts, concatenated as prompt context."""
@@ -174,20 +204,17 @@ class ArtifactRepository:
             record.setdefault("artifact_sanitization", []).extend(cleaned.findings)
 
         header = provenance.header_comment(key, record)
-        (self.artifacts_dir / filename).write_text(header + cleaned.text, encoding="utf-8")
-
         payload = {
             "artifact": key,
             "file": filename,
             "structured": structured or {},
             "provenance": record,
         }
-        (self.artifacts_dir / _sidecar(filename)).write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
-        )
-
-        commit = self._commit(
-            [filename, _sidecar(filename)],
+        commit = self._commit_files(
+            {
+                filename: header + cleaned.text,
+                _sidecar(filename): json.dumps(payload, indent=2, ensure_ascii=False, default=str),
+            },
             f"raia({key}): human-approved update by {approved_by}",
         )
         self.clear_pending_for(key)
@@ -196,12 +223,12 @@ class ArtifactRepository:
     # -- Open issues register --------------------------------------------------
 
     def open_issues(self) -> List[Dict[str, Any]]:
-        f = self.artifacts_dir / _sidecar(ARTIFACT_FILES["open_issues"])
-        if not f.exists():
+        text = self._read_file(_sidecar(ARTIFACT_FILES["open_issues"]))
+        if not text:
             return []
         try:
-            return json.loads(f.read_text(encoding="utf-8")).get("structured", {}).get("issues", [])
-        except (ValueError, OSError):
+            return json.loads(text).get("structured", {}).get("issues", [])
+        except ValueError:
             return []
 
     def append_open_issues(
@@ -217,7 +244,7 @@ class ArtifactRepository:
         """
         existing = self.open_issues()
         known = {_fingerprint(i.get("text", "")) for i in existing}
-        stamp = _dt.datetime.now().isoformat(timespec="seconds")
+        stamp = _now()
         added = 0
 
         for text in issues:
@@ -251,7 +278,7 @@ class ArtifactRepository:
                 issue["status"] = status
                 issue["resolution_note"] = note
                 issue["resolved_by"] = by
-                issue["resolved_at"] = _dt.datetime.now().isoformat(timespec="seconds")
+                issue["resolved_at"] = _now()
                 self._write_open_issues(
                     issues, f"raia(open_issues): {issue_id} marked {status} by {by}"
                 )
@@ -288,70 +315,172 @@ class ArtifactRepository:
                 )
             lines.append("")
 
-        (self.artifacts_dir / filename).write_text("\n".join(lines), encoding="utf-8")
-        (self.artifacts_dir / _sidecar(filename)).write_text(
-            json.dumps({"artifact": "open_issues", "structured": {"issues": issues}}, indent=2,
-                       ensure_ascii=False),
-            encoding="utf-8",
+        self._commit_files(
+            {
+                filename: "\n".join(lines),
+                _sidecar(filename): json.dumps(
+                    {"artifact": "open_issues", "structured": {"issues": issues}},
+                    indent=2, ensure_ascii=False,
+                ),
+            },
+            message,
         )
-        self._commit([filename, _sidecar(filename)], message)
 
     # -- Pending drafts (restart resilience) -----------------------------------
 
     def save_pending(self, agent_key: str, payload: Dict[str, Any]) -> None:
-        """Keep an in-review draft on disk.
+        """Keep an in-review draft outside the server process.
 
-        The graph checkpointer lives in the server process. When a hosted
+        The graph checkpointer may live in the server process. When a hosted
         deployment restarts mid-review, the paused thread is gone while the
         browser still shows the draft — the tester presses Approve and the app
-        fails. The draft is therefore also written here, so the review can be
+        fails. The draft is therefore also stored here, so the review can be
         restored into a fresh graph run without re-calling the model.
         """
-        self.pending_dir.mkdir(parents=True, exist_ok=True)
-        (self.pending_dir / f"{agent_key}.json").write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
-        )
+        self._pending_write(agent_key, json.dumps(payload, indent=2, ensure_ascii=False, default=str))
 
     def load_pending(self, agent_key: str) -> Optional[Dict[str, Any]]:
-        f = self.pending_dir / f"{agent_key}.json"
-        if not f.exists():
+        text = self._pending_read(agent_key)
+        if not text:
             return None
         try:
-            return json.loads(f.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
+            return json.loads(text)
+        except ValueError:
             return None
 
+    def pending_agents(self) -> List[str]:
+        """Agents with a draft currently awaiting human review."""
+        return sorted(self._pending_all())
+
     def clear_pending_for(self, artifact_key: str) -> None:
-        for f in self.pending_dir.glob("*.json"):
+        for agent_key, text in self._pending_all().items():
             try:
-                if json.loads(f.read_text(encoding="utf-8")).get("artifact_key") == artifact_key:
-                    f.unlink()
-            except (ValueError, OSError):
+                if json.loads(text).get("artifact_key") == artifact_key:
+                    self._pending_delete(agent_key)
+            except ValueError:
                 continue
 
     def clear_pending(self, agent_key: str) -> None:
+        self._pending_delete(agent_key)
+
+
+class ArtifactRepository(BaseRepository):
+    """Git-versioned blackboard for a single project, on local disk."""
+
+    backend = "git"
+
+    def __init__(self, project: str) -> None:
+        slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in str(project).strip())
+        if not slug:
+            raise ValueError("Project name must contain letters or digits.")
+        super().__init__(project)
+        self.path: Path = config.WORKSPACE_DIR / slug
+        self.artifacts_dir: Path = self.path / "artifacts"
+        self.pending_dir: Path = self.path / ".pending"
+        self.intake_dir: Path = self.path / ".intake"
+        self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+        self._use_git = _git_available()
+        if self._use_git:
+            self._init_git()
+
+    # -- Git plumbing --------------------------------------------------------
+
+    def _run_git(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", *args], cwd=self.path, capture_output=True, text=True, check=False
+        )
+
+    def _init_git(self) -> None:
+        if not (self.path / ".git").exists():
+            self._run_git("init", "-q")
+            self._run_git("config", "user.name", "RAIA")
+            self._run_git("config", "user.email", "raia@localhost")
+
+    def _read_file(self, name: str) -> Optional[str]:
+        f = self.artifacts_dir / name
+        return f.read_text(encoding="utf-8") if f.exists() else None
+
+    def _commit_files(self, files: Dict[str, str], message: str) -> str:
+        for name, content in files.items():
+            (self.artifacts_dir / name).write_text(content, encoding="utf-8")
+        stamp = _now()
+        if not self._use_git:
+            log = self.path / "history.json"
+            entries = json.loads(log.read_text()) if log.exists() else []
+            entries.append({"files": list(files), "message": message, "at": stamp})
+            log.write_text(json.dumps(entries, indent=2))
+            return stamp
+        for name in files:
+            self._run_git("add", str(Path("artifacts") / name))
+        self._run_git("commit", "-q", "-m", message)
+        rev = self._run_git("rev-parse", "--short", "HEAD")
+        return rev.stdout.strip() or stamp
+
+    def current_files(self) -> Dict[str, str]:
+        if not self.artifacts_dir.exists():
+            return {}
+        return {
+            p.name: p.read_text(encoding="utf-8")
+            for p in sorted(self.artifacts_dir.iterdir()) if p.is_file()
+        }
+
+    def verify_history(self) -> Dict[str, Any]:
+        if not self._use_git:
+            return {"ok": True, "detail": "plain history log (git not installed)"}
+        res = self._run_git("fsck", "--no-dangling")
+        return {"ok": res.returncode == 0, "detail": "git object store verified"
+                if res.returncode == 0 else (res.stderr.strip() or "git fsck failed")}
+
+    # -- Working state ---------------------------------------------------------
+
+    def _pending_write(self, agent_key: str, text: str) -> None:
+        self.pending_dir.mkdir(parents=True, exist_ok=True)
+        (self.pending_dir / f"{agent_key}.json").write_text(text, encoding="utf-8")
+
+    def _pending_read(self, agent_key: str) -> Optional[str]:
+        f = self.pending_dir / f"{agent_key}.json"
+        return f.read_text(encoding="utf-8") if f.exists() else None
+
+    def _pending_all(self) -> Dict[str, str]:
+        if not self.pending_dir.exists():
+            return {}
+        return {f.stem: f.read_text(encoding="utf-8") for f in self.pending_dir.glob("*.json")}
+
+    def _pending_delete(self, agent_key: str) -> None:
         f = self.pending_dir / f"{agent_key}.json"
         if f.exists():
             f.unlink()
 
+    def save_intake(self, agent_key: str, values: Dict[str, Any], by: str = "") -> None:
+        self.intake_dir.mkdir(parents=True, exist_ok=True)
+        (self.intake_dir / f"{agent_key}.json").write_text(
+            json.dumps({"values": values, "by": by, "at": _now()}, ensure_ascii=False, default=str),
+            encoding="utf-8",
+        )
+
+    def load_intake(self, agent_key: str) -> Dict[str, Any]:
+        f = self.intake_dir / f"{agent_key}.json"
+        if not f.exists():
+            return {}
+        try:
+            return json.loads(f.read_text(encoding="utf-8")).get("values", {})
+        except (ValueError, OSError):
+            return {}
+
     # -- Evaluation instrumentation -------------------------------------------
 
     def record_event(self, kind: str, payload: Dict[str, Any]) -> None:
-        """Append one evaluation event (rejection, rating, restore).
+        """Append one evaluation event (rejection, approval, restore).
 
         The panel's interaction with the approval gate is the project's
         evidence for the human-oversight claim, so it is captured as data
         rather than reconstructed from memory afterwards. Stored outside the
-        artifact tree: it is research data about the session, not part of the
+        artifact tree: it is research data about the work, not part of the
         project's audit trail.
         """
         self.path.mkdir(parents=True, exist_ok=True)
         log = self.path / "evaluation_events.jsonl"
-        entry = {
-            "at": _dt.datetime.now().isoformat(timespec="seconds"),
-            "kind": kind,
-            **payload,
-        }
+        entry = {"at": _now(), "kind": kind, **payload}
         with log.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
 
@@ -388,11 +517,11 @@ class ArtifactRepository:
             return [
                 {"commit": "-", "date": e["at"], "message": e["message"]}
                 for e in reversed(entries)
-            ]
+            ][:limit]
         return []
 
     def reset(self) -> None:
-        """Delete this project's repository entirely (a fresh start)."""
+        """Delete this project's repository entirely."""
         root = config.WORKSPACE_DIR.resolve()
         target = self.path.resolve()
         if target != root and root in target.parents:

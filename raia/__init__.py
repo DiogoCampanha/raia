@@ -11,7 +11,11 @@ Package layout
 * :mod:`raia.config`      -- environment-driven configuration.
 * :mod:`raia.llm`         -- provider-agnostic LLM factory (Claude by default).
 * :mod:`raia.rag`         -- Chroma RAG over the normative corpus.
-* :mod:`raia.repository`  -- Git-versioned shared artifact repository (blackboard).
+* :mod:`raia.repository`  -- the shared artifact repository (blackboard), Git backend.
+* :mod:`raia.storage`     -- backend selection; hash-chained database blackboard.
+* :mod:`raia.db`          -- SQLite / PostgreSQL access shared by registry and store.
+* :mod:`raia.projects`    -- people, projects, roles, invitations, authorization.
+* :mod:`raia.auth`        -- sign-in (Google via Streamlit, or a local dev identity).
 * :mod:`raia.agents`      -- the five specialized agents.
 * :mod:`raia.pipeline`    -- LangGraph orchestration with human checkpoints.
 """

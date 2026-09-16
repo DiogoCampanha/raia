@@ -2,7 +2,9 @@
 # Python >= 3.10 recommended.
 
 # UI
-streamlit>=1.37
+streamlit>=1.45
+# Google sign-in (Streamlit's native OpenID Connect login)
+Authlib>=1.3.2
 
 # Orchestration (state graph with native human-interruption points)
 langgraph>=0.2.60
@@ -20,6 +22,12 @@ pysqlite3-binary; sys_platform == "linux"
 
 # Data handling (Drift Monitor fairness metrics)
 pandas>=2.0
+
+# Users, projects and durable storage on hosted deployments (PostgreSQL, e.g. Neon).
+# Locally everything falls back to SQLite and needs none of these at runtime.
+psycopg[binary]>=3.2
+psycopg-pool>=3.2
+langgraph-checkpoint-postgres>=2.0
 
 # Configuration
 python-dotenv>=1.0
