@@ -34,7 +34,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 LLM_PROVIDER: str = os.getenv("RAIA_LLM_PROVIDER", "anthropic").lower()
 
 #: Model name for the chosen provider.
-LLM_MODEL: str = os.getenv("RAIA_LLM_MODEL", "claude-sonnet-4-5")
+LLM_MODEL: str = os.getenv("RAIA_LLM_MODEL", "claude-sonnet-5")
 
 #: Sampling temperature. Kept low: agents produce normative analyses,
 #: not creative text, so determinism aids reproducibility and auditability.
