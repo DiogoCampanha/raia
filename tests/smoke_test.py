@@ -22,6 +22,7 @@ stands on:
 Exits non-zero on any failure (usable in CI).
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -220,10 +221,97 @@ def main() -> None:
     bundle = session_bundle(repo)
     check(len(bundle) > 1000 and bundle[:2] == b"PK", "session export produces a zip")
 
-    print("== 15. Deterministic unit checks ==")
+    print("== 15. The standard record ==")
+    from raia.contract import SCHEMA_VERSION
+    from raia.contract import actions as action_plan
+    import io as _io
+    import zipfile as _zip
+
+    for key, agent in AGENTS.items():
+        sidecar = repo.read_data(agent.spec.output_key)["structured"]
+        record = sidecar.get("record") or {}
+        check(record.get("meta", {}).get("schema_version") == SCHEMA_VERSION,
+              f"{key}: the approved artifact carries a {SCHEMA_VERSION} record")
+        text = repo.read_artifact(agent.spec.output_key) or ""
+        check(all(f"## {t}" in text for t in agent.spec.required_sections),
+              f"{key}: the artifact follows the standard layout")
+        check(all(f.get("priority") in ("low", "medium", "high", "critical") for f in record.get("findings") or []),
+              f"{key}: every finding has a computed priority")
+    typed = repo.open_issues()
+    check(all(i.get("type") and i.get("decision_owner") for i in typed),
+          "every issue in the register is typed and has a deciding role")
+    rows = action_plan.project_actions(repo)
+    check(len(rows) >= 5, f"the project action plan collects {len(rows)} action(s) from approved records")
+    names = _zip.ZipFile(_io.BytesIO(session_bundle(repo))).namelist()
+    check("action_plan.csv" in names and "action_plan.json" in names, "the export contains the action plan")
+
+    print("== 16. A reviewer edits the record, not the prose ==")
+    out = runner.start("edit-project", "risk_classifier", EXAMPLES["risk_classifier"])
+    payload = out["payload"]
+    try:
+        runner.resume("edit-project", "risk_classifier",
+                      {"action": "approve", "content": payload["draft"] + "\nextra words", "approver": "t"})
+        refused = False
+    except ValueError:
+        refused = True
+    check(refused, "a free-text edit to the rendered document is refused")
+    out = StageRunner().restore("edit-project", "risk_classifier", ArtifactRepository("edit-project").load_pending("risk_classifier"))
+    edited = json.loads(json.dumps(out["payload"]["record"]))
+    edited["findings"][0]["magnitude"] = "severe"
+    edited["findings"][0]["likelihood"] = "observed"
+    edited["summary"] = "Edited by the reviewer."
+    lost = StageRunner()
+    lost.restore("edit-project", "risk_classifier", out["payload"])
+    lost.resume("edit-project", "risk_classifier", {"action": "approve", "record": edited, "approver": "t"})
+    erepo = ArtifactRepository("edit-project")
+    saved = erepo.read_data("risk_classification")
+    check(saved["provenance"]["approval"]["human_edited_draft"], "the edit is recorded as a human edit")
+    check(saved["structured"]["record"]["findings"][0]["priority"] == "critical",
+          "priority is recomputed from the edited placement")
+    check("Edited by the reviewer." in (erepo.read_artifact("risk_classification") or ""),
+          "the approved document is re-rendered from the edited record")
+
+    print("== 17. A reply that breaks the contract is repaired, or shown honestly ==")
+    from langchain_core.messages import AIMessage as _AI
+    import raia.agents.base as _base
+
+    real = _base.invoke_chat
+    calls = {"n": 0}
+
+    def flaky(messages, model=None):
+        calls["n"] += 1
+        response = real(messages, model)
+        if calls["n"] == 1:
+            response.text = "The system is high risk."
+        return response
+
+    _base.invoke_chat = flaky
+    try:
+        run = AGENTS["risk_classifier"].run(ArtifactRepository("repair-project"), EXAMPLES["risk_classifier"])
+    finally:
+        _base.invoke_chat = real
+    check(run.repairs == 1 and not run.record.get("schema_errors"), "an invalid reply is repaired once")
+
+    def broken(messages, model=None):
+        response = real(messages, model)
+        response.text = "Still prose."
+        return response
+
+    _base.invoke_chat = broken
+    try:
+        run = AGENTS["risk_classifier"].run(ArtifactRepository("repair-project"), EXAMPLES["risk_classifier"])
+    finally:
+        _base.invoke_chat = real
+    check(run.record.get("schema_errors") and run.validation.level == "fail",
+          "a reply that stays invalid produces a fallback record and a failed check")
+    check(len(run.record["open_issues"]) > 0, "…which still carries the rule engine's issues")
+
+    print("== 18. Deterministic unit checks ==")
     import tests.test_engines as engines  # noqa: E402
+    import tests.test_contract as contract_tests  # noqa: E402
 
     engines.main()
+    contract_tests.main()
 
 
 if __name__ == "__main__":

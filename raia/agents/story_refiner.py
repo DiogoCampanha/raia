@@ -15,10 +15,9 @@ every story that goes in comes back out, refined or explicitly justified as
 having no ethical impact — absence of action has to be auditable too.
 """
 
-import re
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from .. import validators
+from ..contract import checks as contract_checks
 from ..fields import InputField
 from ..rationale import story_map
 from ..rationale.types import RationaleResult
@@ -26,8 +25,6 @@ from .base import AgentSpec, BaseAgent
 
 G_BACKLOG = "1 · The sprint's backlog"
 G_SCOPE = "2 · What these stories touch"
-
-AC_ID = re.compile(r"\bAC-(S\d+)-(\d+)\b")
 
 
 class UserStoryRefinerAgent(BaseAgent):
@@ -52,11 +49,6 @@ class UserStoryRefinerAgent(BaseAgent):
         output_key="refined_stories",
         engine=story_map.run,
         verdict_keys=["story_count"],
-        required_sections=[
-            "Refined Stories",
-            "Stories Without Ethical Impact",
-            "Open Issues",
-        ],
         input_fields=[
             InputField(
                 key="user_stories", label="Backlog user stories", group=G_BACKLOG, required=True,
@@ -84,64 +76,48 @@ class UserStoryRefinerAgent(BaseAgent):
             ),
         ],
         task_prompt=(
-            "Add verifiable ethical acceptance criteria to the sprint's stories, using the "
-            "card selection and the story register the engine computed. The selected cards and "
-            "the story ids are given to you: do not invent card ids, do not invent story ids, "
-            "and do not leave a story out of your answer.\n\n"
-            "Under **Refined Stories**, for each story that needs criteria: restate the story "
-            "with its id, name the selected card id(s) that make it relevant and cite the "
-            "excerpt that grounds them, then list the acceptance criteria. Label every "
-            "criterion with an id of the form `AC-<story id>-<n>` — for example `AC-S1-1` — so "
-            "it can be audited later. Each criterion must be measurable or testable: a "
-            "threshold, a check, an artifact that must exist. Where an approved requirement id "
-            "(EVR-n) covers it, name that id.\n\n"
-            "Under **Stories Without Ethical Impact**, list every remaining story id with one "
-            "line saying why no criterion was added. This section is not optional: a story that "
-            "appears in neither section is a gap in the audit trail.\n\n"
-            "Under **Open Issues**, carry forward every issue the engine raised, plus any "
-            "criterion that conflicts with the sprint's constraints."
+            "Refine this sprint's stories with the ECCOLA method and the Microsoft RAI Standard v2 "
+            "verifiable-requirement pattern. The selected cards and the story ids are given to "
+            "you: do not invent card ids, do not invent story ids, and do not leave a story "
+            "out.\n\n"
+            "In the extension, `stories` has exactly one entry per story id. For a story that "
+            "needs criteria: `eccola_cards` lists only selected card ids that make it relevant; "
+            "`card_discussion` answers those cards' questions for this story; `criteria` follow "
+            "the verifiable-requirement pattern — the Standard's goal, the affected stakeholder "
+            "group, a measurable `condition` with its threshold, the `evidence_artifact` that "
+            "demonstrates it and an owner — each labelled `AC-<story id>-<n>` (for example "
+            "`AC-S1-1`) and traced to an approved EVR id where one covers it. A story with no "
+            "ethical impact has no criteria and a one-line `no_impact_reason`. "
+            "`sprint_ethics_log` records the decisions taken and why, as ECCOLA's documentation "
+            "step asks.\n\n"
+            "Findings are the ethical risks this sprint introduces, linked to story and card ids. "
+            "Actions are what the team does about them in this sprint or later."
         ),
     )
 
-    def extra_checks(
-        self, report: validators.ValidationReport, draft: str, rationale: RationaleResult
-    ) -> None:
+    def extra_checks(self, report, draft, rationale, record) -> None:
         story_ids = rationale.verdict.get("story_ids") or []
         card_ids = rationale.verdict.get("card_ids") or []
         evr_ids = rationale.verdict.get("evr_ids") or []
+        stories = (record.get("extension") or {}).get("stories") or []
+        report.add(contract_checks.check_registered_ids(
+            "Story register", "stories", story_ids, [s.get("story_id") for s in stories]))
+        report.add(contract_checks.check_registered_ids(
+            "Card selection", "cards", card_ids,
+            [c for s in stories for c in s.get("eccola_cards") or []], require_all=False))
+        report.add(contract_checks.check_registered_ids(
+            "Requirement references", "references", evr_ids,
+            [e for s in stories for c in s.get("criteria") or [] for e in c.get("evr_ids") or []],
+            require_all=False))
+        report.add(contract_checks.check_criteria_ids(record))
 
-        report.add(
-            validators.check_traceability(draft, story_ids, "Story register", code="stories")
-        )
-        if evr_ids:
-            report.add(
-                validators.check_unknown_ids(
-                    draft, r"\bEVR-\d+\b", evr_ids, "Requirement references"
-                )
-            )
-        report.add(
-            validators.check_unknown_ids(
-                draft, r"(?<![\w])#\d{1,2}(?![\w])", card_ids, "Ethical theme references"
-            )
-        )
-        orphan = sorted({f"AC-{s}-{n}" for s, n in AC_ID.findall(draft) if s not in set(story_ids)})
-        if orphan:
-            report.add(
-                validators.ValidationItem(
-                    "criteria.orphan", validators.FAIL, "Acceptance criterion ids",
-                    "Criteria are attached to story ids that are not in the register.", orphan,
-                )
-            )
-
-    def structured_from(self, draft: str, rationale: RationaleResult) -> Dict[str, Any]:
-        """Extract the acceptance-criterion register the Auditor will audit."""
-        data = super().structured_from(draft, rationale)
-        criteria: List[Dict[str, str]] = []
-        for line in (draft or "").splitlines():
-            for story, n in AC_ID.findall(line):
-                cid = f"AC-{story}-{n}"
-                if any(c["id"] == cid for c in criteria):
-                    continue
-                criteria.append({"id": cid, "story": story, "text": line.strip(" -*\t")})
-        data["criteria"] = criteria
+    def structured_from(self, record: Dict[str, Any], rationale: RationaleResult) -> Dict[str, Any]:
+        """Publish the acceptance-criterion register the Auditor will audit."""
+        data = super().structured_from(record, rationale)
+        data["criteria"] = [
+            {"id": c.get("id"), "story": s.get("story_id"), "text": c.get("condition", ""),
+             "ms_goal": c.get("ms_goal"), "evidence_artifact": c.get("evidence_artifact", "")}
+            for s in (record.get("extension") or {}).get("stories") or []
+            for c in s.get("criteria") or []
+        ]
         return data

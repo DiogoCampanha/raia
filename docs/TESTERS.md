@@ -41,7 +41,8 @@ entries:
 
 A **project page** shows where the project stands: the next action, the five
 stages with their status, and tabs for *Documents* (approved artifacts and the
-project download), *Open issues*, *Activity* (version history and project log)
+project download), *Action plan* (every action from every approved stage,
+sorted by priority), *Open issues*, *Activity* (version history and project log)
 and *People and settings*. Click a stage to open its page.
 
 Stage statuses: **Approved**, **Awaiting review** (a draft is at the human
@@ -76,6 +77,14 @@ watching for.
   whether it agrees with the rule engine. Checks inform you; they never block
   you.
 
+- **Every stage answers in the same standard record.** Each draft has the same
+  frame — Summary, Findings, the stage's own sections, Action Plan, Open Issues,
+  Not Grounded, Declared Coverage — on the same scales. Findings are placed on
+  likelihood and magnitude; the software, not the model, computes their
+  priority. Every action names a response, an owner, a lifecycle stage, how it
+  will be verified and the evidence that will show it. You edit the record's
+  fields, not its prose, and the software recomputes the rest.
+
 - **Disagreement is escalated, not resolved.** When a rule and an agent
   disagree, or two norms of equal authority conflict, or something needs a
   decision only a person can make, it goes to the **Open issues** register
@@ -90,7 +99,9 @@ watching for.
    the form to see what it asks before you press **Run**.
 3. Read the draft. Then open the **Evidence** tab and pick one citation from
    the draft: can you find the excerpt it points to? Open **What the code
-   computed** and check whether the verdict follows from the answers.
+   computed** and check whether the verdict follows from the answers. In the
+   **Findings** table, read one finding's *priority basis*: does the priority
+   follow from its placement and the rules?
 4. Try **rejecting** it with a reason and specific feedback (e.g. "consider
    candidates with disabilities explicitly"). Does the revision address it?
 5. **Approve** the revision. The approval is recorded under your signed-in
@@ -100,7 +111,8 @@ watching for.
 7. Open the **Risk Classifier** again and **revise** it: change one answer,
    run and approve. Back on the project page, the stages built on it now say
    **Needs review**. Open one and decide whether it still holds.
-8. Open the **Open issues** tab. Arbitrate one: mark it resolved or accept the
+8. Open the **Action plan** tab: is every action specific enough for someone to
+   pick up? Then open the **Open issues** tab. Arbitrate one: mark it resolved or accept the
    risk, and note what was decided.
 9. Open the **Activity** tab. Every approval is a recorded version, and every
    artifact under **Documents** carries its provenance: the model, the corpus

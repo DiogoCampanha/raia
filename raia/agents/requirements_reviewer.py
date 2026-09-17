@@ -17,6 +17,7 @@ agents can be checked against a register that actually exists.
 from typing import Any, Dict
 
 from .. import validators
+from ..contract import checks as contract_checks
 from ..fields import InputField
 from ..rationale import coverage
 from ..rationale.types import RationaleResult
@@ -49,12 +50,6 @@ class RequirementsReviewerAgent(BaseAgent):
         output_key="requirements_review",
         engine=coverage.run,
         verdict_keys=["gap_count"],
-        required_sections=[
-            "Gap Analysis",
-            "Proposed Ethical Value Requirements",
-            "Impact Assessment Notes",
-            "Open Issues",
-        ],
         input_fields=[
             InputField(
                 key="requirements", label="Software requirements", group=G_REQS, required=True,
@@ -93,33 +88,44 @@ class RequirementsReviewerAgent(BaseAgent):
             ),
         ],
         task_prompt=(
-            "Write the ethical value requirements for the gaps the engine computed. The gap "
-            "list and the requirement identifiers are given to you — use exactly those ids, "
-            "do not renumber, do not invent additional ones, and do not drop one.\n\n"
-            "Under **Gap Analysis**, explain each computed GAP row: what is missing, why it "
-            "matters for this product specifically, and which excerpt grounds the concern. "
-            "Where a row was marked covered by a control or an existing requirement, do not "
-            "restate it.\n\n"
-            "Under **Proposed Ethical Value Requirements**, write one requirement per assigned "
-            "id. Each must name the value it protects and the stakeholder it protects, be bound "
-            "to this system's context, and above all be *verifiable* — a test, an audit, a "
-            "measurement or an inspection must be able to settle whether it is met. Prefer "
-            "\"selection outcomes shall be auditable per protected attribute\" to \"the system "
-            "shall be fair\".\n\n"
-            "Under **Impact Assessment Notes**, say what a structured impact assessment would "
-            "flag for this system that the requirements do not yet cover.\n\n"
-            "Under **Open Issues**, carry forward every issue the engine raised, and add any "
-            "value conflict you found. Surface trade-offs; never resolve one yourself."
+            "Turn the gaps the engine computed into ethical value requirements, following IEEE "
+            "7000 Value-Based Engineering and the Microsoft RAI Standard v2 impact assessment "
+            "(goal A1). The gap list and the requirement identifiers are given to you: use exactly "
+            "those ids, do not renumber, do not invent additional ones, and do not drop one.\n\n"
+            "In the extension: `context_of_use` characterises the operational environment. "
+            "`stakeholders` lists direct and indirect stakeholders — including people who never "
+            "use the system but are affected by it — and the values at stake for each. "
+            "`value_register` ranks the core values (1 = highest) and, for each, the threats the "
+            "design poses to it and the opportunities to advance it. `gap_analysis` explains "
+            "every computed gap: what is missing, why it matters for this product, and which "
+            "excerpt grounds the concern. `evrs` holds one ethical value requirement per assigned "
+            "id, and each must be traceable (the value and stakeholders it protects), contextual "
+            "(bound to this system), prioritised (its value is in the register) and above all "
+            "verifiable: a `fit_criterion` a test, audit, measurement or inspection can settle. "
+            "Prefer \"selection outcomes shall be auditable per protected attribute\" to \"the "
+            "system shall be fair\". `impact_assessment` records intended uses, potential harms "
+            "and benefits per stakeholder, and mitigations.\n\n"
+            "Findings are the value threats that carry real risk, linked to EVR ids. Actions adopt "
+            "and verify the requirements. Where values trade off, raise a `value_tradeoff` issue; "
+            "never resolve one yourself."
         ),
     )
 
-    def extra_checks(
-        self, report: validators.ValidationReport, draft: str, rationale: RationaleResult
-    ) -> None:
+    def extra_checks(self, report, draft, rationale, record) -> None:
         evr_ids = rationale.verdict.get("evr_ids") or []
-        report.add(
-            validators.check_traceability(
-                draft, evr_ids, "Requirement register", code="evr_register"
-            )
-        )
+        ext = record.get("extension") or {}
+        report.add(contract_checks.check_registered_ids(
+            "Requirement register", "evr_register", evr_ids, [e.get("id") for e in ext.get("evrs") or []]))
+        report.add(contract_checks.check_registered_ids(
+            "Gap analysis", "gap_analysis", evr_ids, [g.get("evr_id") for g in ext.get("gap_analysis") or []]))
         report.add(validators.check_requirement_quality(draft, evr_ids))
+
+    def structured_from(self, record: Dict[str, Any], rationale: RationaleResult) -> Dict[str, Any]:
+        """Publish the approved requirements, so the Auditor audits their wording."""
+        data = super().structured_from(record, rationale)
+        data["evrs"] = [
+            {"id": e.get("id"), "value": e.get("value"), "statement": e.get("statement", ""),
+             "fit_criterion": e.get("fit_criterion", ""), "verification_method": e.get("verification_method")}
+            for e in (record.get("extension") or {}).get("evrs") or []
+        ]
+        return data

@@ -16,8 +16,7 @@ get confidently wrong — whether a narrow-task exemption really holds, whether 
 harm is significant — and must declare whether it agrees with the screen.
 """
 
-from typing import Any, Dict
-
+from ..contract import checks as contract_checks
 from ..fields import InputField, ShowIf, YES_NO, YES_NO_UNSURE
 from ..rationale import risk_screen
 from .base import AgentSpec, BaseAgent
@@ -51,12 +50,6 @@ class RiskClassifierAgent(BaseAgent):
         output_key="risk_classification",
         engine=lambda inputs, upstream: risk_screen.run(inputs),
         verdict_keys=["eu_tier", "br_tier"],
-        required_sections=[
-            "Risk Classification",
-            "Applicable Legal Obligations",
-            "Recommendations for the Team",
-            "Open Issues",
-        ],
         input_fields=[
             InputField(
                 key="product_brief", label="Product brief", group=G_PRODUCT, required=True,
@@ -162,22 +155,30 @@ class RiskClassifierAgent(BaseAgent):
             ),
         ],
         task_prompt=(
-            "Explain and justify the classification the rule engine computed, in language "
-            "the product team can act on. Do not re-derive the tier or the obligation list — "
-            "they are given to you. Your work is the reasoning, the context, the edge cases, "
-            "and anything the structured answers left ambiguous.\n\n"
-            "Under **Risk Classification**, state the tier for each jurisdiction with the "
-            "specific area or article that produces it, and say plainly what it means for this "
-            "team. If you believe the computed tier is wrong, say so here, argue it, and record "
-            "it as an open issue — do not quietly classify it differently.\n\n"
-            "Under **Applicable Legal Obligations**, take every obligation in the computed table "
-            "and explain what satisfying it looks like for *this* product, citing the excerpt "
-            "that grounds it. Do not add obligations that are not in the table; if you believe "
-            "one is missing, raise it as an open issue instead.\n\n"
-            "Under **Recommendations for the Team**, give concrete next steps appropriate to the "
-            "declared lifecycle stage — an impact assessment, an oversight design, bias testing — "
-            "each tied to an obligation.\n\n"
-            "Under **Open Issues**, carry forward every issue the rule engine raised, plus any "
-            "ambiguity you found that a human must settle."
+            "Explain and justify the classification the rule engine computed, in language the "
+            "product team can act on, under the EU AI Act and PL 2338/2023. Do not re-derive the "
+            "tier or the obligation list: they are given to you. Your work is the reasoning, the "
+            "context, the edge cases, and anything the structured answers left ambiguous.\n\n"
+            "In the extension: `prohibited_screen` states the result of the EU AI Act Art. 5 and "
+            "PL 2338/2023 excessive-risk screens. `eu_tier_justification` and "
+            "`br_tier_justification` name the specific area or article that produces each tier "
+            "and say plainly what it means for this team; if you believe a computed tier is "
+            "wrong, set `agrees_with_rule_engine` to false and argue it. `obligations` holds one "
+            "entry per obligation code in the computed table, exactly, explaining what satisfying "
+            "it looks like for this product, cited; never add a code — if one seems missing, "
+            "raise an open issue. `human_oversight_assessment` tests the declared autonomy and "
+            "oversight against the human-oversight obligations; `affected_persons_rights` says "
+            "how explanation, contestation and human review are built into the product; "
+            "`impact_assessments` names the fundamental-rights and algorithmic impact "
+            "assessments the instruments require here.\n\n"
+            "Findings are the risks the classification exposes for this product (for example an "
+            "obligation the current design does not meet), each linked to the obligation codes it "
+            "concerns. Actions are the next steps for the declared lifecycle stage."
         ),
     )
+
+    def extra_checks(self, report, draft, rationale, record) -> None:
+        computed = [o.get("code") for o in (rationale.data or {}).get("obligations") or []]
+        noted = [o.get("code") for o in (record.get("extension") or {}).get("obligations") or []]
+        report.add(contract_checks.check_registered_ids(
+            "Obligation register", "obligations", computed, noted))

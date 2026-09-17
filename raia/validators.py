@@ -118,6 +118,8 @@ def _norm(text: str) -> str:
     retriever produced; neither difference should be treated as a bad citation.
     """
     text = unicodedata.normalize("NFKC", text or "")
+    # A citation rendered inside a Markdown table has its pipe escaped.
+    text = text.replace("\\|", "|")
     text = text.replace("—", "-").replace("–", "-").replace("−", "-")
     text = re.sub(r"\s+", " ", text)
     return text.strip().lower().rstrip(".")

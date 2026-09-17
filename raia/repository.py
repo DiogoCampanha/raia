@@ -232,13 +232,15 @@ class BaseRepository:
             return []
 
     def append_open_issues(
-        self, issues: List[str], raised_by: str, artifact: str = "", commit: str = ""
+        self, issues: List[Any], raised_by: str, artifact: str = "", commit: str = ""
     ) -> int:
         """Record normative conflicts as explicit, tracked open issues.
 
         Same-level conflicts and rule-engine/model disagreements are escalated
         for human arbitration rather than resolved silently — which means they
-        need somewhere to live, a status, and a way to be seen. Duplicates of an
+        need somewhere to live, a status, and a way to be seen. Each issue is a
+        RAIA record issue (type, deciding role, blocking flag, options, links);
+        a plain string is accepted and typed conservatively. Duplicates of an
         already-recorded issue are skipped so a rejected-and-regenerated draft
         does not multiply the register.
         """
@@ -247,8 +249,9 @@ class BaseRepository:
         stamp = _now()
         added = 0
 
-        for text in issues:
-            text = (text or "").strip()
+        for item in issues:
+            meta = item if isinstance(item, dict) else {"description": item}
+            text = str(meta.get("description") or meta.get("text") or "").strip()
             if not text or _fingerprint(text) in known:
                 continue
             known.add(_fingerprint(text))
@@ -256,6 +259,13 @@ class BaseRepository:
                 {
                     "id": f"ISSUE-{len(existing) + 1}",
                     "text": text,
+                    "type": meta.get("type") or "missing_information",
+                    "decision_owner": meta.get("decision_owner") or "product",
+                    "blocking": bool(meta.get("blocking")),
+                    "options": list(meta.get("options") or []),
+                    "links": list(meta.get("links") or []),
+                    "record_id": meta.get("id", ""),
+                    "origin": meta.get("origin") or "agent",
                     "raised_by": raised_by,
                     "artifact": artifact,
                     "commit": commit,
@@ -310,6 +320,9 @@ class BaseRepository:
             for i in group:
                 lines.append(
                     f"- **{i['id']}** — {i['text']}  \n"
+                    f"  _{str(i.get('type', 'missing_information')).replace('_', ' ')} · decided by "
+                    f"{str(i.get('decision_owner', 'product')).replace('_', ' ')}"
+                    f"{' · blocking' if i.get('blocking') else ''}_  \n"
                     f"  _raised by {i.get('raised_by', '?')} on {i.get('raised_at', '?')}_"
                     + (f" · _{i.get('resolution_note')}_" if i.get("resolution_note") else "")
                 )

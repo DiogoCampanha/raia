@@ -25,7 +25,6 @@ Supported providers (``RAIA_LLM_PROVIDER``):
 * ``mock``      — deterministic canned responses, no network, no API key.
 """
 
-import re
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence
@@ -59,15 +58,16 @@ class MockChatModel(BaseChatModel):
     """A stand-in chat model that satisfies the output contract.
 
     It is a proper test double rather than a lorem generator: it reads the
-    contract the agent declared in the prompt (required sections, machine-block
-    keys, the computed verdict, the engine's open issues) and produces a
-    document that conforms to it, citing an excerpt that really was retrieved.
+    contract hints the agent put in the prompt (verdict keys, checklist keys,
+    the identifiers the rule engine assigned, a citation that really was
+    retrieved) and returns a RAIA record that validates against the agent's
+    schema and exercises every section of it.
 
     That matters because it lets the whole chain — rationale engine, prompt
-    assembly, validators, persistence, audit trail — be exercised offline, in
-    CI and in the smoke test, without an API key. What it cannot do is produce
-    a *good* analysis, which is exactly why the app refuses to serve mock
-    output to an evaluator.
+    assembly, record parsing and finalisation, rendering, validators,
+    persistence, audit trail — be exercised offline, in CI and in the smoke
+    test, without an API key. What it cannot do is produce a *good* analysis,
+    which is exactly why the app refuses to serve mock output to an evaluator.
     """
 
     @property
@@ -81,6 +81,8 @@ class MockChatModel(BaseChatModel):
         run_manager: Any = None,
         **kwargs: Any,
     ) -> ChatResult:
+        from .contract import mock as contract_mock
+
         prompt = ""
         for m in messages:
             content = m.content
@@ -88,108 +90,9 @@ class MockChatModel(BaseChatModel):
                 content = " ".join(str(p) for p in content)
             prompt += str(content) + "\n"
 
-        sections = _csv_after(prompt, "RAIA-CONTRACT-SECTIONS:")
-        keys = _csv_after(prompt, "RAIA-CONTRACT-KEYS:")
-        citation = _first_citation(prompt)
-        verdicts = _computed_verdicts(prompt)
-        issues = _engine_issues(prompt)
-        register = _register_ids(prompt)
-
-        body = [
-            "> **[MOCK MODE]** No model was called. This text conforms to the output "
-            "contract so the pipeline can be exercised offline; it is not an analysis.",
-            "",
-        ]
-        for section in sections or ["Analysis"]:
-            body.append(f"## {section}")
-            if section.strip().lower() == "open issues":
-                body.extend(f"- {i}" for i in issues) if issues else body.append(
-                    "- None raised by the rule engine."
-                )
-            else:
-                body.append(
-                    f"Placeholder analysis for this section. {citation}"
-                    if citation else "Placeholder analysis for this section."
-                )
-                if register and section == (sections or [""])[0]:
-                    body.append("Register accounted for: " + ", ".join(register) + ".")
-            body.append("")
-
-        block = ["```raia"]
-        for key in keys:
-            if key == "verdict.agrees_with_screen":
-                block.append("verdict.agrees_with_screen: yes")
-            elif key.startswith("verdict."):
-                block.append(f"{key}: {verdicts.get(key[len('verdict.'):], 'unknown')}")
-            else:
-                block.append(f"{key}: covered — placeholder declaration from mock mode.")
-        block.append("```")
-
-        text = "\n".join(body + block)
+        text = contract_mock.reply(prompt)
         message = AIMessage(content=text, response_metadata={"stop_reason": "end_turn"})
         return ChatResult(generations=[ChatGeneration(message=message)])
-
-
-def _csv_after(prompt: str, marker: str) -> List[str]:
-    for line in prompt.splitlines():
-        if line.strip().startswith(marker):
-            raw = line.split(marker, 1)[1]
-            return [p.strip() for p in raw.split(",") if p.strip()]
-    return []
-
-
-def _first_citation(prompt: str) -> str:
-    """A citation tag from the retrieved excerpts — never the preamble's example.
-
-    The system preamble contains an illustrative tag. Citing it would be
-    exactly the fabrication the citation validator exists to catch, so the
-    search starts at the excerpt block.
-    """
-    start = prompt.find("## Retrieved norm excerpts")
-    if start == -1:
-        return ""
-    m = re.search(r"--- Excerpt \d+ (\[Source:[^\]]+\])", prompt[start:])
-    return m.group(1) if m else ""
-
-
-def _register_ids(prompt: str) -> List[str]:
-    """Identifiers the rule engine put in the computed block.
-
-    Echoing them lets the traceability validators be exercised offline: a smoke
-    test that cannot reach a passing state would not tell us whether the checks
-    work or whether the mock is simply silent.
-    """
-    start = prompt.find("### Computed by code")
-    end = prompt.find("## Retrieved norm excerpts")
-    if start == -1 or end == -1:
-        return []
-    block = prompt[start:end]
-    out: List[str] = []
-    for pattern in (r"\bEVR-\d+\b", r"\bAC-S\d+-\d+\b", r"(?<![\w-])S\d+(?![\w-])",
-                    r"(?<![\w])#\d{1,2}(?![\w])"):
-        for m in re.findall(pattern, block):
-            if m not in out:
-                out.append(m)
-    return out
-
-
-def _computed_verdicts(prompt: str) -> Dict[str, str]:
-    """Read the rule engine's verdict lines out of the computed block."""
-    out: Dict[str, str] = {}
-    for m in re.finditer(r"^- `([a-z0-9_]+)`: \*\*(.+?)\*\*$", prompt, re.M):
-        out[m.group(1)] = m.group(2)
-    return out
-
-
-def _engine_issues(prompt: str) -> List[str]:
-    block = re.search(
-        r"\*\*Open issues raised by the rule engine[^\n]*\*\*\n(.*?)(?:\n\*\*|\n## |\Z)",
-        prompt,
-        re.S,
-    )
-    if not block:
-        return []
-    return [l.strip("- ").strip() for l in block.group(1).splitlines() if l.strip().startswith("-")]
 
 
 def get_chat_model() -> BaseChatModel:

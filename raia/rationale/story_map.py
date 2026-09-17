@@ -214,14 +214,16 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
     # -- Open issues ---------------------------------------------------------
 
     if "high_risk" in tokens and not evr_ids:
-        r.open_issues.append(
+        r.raise_issue(
             "High-risk system with no approved requirement register to trace criteria to. "
-            "Criteria added here will not be auditable upstream until that is fixed."
+            "Criteria added here will not be auditable upstream until that is fixed.",
+            type="missing_information", decision_owner="product", blocking=False,
         )
     if "cap.automation" in tokens and risk.get("human_oversight") in ("none_designed", "monitoring_only"):
-        r.open_issues.append(
+        r.raise_issue(
             "This sprint automates a decision while no case-level human intervention is designed. "
-            "Either a story adds one, or the gap is recorded and accepted by a human."
+            "Either a story adds one, or the gap is recorded and accepted by a human.",
+            type="risk_acceptance", decision_owner="product", blocking=False,
         )
 
     r.pins = [Pin("eccola", SECTION_ECCOLA_SPRINTS, "how cards are applied in a sprint")]

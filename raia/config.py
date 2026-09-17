@@ -62,6 +62,11 @@ LLM_MAX_TOKENS: int = int(os.getenv("RAIA_LLM_MAX_TOKENS", "8192"))
 LLM_RETRIES: int = int(os.getenv("RAIA_LLM_RETRIES", "2"))
 LLM_RETRY_BASE_DELAY: float = float(os.getenv("RAIA_LLM_RETRY_BASE_DELAY", "2.0"))
 
+#: How many times a reply that does not validate against the RAIA record schema
+#: is sent back to the model with its validation errors before the stage shows
+#: a fallback record. Each repair is one more model call.
+CONTRACT_REPAIRS: int = int(os.getenv("RAIA_CONTRACT_REPAIRS", "1"))
+
 # ---------------------------------------------------------------------------
 # RAG / Chroma configuration
 # ---------------------------------------------------------------------------

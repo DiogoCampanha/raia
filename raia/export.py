@@ -37,6 +37,10 @@ artifacts/            The approved artifacts. Each .md is what a human read and
                       draft was edited, and the result of the automated checks.
                       Each .json is the structured record the next agent read.
 
+action_plan.csv       Every action from every approved RAIA record, sorted by
+action_plan.json      computed priority, with owner, lifecycle stage, review
+                      cadence, verification method and evidence artifact.
+
 git_history.txt       One line per recorded version. Every approval is one.
 
 history_chain.json    (database-backed projects) the full hash chain, so the
@@ -70,6 +74,12 @@ def session_bundle(repo: "BaseRepository", project_label: str = "") -> bytes:
 
         for name, content in repo.current_files().items():
             z.writestr(f"artifacts/{name}", content)
+
+        from .contract import actions as action_plan
+
+        rows = action_plan.project_actions(repo)
+        z.writestr("action_plan.csv", action_plan.to_csv(rows))
+        z.writestr("action_plan.json", action_plan.to_json(rows))
 
         history = repo.history(limit=500)
         z.writestr(

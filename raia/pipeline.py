@@ -149,48 +149,66 @@ def _persist(state: StageState) -> StageState:
     repo = open_repository(state["project"])
     run = state.get("run") or {}
     decision = state.get("decision") or {}
-
-    draft = run.get("draft", "")
-    content = decision.get("content") or draft
     approver = decision.get("approver") or "human"
-    edited = content.strip() != draft.strip()
+    rationale = _rationale_stub(run)
+    original = run.get("record") or {}
 
-    # Re-validate what the human actually approved. A reviewer may edit a draft
-    # at the gate, and the record should describe the approved text rather than
-    # the text the model happened to produce.
-    report = revalidate(content, run)
+    # A reviewer edits the record's fields, never the rendered text: an edit to
+    # free text could not be validated, prioritised or compared across projects,
+    # and the standard would stop being one at the exact point a person touched it.
+    if decision.get("record") is not None:
+        record = agent.finalize_record(decision["record"], rationale, run.get("evidence") or [],
+                                       run.get("attempt", 1))
+    else:
+        if decision.get("content") and decision["content"].strip() != (run.get("draft") or "").strip():
+            raise ValueError("Edits are made to the record's fields at the gate; free-text "
+                             "changes to the rendered document are not accepted.")
+        record = original
+    edited = _core(record) != _core(original)
 
-    structured = agent.structured_from(content, _rationale_stub(run))
-    record = dict(run.get("provenance") or {})
+    if record:
+        content = agent.render_record(record, rationale)
+    else:
+        # A draft saved before the standard record existed (restored from disk
+        # after an upgrade): approve it exactly as shown, never re-rendered empty.
+        content = run.get("draft") or ""
+    if record and run.get("sanitization"):
+        from .sanitize import sanitization_notice
+
+        content = sanitization_notice(run["sanitization"]) + content
+
+    # Re-validate what the human actually approved.
+    report = revalidate(content, run, record)
+
+    structured = agent.structured_from(record, rationale)
+    prov = dict(run.get("provenance") or {})
     from . import provenance as _prov
 
-    record = _prov.finalize(
-        record,
+    prov = _prov.finalize(
+        prov,
         approver=approver,
         edited=edited,
         validation=report.to_dict(),
         rejection_history=state.get("rejections") or [],
     )
     if decision.get("approver_id"):
-        record["approval"]["approver_id"] = decision["approver_id"]
+        prov["approval"]["approver_id"] = decision["approver_id"]
     if run.get("run_by"):
-        record["approval"]["run_by"] = run["run_by"]
+        prov["approval"]["run_by"] = run["run_by"]
 
     commit = repo.save_artifact(
         agent.spec.output_key,
         content,
         approved_by=approver,
         structured=structured,
-        run_provenance=record,
+        run_provenance=prov,
     )
 
-    # Conflicts reach the register from both sides: what the rule engine raised
-    # and what the agent wrote under Open Issues. Neither is allowed to
-    # evaporate because a draft was edited.
-    issues = list(dict.fromkeys(
-        list((run.get("rationale") or {}).get("open_issues") or [])
-        + validators.extract_open_issues(content)
-    ))
+    # Every issue in the approved record reaches the register with its type,
+    # deciding role and blocking flag — the engine's, the agent's and the ones
+    # code opened for a disagreement or an accepted risk. None evaporates
+    # because a record was edited: engine issues are re-inserted by finalisation.
+    issues = list(record.get("open_issues") or [])
     if issues:
         repo.append_open_issues(
             issues, raised_by=agent.spec.name, artifact=agent.spec.output_key, commit=commit
@@ -213,6 +231,16 @@ def _persist(state: StageState) -> StageState:
         },
     )
     return {"commit": commit, "approved_content": content}
+
+
+def _core(record: Dict[str, Any]) -> str:
+    """The parts of a record a person can change, for edit detection."""
+    import json
+
+    keys = ("summary", "overall_status", "declared_verdict", "agrees_with_rule_engine",
+            "disagreement_rationale", "findings", "actions", "open_issues", "not_grounded",
+            "coverage", "extension")
+    return json.dumps({k: record.get(k) for k in keys}, sort_keys=True, default=str)
 
 
 def _persist_product_brief(repo, agent, inputs: Dict[str, Any], approver: str,
@@ -239,28 +267,43 @@ def _persist_product_brief(repo, agent, inputs: Dict[str, Any], approver: str,
     )
 
 
-def revalidate(content: str, run: Dict[str, Any]) -> validators.ValidationReport:
-    """Re-run the deterministic checks against the text the human approved."""
-    rationale = run.get("rationale") or {}
+def revalidate(content: str, run: Dict[str, Any],
+               record: Optional[Dict[str, Any]] = None) -> validators.ValidationReport:
+    """Re-run the deterministic checks against the record and text the human approved."""
+    from .contract import checks as contract_checks
+
+    agent = AGENTS[run["agent_key"]] if run.get("agent_key") in AGENTS else None
+    rationale = _rationale_stub(run)
+    record = record if record is not None else (run.get("record") or {})
     allowed = [e.get("citation", "") for e in run.get("evidence") or []]
     report = validators.ValidationReport()
+    report.add(contract_checks.check_schema(record, run.get("repairs", 0)))
+    for item in contract_checks.check_corrections(record):
+        report.add(item)
+    report.add(contract_checks.check_responses(record))
     report.add(validators.check_sections(content, run.get("required_sections") or []))
     if allowed:
         report.add(validators.check_citations(content, allowed))
     report.add(validators.check_coverage(content, run.get("checklist_keys") or []))
-    report.add(validators.check_open_issues(content, rationale.get("open_issues") or []))
+    report.add(validators.check_open_issues(content, rationale.open_issues))
+    if agent is not None:
+        if agent.spec.verdict_keys:
+            report.add(validators.check_reconciliation(content, rationale.verdict, agent.spec.verdict_keys))
+        agent.extra_checks(report, content, rationale, record)
     return report
 
 
 def _rationale_stub(run: Dict[str, Any]):
-    """Rebuild the minimum of a RationaleResult that ``structured_from`` needs."""
-    from .rationale.types import RationaleResult
+    """Rebuild the RationaleResult that finalisation, rendering and checks need."""
+    from .rationale.types import ChecklistItem, RationaleResult
 
     rationale = run.get("rationale") or {}
     return RationaleResult(
         engine=rationale.get("engine", "unknown"),
         verdict=rationale.get("verdict") or {},
+        checklist=[ChecklistItem(c.get("key", ""), c.get("label", "")) for c in rationale.get("checklist") or []],
         open_issues=list(rationale.get("open_issues") or []),
+        issue_meta=list(rationale.get("issue_meta") or []),
         data=rationale.get("data") or {},
     )
 

@@ -135,10 +135,18 @@ def main() -> None:
         ok(at.run(), "the run pauses at the gate")
         check("Human review required" in text(at), "the gate is shown")
         check("Recorded in the audit trail as" in text(at), "…naming the signed-in approver")
+        check(any("Edit the record" in t.label for t in at.tabs), "…with the record editor, not a text box")
+        check("Status:" in text(at) and "Action Plan" in text(at), "…and the draft in the standard layout")
         button(at, f"{pid1}::approve::{agent}").click()
         ok(at.run(), "the draft is approved")
         check("Approved and committed" in text(at), "approval is confirmed")
     no_emoji(at, "stage page")
+    goto(at, "project", id=pid1)
+    ok(at.run(), "the project page renders after approvals")
+    check(any("Action plan" in t.label for t in at.tabs), "the project has an action plan tab")
+    check("Action plan (CSV)" in [d.proto.label for d in at.get("download_button")] or
+          any("Action plan (CSV)" in str(d.proto) for d in at.get("download_button")),
+          "…with a CSV export")
 
     print("== 4. Revise an approved stage: downstream is flagged, not re-run ==")
     goto(at, "stage", project=pid1, agent="risk_classifier")

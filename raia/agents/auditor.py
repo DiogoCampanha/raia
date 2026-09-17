@@ -15,12 +15,9 @@ may downgrade a verdict — it reads the narrative the matcher only
 pattern-matched — but a validator prevents it from upgrading one.
 """
 
-from typing import Any, Dict
-
-from .. import validators
+from ..contract import checks as contract_checks
 from ..fields import InputField
 from ..rationale import traceability
-from ..rationale.types import RationaleResult
 from .base import AgentSpec, BaseAgent
 
 G_SPRINT = "1 · What happened this sprint"
@@ -49,12 +46,6 @@ class AuditorAgent(BaseAgent):
         output_key="audit_report",
         engine=traceability.run,
         verdict_keys=["items_audited"],
-        required_sections=[
-            "Progress Audit",
-            "Accountability Documentation",
-            "Upcoming Ethical Checkpoints",
-            "Open Issues",
-        ],
         input_fields=[
             InputField(
                 key="sprint_id", label="Sprint", kind="text", group=G_SPRINT,
@@ -81,33 +72,26 @@ class AuditorAgent(BaseAgent):
             ),
         ],
         task_prompt=(
-            "Audit this sprint against the register the engine computed. The verdict table is "
-            "given to you and it is binding in one direction: you may downgrade a verdict when "
-            "the narrative shows the match was superficial, and you must never upgrade one. An "
-            "item marked NOT VERIFIED stays unverified in your report, whatever the sprint "
-            "notes claim.\n\n"
-            "Under **Progress Audit**, work through every item in the table. For each: its id, "
-            "your verdict (Satisfied / Partially satisfied / Not verified / At risk), the "
-            "evidence quoted from the sprint outcomes or an upstream artifact, and the norm "
-            "excerpt cited. Where you downgrade a computed verdict, say why.\n\n"
-            "Under **Accountability Documentation**, record who decided what, taken from the "
-            "approval headers of the upstream artifacts, and what a reviewer would need to "
-            "reconstruct those decisions.\n\n"
-            "Under **Upcoming Ethical Checkpoints**, map the planned work to the checkpoints it "
-            "will hit, so they are scheduled rather than discovered.\n\n"
-            "Under **Open Issues**, carry forward every issue the engine raised, plus any "
-            "unverified item that needs an owner and a date."
+            "Audit this sprint against the register the engine computed, following the Microsoft "
+            "RAI Standard v2 accountability goals and NIST AI RMF GOVERN. The verdict table is "
+            "binding in one direction: you may downgrade a verdict when the narrative shows the "
+            "match was superficial, and you must never upgrade one. An item marked NOT VERIFIED "
+            "stays `not_verified` (or `at_risk`), whatever the sprint notes claim — code enforces "
+            "this and reports any attempt.\n\n"
+            "In the extension: `items` has one entry per computed item, with your verdict, the "
+            "evidence quoted from the sprint outcomes or an upstream artifact, what evidence "
+            "would verify it when it is not satisfied, and why you downgraded where you did. "
+            "`accountability_log` records who decided what, taken from the approval headers of "
+            "the upstream artifacts, so a reviewer can reconstruct each decision. "
+            "`upcoming_checkpoints` maps the planned work to the ethical checkpoints it will hit, "
+            "with the lifecycle stage, so they are scheduled rather than discovered.\n\n"
+            "Findings are the unverified items and accountability gaps that carry risk, linked to "
+            "item ids. Actions give each one an owner, a stage and the evidence that would close it."
         ),
     )
 
-    def extra_checks(
-        self, report: validators.ValidationReport, draft: str, rationale: RationaleResult
-    ) -> None:
-        not_verified = rationale.verdict.get("not_verified") or []
-        assessable = rationale.verdict.get("assessable") or []
-        report.add(validators.check_forbidden_verdicts(draft, not_verified))
-        report.add(
-            validators.check_traceability(
-                draft, list(not_verified) + list(assessable), "Audit coverage", code="audit"
-            )
-        )
+    def extra_checks(self, report, draft, rationale, record) -> None:
+        expected = list(rationale.verdict.get("not_verified") or []) + list(rationale.verdict.get("assessable") or [])
+        items = (record.get("extension") or {}).get("items") or []
+        report.add(contract_checks.check_registered_ids(
+            "Audit coverage", "audit", expected, [i.get("item_id") for i in items]))

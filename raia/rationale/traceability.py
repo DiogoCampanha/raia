@@ -92,6 +92,11 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
     evr_ids: List[str] = review.get("evr_ids") or []
     gaps: List[Dict[str, str]] = review.get("gaps") or []
     subject_by_id = {g.get("evr_id"): g.get("subject", "") for g in gaps if g.get("evr_id")}
+    # Prefer the approved wording of each requirement over the gap it closed:
+    # the audit is of what the team adopted, not of what the engine found missing.
+    for evr in review.get("evrs") or []:
+        if evr.get("id") and evr.get("statement"):
+            subject_by_id[evr["id"]] = f"{evr['statement']} {evr.get('fit_criterion', '')}".strip()
     criteria: List[Dict[str, str]] = stories.get("criteria") or []
     high_risk = bool(risk.get("eu_is_high_risk") or risk.get("br_is_high_risk"))
 
@@ -146,19 +151,22 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
     # -- 2. Open issues ------------------------------------------------------
 
     if not_verified and high_risk:
-        r.open_issues.append(
+        r.raise_issue(
             f"{len(not_verified)} ethical item(s) are unverified on a high-risk system after "
-            f"{sprint_id}. Each needs an owner and a sprint, or an accepted-risk decision on record."
+            f"{sprint_id}. Each needs an owner and a sprint, or an accepted-risk decision on record.",
+            type="risk_acceptance", decision_owner="product", blocking=False,
         )
     if "disaggregated" not in evidence_types and high_risk:
-        r.open_issues.append(
+        r.raise_issue(
             "No disaggregated evaluation was declared for a high-risk system. Aggregate results "
-            "cannot evidence a non-discrimination obligation."
+            "cannot evidence a non-discrimination obligation.",
+            type="missing_information", decision_owner="data_science", blocking=False,
         )
     if planned and not_verified:
-        r.open_issues.append(
+        r.raise_issue(
             "Work is planned forward while ethical items from the current scope remain unverified. "
-            "Sequencing is a human decision and should be recorded as one."
+            "Sequencing is a human decision and should be recorded as one.",
+            type="risk_acceptance", decision_owner="product", blocking=False,
         )
 
     # -- 3. Pins, checklist --------------------------------------------------
@@ -197,6 +205,7 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
                 for row in rows
             ],
             "not_verified": not_verified,
+            "high_risk": high_risk,
         }
     )
     return r

@@ -87,8 +87,8 @@ DOCS: Dict[str, Dict[str, object]] = {
 TURN = [
     ("Deterministic", "Structured intake", "Typed questions whose answers a rule reads."),
     ("Deterministic", "Decision procedure", "Computes the verdict, the tables and the required excerpts."),
-    ("Generative", "Model pass", "Justifies, handles judgement calls, writes for people."),
-    ("Deterministic", "Automated checks", "Citations, structure, coverage, reconciliation."),
+    ("Generative", "Model pass", "Justifies, handles judgement calls, and fills the standard record."),
+    ("Deterministic", "Contract and checks", "Priorities, ids and layout computed; citations, coverage, reconciliation checked."),
     ("Human", "Approval gate", "A person decides, with the evidence in front of them."),
 ]
 
