@@ -158,7 +158,7 @@ def sanitization_notice(findings: List[str]) -> str:
     approves, preserved in the Git-versioned artifact (audit evidence)."""
     bullets = "\n".join(f"> - {f}" for f in findings)
     return (
-        "> ⚠️ **Input sanitization notice** — patterns often used for\n"
+        "> **Input sanitization notice** — patterns often used for\n"
         "> prompt injection were detected in the human-provided inputs. Review\n"
         "> the draft below with extra care before approving:\n"
         f"{bullets}\n\n"

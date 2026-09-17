@@ -124,6 +124,15 @@ ADMIN_EMAILS = {
     e.strip().lower() for e in os.getenv("RAIA_ADMIN_EMAILS", "").split(",") if e.strip()
 }
 
+#: Public contact shown on the Privacy Policy and User Agreement page. Google's
+#: OAuth consent screen requires a reachable contact for the app.
+CONTACT_EMAIL: str = os.getenv("RAIA_CONTACT_EMAIL", "")
+
+#: Effective date of the current Privacy Policy and User Agreement
+#: (docs/legal/PRIVACY_AND_TERMS.md). Anyone who accepted an earlier version is
+#: asked to accept again on their next visit.
+LEGAL_EFFECTIVE: str = "2026-09-17T00:00:00+00:00"
+
 #: Model calls (runs and regenerations) one person may trigger per UTC day.
 #: Protects the deployment's API key from a runaway session. 0 disables it.
 MAX_RUNS_PER_DAY: int = int(os.getenv("RAIA_MAX_RUNS_PER_DAY", "60"))

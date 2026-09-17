@@ -93,13 +93,18 @@ artifact.
    your signed-in identity — never to a typed name.
 5. **Arbitrate the open issues.** Conflicts land in a register with a status
    you set: resolved, or accepted risk, with a note.
-6. **Work with others.** Under *People & settings* an owner invites people by
+6. **Revise safely.** Revising an approved stage shows first which approved
+   stages depend on it. When the revision is approved those stages are marked
+   *Needs review*; they are never re-run automatically, and a person either
+   revises or re-confirms each one.
+7. **Work with others.** Under *People and settings* an owner invites people by
    their sign-in email as **editor** (runs agents, approves) or **reviewer**
    (reviews and approves, does not run agents), and can require a **second
    approver**, so the person who ran a stage cannot approve it.
-7. **Rate your experience** — one page, highlighted in the sidebar, rates every
-   stage and RAIA as a whole in a single submission.
-8. **Export a project** — artifacts, structured records, version history with
+8. **Assessment** — one page in the top menu: consent, optional profile, the
+   evaluation plan's five dimensions on a five-point scale, optional per-stage
+   ratings and open questions, with drafts.
+9. **Export a project** — artifacts, structured records, version history with
    its integrity check, and pseudonymized activity, in one zip.
 
 ## How Reliability Is Handled
@@ -147,8 +152,9 @@ artifact.
 
 ```
 raia/
-├── app.py                     # Streamlit UI — structured forms, evidence at the
-│                              #   gate, open-issues register, audit trail
+├── app.py                     # entry point: sign-in, agreement, page registry (top menu)
+├── views/                     # one file per page: home, project, stage, agents,
+│                              #   assessment, settings, research, legal, login, consent
 ├── ingest.py                  # Builds the Chroma normative index from corpus/
 ├── raia/
 │   ├── config.py              # env-driven settings; authority + source registries
@@ -169,6 +175,9 @@ raia/
 │   ├── storage.py             # backend selection; hash-chained database blackboard
 │   ├── db.py                  # SQLite locally, PostgreSQL hosted — one SQL dialect
 │   ├── projects.py            # people, projects, roles, invitations, authorization
+│   ├── lineage.py             # stage dependencies and the derived "needs review" flag
+│   ├── ui/                    # routes, theme (CSS + icons), components, approval gate,
+│   │                          #   agent docs, assessment instrument, legal page
 │   ├── auth.py                # Google sign-in via Streamlit, or a local dev identity
 │   ├── pipeline.py            # the graph: generate → human gate → persist
 │   ├── sanitize.py            # injection screening (EN + PT), flag-never-delete
@@ -178,6 +187,7 @@ raia/
 ├── docs/
 │   ├── architecture.md        # diagrams and the traceability table
 │   ├── PROJECT_LOG.md         # what was wrong, what was decided, what changed
+│   ├── legal/PRIVACY_AND_TERMS.md  # public privacy policy and user agreement
 │   └── TESTERS.md             # guided walkthrough for the evaluation panel
 └── tests/
     ├── smoke_test.py          # offline end-to-end, including the invariants
@@ -218,6 +228,7 @@ only when its file really is the official wording.
 | `RAIA_AUTH` | `google` if `[auth]` is set, else `dev` | a PostgreSQL deployment never falls back to `dev` |
 | `RAIA_ADMIN_EMAILS` | — | may download the pseudonymized research dataset |
 | `RAIA_PSEUDONYM_KEY` | — | keyed participant codes, stable across exports |
+| `RAIA_CONTACT_EMAIL` | — | contact shown on the public Privacy & terms page (`/privacy`) |
 | `RAIA_MAX_RUNS_PER_DAY` | `60` | model calls per person per UTC day; `0` = unlimited |
 | `RAIA_CORPUS_DIR` / `RAIA_CHROMA_DIR` | `./corpus` / `./.chroma` | |
 | `RAIA_FAKE_EMBED` | `0` | `1` = hash embeddings for CI / offline |

@@ -102,6 +102,12 @@ Recorded so the log stays honest about its own errors.
 | D12 | Build reviewer invitations now: roles owner / editor / reviewer, plus an optional second-approver rule. | Separation of duties at the approval gate is a responsible-AI control in its own right, and it is cheap once identity exists. |
 | D13 | Evaluation events stay inside each project; research exports are pseudonymized. | Keeps the evidence next to the work it describes, and keeps names and emails out of the dataset. |
 | D14 | Replace the per-stage rating widget with one highlighted *Rate your experience* page. | One submission rating every stage gives comparable, complete responses and stops rating prompts from interrupting the walkthrough. |
+| D15 | Rebuild the interface as separate pages on Streamlit (Home, Project, Stage, Agents, Assessment, Settings, public Privacy & terms) rather than rewriting it as a separate web front end. | A rewrite would rebuild sign-in, storage and tests inside the panel window. Streamlit's page routing, hidden pages and theming cover the page map; a separate front end remains possible after the panel. |
+| D16 | Top navigation menu; project and stage pages are hidden from the menu and take their context from the URL. | A top menu with four entries matches current product conventions and leaves the full width to the work. URL context makes a stage shareable between members; membership is re-checked on every load. |
+| D17 | No emoji in the interface; Material Symbols icons and one status vocabulary with text labels. | Emoji render differently per platform and read as informal; status carried by colour or pictogram alone fails accessibility. |
+| D18 | Revising an approved stage flags the approved stages that depend on it as *Needs review*. Nothing is re-run automatically; a person revises or re-confirms each one, and both are recorded. | An automatic re-run would call the model and produce drafts nobody requested, against the rule that nothing advances without a person. The flag is derived from the event log, like all progress. |
+| D19 | The tester assessment uses the evaluation plan's five dimensions (utility, completeness, usability, methodological rigor, generalizability) on a five-point agreement scale, plus open questions, optional broad profile questions and optional per-stage items. Instrument id `raia-panel-v1`. | The plan's success criterion is computed over exactly these dimensions. The earlier per-stage usefulness/ease/trust items did not map to it. The plan defines the dimensions but not item wording, so each statement is the plan's definition of its dimension, translated to English; the id changes if the wording does. |
+| D20 | A public Privacy Policy and User Agreement page, served by the app without sign-in from `docs/legal/PRIVACY_AND_TERMS.md`; people re-accept when its effective date changes. | Google's OAuth consent screen requires a public policy URL. One Markdown source serves both the app and any external copy. |
 
 ---
 
@@ -110,6 +116,70 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-17 — Interface rebuilt as separate pages on branch `ui-revamp`
+
+Decisions D15–D20.
+
+#### What was wrong
+
+- **UX-R1** One page with a sidebar radio did everything: project switching,
+  the five stages, open issues, audit trail, people, ratings and account. There
+  was no overview across projects and no way to link to a stage.
+- **UX-R2** Emoji carried status and navigation (✅ 🧑‍⚖️ ▶️ 🔒), rendering
+  inconsistently and without text labels.
+- **UX-R3** Re-running an approved stage silently left every stage built on it
+  approved against a version that no longer existed.
+- **EVAL-R1** The rating form asked usefulness, ease and trust per stage plus
+  four overall items; none mapped to the evaluation plan's five dimensions.
+- **LEGAL-R1** The privacy notice was only visible after signing in; Google's
+  consent screen needs a public policy URL.
+- **UX-R4** Form answers disappeared from the screen after visiting another
+  page and returning (Streamlit discards state of widgets not drawn in a run).
+
+#### What changed
+
+- `app.py` is now only the entry point: sign-in, agreement acceptance and the
+  page registry (`st.navigation`, top position). Pages live in `views/`; the
+  page map is documented in `raia/ui/routes.py`.
+- `raia/ui/`: `theme.css` (design tokens and components, targeting stable
+  `data-testid` selectors), `theme.py` (icons, status and risk vocabulary),
+  `components.py` (page header, stat tiles, badges, stage tracker, empty
+  states), `gate.py` (intake form and approval gate, moved from `app.py`),
+  `agent_docs.py`, `assessment.py`, `legal.py`, `state.py`.
+- `.streamlit/config.toml`: Inter typography, light and dark palettes, radii,
+  borders. Streamlit pinned to 1.63.x because the CSS layer depends on it.
+- **Home** — attention list (drafts at the gate, stages needing review), stat
+  tiles, project table with risk level, progress, next step and role.
+- **Project** — primary next action, stage tracker, tabs for Documents, Open
+  issues, Activity, People and settings.
+- **Stage** — read the approved version, revise it with the impact shown first,
+  re-confirm a flagged stage, or run and review; the gate itself is unchanged.
+- **Agents** — interactive architecture diagram (HTML/CSS/JS) and per-agent
+  documentation read from each `AgentSpec`.
+- **Assessment** — consent, optional profile, five required Likert items,
+  optional per-stage items, open questions, save draft (UX-R4, EVAL-R1).
+- **Settings** — profile, legal documents, download my data, sign out, delete
+  account. **Privacy & terms** is public (LEGAL-R1).
+- `raia/lineage.py` — stage dependencies derived from `upstream_keys`, and the
+  derived *Needs review* status (UX-R3). `ProjectService` gains
+  `revision_impact`, `reconfirm_stage`, assessment drafts and
+  `my_data_export`; `stage_summary` adds stale stages and the risk label.
+- Events on the database backend carry microsecond timestamps so an approval
+  and a re-confirmation in the same second keep their order.
+- Automated-check summaries and the sanitization notice inside artifacts use
+  words instead of emoji.
+
+#### Invariants added to the tests
+
+- Re-approving a stage flags exactly its approved dependents and **re-runs
+  nothing** (no draft appears at any downstream gate).
+- A revision waiting at its gate flags nothing: the approved version is still
+  in force.
+- Only a flagged stage can be re-confirmed; re-confirmation is attributed and
+  names its cause; a non-member cannot do it.
+- Assessment drafts never reach the research export.
+- The legal page opens without signing in; no page shows emoji.
+
 ### 2026-09-16 — Users, projects and durable storage on branch `projects`
 
 Decisions D9–D14.

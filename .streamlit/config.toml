@@ -1,11 +1,43 @@
-# Streamlit theme & server settings for the hosted RAIA deployment.
+# Streamlit theme & server settings for RAIA.
+#
+# The theme carries the design tokens Streamlit can express natively (fonts,
+# palette, radii, borders). raia/ui/theme.css adds only layout and a few RAIA
+# components. Both light and dark palettes are defined; people switch with the
+# app menu, and every colour pair meets WCAG AA contrast for body text.
 
 [theme]
-primaryColor = "#2563eb"        # RAIA blue (Product-layer accent)
+base = "light"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+baseFontSize = 15
+headingFontWeights = [700, 600, 600, 600, 600, 600]
+headingFontSizes = ["1.875rem", "1.25rem", "1.0625rem", "1rem", "0.9375rem", "0.875rem"]
+baseRadius = "0.5rem"
+buttonRadius = "0.5rem"
+showWidgetBorder = true
+showSidebarBorder = true
+
+[theme.light]
+primaryColor = "#2563eb"
 backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f1f5f9"
+secondaryBackgroundColor = "#f8fafc"
 textColor = "#0f172a"
-font = "sans serif"
+borderColor = "#e2e8f0"
+linkColor = "#1d4ed8"
+dataframeHeaderBackgroundColor = "#f1f5f9"
+
+[theme.dark]
+primaryColor = "#3b82f6"
+backgroundColor = "#0b1120"
+secondaryBackgroundColor = "#131c2e"
+textColor = "#e2e8f0"
+borderColor = "#1e293b"
+linkColor = "#60a5fa"
+dataframeHeaderBackgroundColor = "#131c2e"
+
+[client]
+toolbarMode = "minimal"
 
 [server]
 headless = true
