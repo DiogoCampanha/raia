@@ -58,6 +58,12 @@ def table(headers: List[str], rows: List[List[Any]]) -> str:
     return "\n".join(out)
 
 
+def sentence(value: Any) -> str:
+    """A cell value ending in exactly one full stop."""
+    text = cell(value)
+    return text if text.endswith((".", "!", "?")) else text + "."
+
+
 def label(value: Any) -> str:
     return str(value or "—").replace("_", " ")
 
@@ -260,9 +266,9 @@ def render(agent_key: str, record: Dict[str, Any], computed_data: Dict[str, Any]
     detail = []
     for f in findings:
         detail.append(
-            f"- **{f.get('id')} — {cell(f.get('title'))}.** {cell(f.get('statement'))} "
-            f"_Affected: {cell(f.get('stakeholders'))}._ _Placement: {cell(f.get('placement_rationale'))}._ "
-            f"_Priority basis: {cell(f.get('priority_basis'))}._ {cites(f.get('citations'))}".rstrip()
+            f"- **{f.get('id')} — {sentence(f.get('title'))}** {sentence(f.get('statement'))} "
+            f"_Affected: {sentence(f.get('stakeholders'))}_ _Placement: {sentence(f.get('placement_rationale'))}_ "
+            f"_Priority basis: {sentence(f.get('priority_basis'))}_ {cites(f.get('citations'))}".rstrip()
         )
     sections["Findings"] = table(
         ["ID", "Finding", "Principle", "NIST AI RMF", "Magnitude", "Likelihood", "Risk level", "Priority", "Blocking", "Links"],

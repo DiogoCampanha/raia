@@ -304,6 +304,9 @@ def record_editor(agent_key: str, payload: Dict[str, Any]) -> Tuple[Optional[Dic
         hide_index=True, width="stretch",
         column_config={
             "id": st.column_config.TextColumn("ID", disabled=True),
+            "title": st.column_config.TextColumn("Finding"),
+            "statement": st.column_config.TextColumn("Statement"),
+            "placement_rationale": st.column_config.TextColumn("Why this placement"),
             "principle": st.column_config.SelectboxColumn("Principle", **_options(V.PRINCIPLE_KEYS)),
             "nist_category": st.column_config.SelectboxColumn("NIST AI RMF", **_options(V.NIST_CATEGORIES)),
             "magnitude": st.column_config.SelectboxColumn("Magnitude", **_options(V.MAGNITUDE)),
@@ -320,6 +323,8 @@ def record_editor(agent_key: str, payload: Dict[str, Any]) -> Tuple[Optional[Dic
         _frame(actions_in, a_cols), key=k("actions"), num_rows="dynamic", hide_index=True, width="stretch",
         column_config={
             "id": st.column_config.TextColumn("ID", disabled=True),
+            "action": st.column_config.TextColumn("Action"),
+            "evidence_artifact": st.column_config.TextColumn("Evidence artifact"),
             "finding_ids": st.column_config.TextColumn("Findings (comma-separated ids)"),
             "response": st.column_config.SelectboxColumn("Response", **_options(V.RESPONSES)),
             "owner_role": st.column_config.SelectboxColumn("Owner", **_options(V.OWNER_ROLES)),
@@ -346,6 +351,7 @@ def record_editor(agent_key: str, payload: Dict[str, Any]) -> Tuple[Optional[Dic
         frame, key=k("issues"), num_rows="dynamic", hide_index=True, width="stretch",
         column_config={
             "id": st.column_config.TextColumn("ID", disabled=True),
+            "description": st.column_config.TextColumn("Description"),
             "type": st.column_config.SelectboxColumn("Type", **_options(V.ISSUE_TYPES)),
             "decision_owner": st.column_config.SelectboxColumn("Decided by", **_options(V.OWNER_ROLES)),
             "blocking": st.column_config.CheckboxColumn("Blocking", default=False),
