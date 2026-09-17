@@ -50,6 +50,7 @@ from typing import Any, Dict, List, Optional
 
 from . import config
 from .db import Database, get_database, utcnow
+from . import lineage
 from .storage import open_repository
 
 OWNER = "owner"
@@ -427,31 +428,55 @@ class ProjectService:
     # -- Progress (derived) --------------------------------------------------------------
 
     def stage_summary(self, user: User, project_id: str) -> Dict[str, Any]:
+        """Where a project stands, derived from its blackboard and event log."""
         from .agents import AGENTS
 
         repo = self.repository(user, project_id, "view")
-        done = set(repo.existing_artifacts())
-        pending = set(repo.pending_agents())
-        stages = []
-        for key, agent in AGENTS.items():
-            if agent.spec.output_key in done:
-                status = "approved"
-            elif key in pending:
-                status = "in_review"
-            elif agent.missing_prerequisites(repo):
-                status = "blocked"
-            else:
-                status = "ready"
-            stages.append({"agent": key, "name": agent.spec.name, "status": status})
+        stages = lineage.stage_states(repo, AGENTS)
+        names = {k: a.spec.name for k, a in AGENTS.items()}
+        for s in stages:
+            s["stale_because_names"] = [names[k] for k in s["stale_because"]]
         open_issues = sum(1 for i in repo.open_issues() if i.get("status") == "open")
+        approved = sum(1 for s in stages if s["approved"])
+        next_stage = next((s for s in stages if s["status"] == lineage.READY), None)
         return {
             "stages": stages,
-            "approved": sum(1 for s in stages if s["status"] == "approved"),
+            "approved": approved,
             "total": len(stages),
-            "in_review": [s["name"] for s in stages if s["status"] == "in_review"],
-            "next": next((s["name"] for s in stages if s["status"] == "ready"), None),
+            "in_review": [s["name"] for s in stages if s["status"] == lineage.IN_REVIEW],
+            "stale": [s["name"] for s in stages if s["status"] == lineage.STALE],
+            "next": next_stage["name"] if next_stage else None,
+            "next_agent": next_stage["agent"] if next_stage else None,
             "open_issues": open_issues,
+            "risk": risk_summary(repo),
         }
+
+    def revision_impact(self, user: User, project_id: str, agent_key: str) -> List[str]:
+        """Names of approved stages that re-approving ``agent_key`` would flag for review."""
+        from .agents import AGENTS
+
+        repo = self.repository(user, project_id, "view")
+        return [AGENTS[k].spec.name for k in lineage.revision_impact(repo, agent_key, AGENTS)]
+
+    def reconfirm_stage(self, user: User, project_id: str, agent_key: str, note: str = "") -> None:
+        """Record a person's decision that a flagged stage still holds as approved.
+
+        The artifact is not touched: nothing new is persisted, and the decision
+        is an event attributed to the signed-in person, like any arbitration.
+        """
+        from .agents import AGENTS
+
+        repo = self.repository(user, project_id, "review")
+        state = next((s for s in lineage.stage_states(repo, AGENTS) if s["agent"] == agent_key), None)
+        if state is None:
+            raise ValueError(f"Unknown stage '{agent_key}'.")
+        if state["status"] != lineage.STALE:
+            raise ValueError("Only a stage flagged for review can be confirmed as still valid.")
+        repo.record_event("stage_reconfirmed", {
+            "agent": agent_key, "user": user.id, "upstream": state["stale_because"],
+            "note": (note or "").strip()[:1000],
+        })
+        self.touch(project_id)
 
     # -- The pipeline, authorized ---------------------------------------------------------
 
@@ -488,6 +513,10 @@ class ProjectService:
         repo = self.repository(user, project_id, "run")
         repo.save_intake(agent_key, inputs, by=user.id)
         self._count_model_call(user)
+        from .agents import AGENTS
+
+        if agent_key in AGENTS and repo.read_artifact(AGENTS[agent_key].spec.output_key) is not None:
+            repo.record_event("revision_started", {"agent": agent_key, "user": user.id})
         result = self.runner.start(project_id, agent_key, inputs, actor=self._actor(user))
         self.touch(project_id)
         return result
@@ -543,24 +572,78 @@ class ProjectService:
             repo.record_event("issue_arbitrated", {"user": user.id, "issue": issue_id, "status": status})
         return ok
 
-    # -- Experience ratings -----------------------------------------------------------------
+    # -- Tester assessment -------------------------------------------------------------------
 
     def submit_rating(self, user: User, payload: Dict[str, Any]) -> None:
-        """Store one whole-experience evaluation (every stage rated in one go)."""
-        self.db.execute(
-            "INSERT INTO experience_ratings (id, user_id, submitted_at, payload) VALUES (?, ?, ?, ?)",
-            (uuid.uuid4().hex, user.id, utcnow(), json.dumps(payload, ensure_ascii=False, default=str)),
-        )
+        """Store one tester assessment (final submission). A pending draft is discarded."""
+        body = dict(payload)
+        body["status"] = "submitted"
+        with self.db.tx() as t:
+            self._delete_drafts(t, user)
+            t.execute(
+                "INSERT INTO experience_ratings (id, user_id, submitted_at, payload) VALUES (?, ?, ?, ?)",
+                (uuid.uuid4().hex, user.id, utcnow(), json.dumps(body, ensure_ascii=False, default=str)),
+            )
 
-    def my_latest_rating(self, user: User) -> Optional[Dict[str, Any]]:
-        row = self.db.one(
+    @staticmethod
+    def _delete_drafts(t, user: User) -> None:
+        for r in t.query("SELECT id, payload FROM experience_ratings WHERE user_id = ?", (user.id,)):
+            if json.loads(r["payload"]).get("status") == "draft":
+                t.execute("DELETE FROM experience_ratings WHERE id = ?", (r["id"],))
+
+    def save_assessment_draft(self, user: User, payload: Dict[str, Any]) -> None:
+        """Keep a half-finished assessment. Drafts never reach research exports."""
+        body = dict(payload)
+        body["status"] = "draft"
+        with self.db.tx() as t:
+            self._delete_drafts(t, user)
+            t.execute(
+                "INSERT INTO experience_ratings (id, user_id, submitted_at, payload) VALUES (?, ?, ?, ?)",
+                (uuid.uuid4().hex, user.id, utcnow(), json.dumps(body, ensure_ascii=False, default=str)),
+            )
+
+    def _ratings(self, user: User) -> List[Dict[str, Any]]:
+        rows = self.db.query(
             "SELECT submitted_at, payload FROM experience_ratings WHERE user_id = ? "
-            "ORDER BY submitted_at DESC LIMIT 1",
+            "ORDER BY submitted_at DESC",
             (user.id,),
         )
-        if not row:
-            return None
-        return {"submitted_at": row["submitted_at"], **json.loads(row["payload"])}
+        return [{"submitted_at": r["submitted_at"], **json.loads(r["payload"])} for r in rows]
+
+    def my_latest_rating(self, user: User) -> Optional[Dict[str, Any]]:
+        """The latest *submitted* assessment, or ``None``."""
+        return next((r for r in self._ratings(user) if r.get("status", "submitted") != "draft"), None)
+
+    def my_assessment_draft(self, user: User) -> Optional[Dict[str, Any]]:
+        """The saved draft, if any. Submitting discards it, so a draft is always the newest."""
+        return next((r for r in self._ratings(user) if r.get("status") == "draft"), None)
+
+    def my_data_export(self, user: User) -> bytes:
+        """Everything RAIA holds that is about this person, as JSON (right of access)."""
+        account = self.db.one(
+            "SELECT email, name, created_at, consented_at, last_login_at FROM users WHERE id = ?",
+            (user.id,),
+        ) or {}
+        memberships = self.db.query(
+            "SELECT p.name AS project, m.role, m.added_at FROM project_members m "
+            "JOIN projects p ON p.id = m.project_id WHERE m.user_id = ? ORDER BY m.added_at",
+            (user.id,),
+        )
+        invitations = self.db.query(
+            "SELECT i.email, i.role, i.status, i.created_at, p.name AS project FROM invitations i "
+            "LEFT JOIN projects p ON p.id = i.project_id WHERE i.email = ? OR i.invited_by = ?",
+            (user.email, user.id),
+        )
+        document = {
+            "exported_at": utcnow(),
+            "account": dict(account),
+            "project_memberships": [dict(m) for m in memberships],
+            "invitations": [dict(i) for i in invitations],
+            "assessments": self._ratings(user),
+            "note": "Project content (answers, drafts, artifacts) is exported per project from "
+                    "the project page, since it belongs to every member of that project.",
+        }
+        return json.dumps(document, indent=2, ensure_ascii=False, default=str).encode("utf-8")
 
     # -- Research data (pseudonymized) --------------------------------------------------------
 
@@ -587,10 +670,12 @@ class ProjectService:
             ratings = self.db.query(
                 "SELECT user_id, submitted_at, payload FROM experience_ratings ORDER BY submitted_at"
             )
+            submitted = [r for r in ratings
+                         if json.loads(r["payload"]).get("status", "submitted") != "draft"]
             z.writestr("experience_ratings.jsonl", "\n".join(
                 json.dumps({"participant": pseudonym(r["user_id"]), "submitted_at": r["submitted_at"],
                             **json.loads(r["payload"])}, ensure_ascii=False)
-                for r in ratings
+                for r in submitted
             ))
             members = self.db.query("SELECT project_id, user_id, role FROM project_members")
             z.writestr("memberships.jsonl", "\n".join(
@@ -624,9 +709,11 @@ Created: {created}
 evaluation_events.jsonl   One line per event in any project: runs rejected with
                           a reason code, approvals (attempt, edited or not,
                           checks), restores, arbitrations, membership changes.
-experience_ratings.jsonl  Each whole-experience evaluation, every stage rated
-                          in one submission. A participant may submit more than
-                          once; keep the latest per participant unless the
+experience_ratings.jsonl  Each submitted tester assessment (instrument id in
+                          "instrument"): optional broad profile, the five Likert
+                          dimensions, optional per-stage items and open answers.
+                          Drafts are excluded. A participant may submit more
+                          than once; keep the latest per participant unless the
                           analysis says otherwise.
 memberships.jsonl         Which participant held which role on which project.
 
@@ -634,3 +721,30 @@ Participants appear as P-xxxxxxxxxx codes (keyed HMAC of an internal id) and
 projects as PRJ-nnn. No email address, name or project name is included.
 Free-text comments are included verbatim: read them before publishing.
 """
+
+
+#: EU tier text (from the risk screen) -> short label and severity for the UI.
+RISK_LEVELS = [
+    ("unacceptable", "Prohibited", "critical"),
+    ("prohibited unless", "Restricted", "critical"),
+    ("high-risk unless", "High risk (exemption claimed)", "high"),
+    ("high-risk", "High risk", "high"),
+    ("limited", "Limited risk", "medium"),
+    ("minimal", "Minimal risk", "low"),
+]
+
+
+def risk_summary(repo) -> Dict[str, Any]:
+    """The approved risk classification of a project, reduced to what a dashboard shows."""
+    data = repo.read_data("risk_classification") or {}
+    structured = data.get("structured") or {}
+    verdict = structured.get("computed_verdict") or {}
+    eu = str(verdict.get("eu_tier") or "")
+    if not eu:
+        return {"label": "Not assessed", "level": "none", "eu_tier": "", "br_tier": ""}
+    label, level = eu, "medium"
+    for needle, short, sev in RISK_LEVELS:
+        if eu.startswith(needle):
+            label, level = short, sev
+            break
+    return {"label": label, "level": level, "eu_tier": eu, "br_tier": str(verdict.get("br_tier") or "")}

@@ -30,7 +30,7 @@ FAIL = "fail"
 WARN = "warn"
 PASS = "pass"
 
-_LEVEL_ICON = {PASS: "✅", WARN: "⚠️", FAIL: "❌"}
+_LEVEL_ICON = {PASS: "**Pass** ·", WARN: "**Warning** ·", FAIL: "**Fail** ·"}
 _LEVEL_RANK = {PASS: 0, WARN: 1, FAIL: 2}
 
 CITATION_RE = re.compile(r"\[\s*Source\s*:\s*(?P<body>[^\]]+?)\s*\]", re.I)

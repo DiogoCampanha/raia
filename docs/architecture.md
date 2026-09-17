@@ -107,6 +107,31 @@ is real evidence — those are open-textured, so they are argued by the model an
 settled by a person. Where the two disagree, neither wins silently: the
 disagreement is recorded as an open issue.
 
+## 1b′. Interface: page map
+
+The interface is a set of pages behind a top menu (`app.py` registers them with
+`st.navigation`; the map is documented in `raia/ui/routes.py`).
+
+```mermaid
+flowchart LR
+    PUB["/privacy<br/>public"]
+    LOGIN["Sign in"] --> CONSENT["Accept agreement"] --> HOME
+    subgraph MENU["Top menu"]
+      HOME["/ Home<br/>attention list · projects"]
+      AGENTS["/agents<br/>architecture · agent docs"]
+      ASSESS["/assessment"]
+      SET["/settings"]
+    end
+    HOME -->|"?id="| PROJECT["/project<br/>overview · documents · issues · activity · people"]
+    PROJECT -->|"?project=&agent="| STAGE["/stage<br/>run · review gate · read · revise · re-confirm"]
+    STAGE --> PROJECT
+```
+
+Project progress, including the *Needs review* flag, is derived on every load
+by `raia/lineage.py` from the blackboard and the event log: an approved stage
+needs review when a stage it depends on (through `upstream_keys`, transitively)
+was approved after it was last approved or re-confirmed. Nothing is re-run.
+
 ## 1c. People, Projects and Storage
 
 The blackboard belongs to a **project**, and a person reaches a project only
@@ -118,7 +143,7 @@ check in `ProjectService`, below the UI.
 flowchart LR
     ID["Google identity<br/>(st.login, OIDC)"] --> AUTH["raia/auth.py"]
     AUTH --> SVC["ProjectService<br/>(raia/projects.py)<br/>authorize(user, project, action)"]
-    UI["app.py"] --> SVC
+    UI["app.py + views/<br/>(raia/ui)"] --> SVC
     SVC --> RUN["StageRunner<br/>(raia/pipeline.py)"]
     SVC --> OPENREPO["open_repository(project)<br/>(raia/storage.py)"]
     RUN --> OPENREPO

@@ -37,6 +37,18 @@ from .repository import ArtifactRepository, BaseRepository
 GENESIS = "0" * 64
 
 
+def _event_time() -> str:
+    """Microsecond UTC timestamp for events.
+
+    Events are read back ``ORDER BY at``; two events in the same second (an
+    approval and a re-confirmation, say) must not be ordered by a random id.
+    ISO strings with and without microseconds still sort correctly together.
+    """
+    import datetime as _dt
+
+    return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="microseconds")
+
+
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -205,7 +217,7 @@ class DatabaseRepository(BaseRepository):
     def record_event(self, kind: str, payload: Dict[str, Any]) -> None:
         self.db.execute(
             "INSERT INTO project_events (id, project_id, at, kind, payload) VALUES (?, ?, ?, ?, ?)",
-            (uuid.uuid4().hex, self.project, utcnow(), kind,
+            (uuid.uuid4().hex, self.project, _event_time(), kind,
              json.dumps(payload, ensure_ascii=False, default=str)),
         )
 

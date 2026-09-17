@@ -310,6 +310,61 @@ def main() -> None:
     check("History integrity at export: OK" in manifest, "the project export states its integrity")
     check("bruno@example.org" not in ev and bruno.id not in ev, "the project export's events are pseudonymized")
 
+    print("== 11b. Revising a stage flags what depends on it, and re-runs nothing ==")
+    from raia import lineage
+    check(lineage.ancestors("drift_monitor") == ["risk_classifier", "requirements_reviewer", "story_refiner"],
+          "dependencies are derived from what each agent reads, transitively")
+    check(lineage.descendants("risk_classifier") == ["requirements_reviewer", "story_refiner", "auditor",
+                                                     "drift_monitor"], "…and so are dependents")
+    svc.update_project(ana, p1.id, require_second_approver=False)
+    run = svc.start_run(ana, p1.id, "requirements_reviewer", EXAMPLES["requirements_reviewer"])
+    svc.resume(ana, p1.id, "requirements_reviewer", {"action": "approve", "content": run["payload"]["draft"]})
+    states = {x["agent"]: x for x in svc.stage_summary(ana, p1.id)["stages"]}
+    check(states["requirements_reviewer"]["status"] == "approved", "a normal approval is not flagged")
+    check(svc.revision_impact(ana, p1.id, "risk_classifier") == ["Requirements Reviewer"],
+          "the impact of a revision lists exactly the approved dependents")
+    try:
+        svc.reconfirm_stage(ana, p1.id, "requirements_reviewer")
+        check(False, "a stage that is not flagged cannot be re-confirmed")
+    except ValueError:
+        check(True, "a stage that is not flagged cannot be re-confirmed")
+    run = svc.start_run(ana, p1.id, "risk_classifier", EXAMPLES["risk_classifier"])
+    states = {x["agent"]: x for x in svc.stage_summary(ana, p1.id)["stages"]}
+    check(states["risk_classifier"]["status"] == "in_review" and
+          states["requirements_reviewer"]["status"] == "approved",
+          "a revision waiting at its gate flags nothing: the approved version is still in force")
+    svc.resume(ana, p1.id, "risk_classifier", {"action": "approve", "content": run["payload"]["draft"]})
+    summary = svc.stage_summary(ana, p1.id)
+    states = {x["agent"]: x for x in summary["stages"]}
+    check(states["requirements_reviewer"]["status"] == "stale" and
+          states["requirements_reviewer"]["stale_because"] == ["risk_classifier"],
+          "approving the revision flags the dependent stage, naming the cause")
+    check(states["story_refiner"]["status"] != "stale", "a stage that was never approved is not flagged")
+    check("requirements_reviewer" not in open_repository(p1.id).pending_agents(),
+          "INVARIANT: no downstream agent was re-run")
+    check(any(e["kind"] == "revision_started" for e in open_repository(p1.id).events()),
+          "the revision is in the project log")
+    check(denied(svc.reconfirm_stage, carla, p1.id, "requirements_reviewer"),
+          "a non-member cannot re-confirm a stage")
+    svc.reconfirm_stage(bruno, p1.id, "requirements_reviewer", "Tier unchanged")
+    states = {x["agent"]: x for x in svc.stage_summary(ana, p1.id)["stages"]}
+    check(states["requirements_reviewer"]["status"] == "approved", "a reviewer's re-confirmation clears the flag")
+    ev = [e for e in open_repository(p1.id).events() if e["kind"] == "stage_reconfirmed"][-1]
+    check(ev["user"] == bruno.id and ev["upstream"] == ["risk_classifier"], "…and is attributed and explained")
+    check(summary["risk"]["label"] != "Not assessed", "the dashboard risk label comes from the approved classification")
+
+    print("== 11c. Assessment drafts and personal data ==")
+    svc.save_assessment_draft(bruno, {"instrument": "test", "dimensions": {"utility": {"score": 2}}})
+    check(svc.my_assessment_draft(bruno) is not None, "a draft is kept")
+    check(svc.my_latest_rating(bruno).get("status") == "submitted", "…without replacing the submission")
+    raw = svc.research_export(ana)
+    ratings = [json.loads(l) for l in zipfile.ZipFile(io.BytesIO(raw)).read("experience_ratings.jsonl")
+               .decode().splitlines() if l]
+    check(ratings and all(r.get("status") != "draft" for r in ratings), "drafts never reach the research export")
+    mine = json.loads(svc.my_data_export(bruno))
+    check(mine["account"]["email"] == "bruno@example.org" and mine["assessments"],
+          "a person can download what RAIA holds about them")
+
     print("== 12. Leaving, deleting ==")
     svc.remove_member(bruno, p1.id, bruno.id)
     check(denied(svc.get_project, bruno, p1.id), "a member who leaves loses access immediately")

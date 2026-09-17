@@ -1,0 +1,106 @@
+/*
+ * RAIA design layer.
+ *
+ * Streamlit's own theme (.streamlit/config.toml) sets fonts, palette, radii and
+ * borders. This file adds only what the theme cannot express: the layout
+ * width, a handful of RAIA components rendered as HTML (page header, stat
+ * tiles, stage tracker, empty states), and two small navigation touches.
+ *
+ * Selectors target Streamlit's stable data-testid attributes, never generated
+ * class names, and every rule degrades to plain Streamlit if a selector stops
+ * matching after an upgrade. Colours are translucent or currentColor so the
+ * same rules read correctly in the light and dark themes.
+ */
+
+:root {
+  --raia-space-1: .25rem;
+  --raia-space-2: .5rem;
+  --raia-space-3: .75rem;
+  --raia-space-4: 1rem;
+  --raia-space-6: 1.5rem;
+  --raia-space-8: 2rem;
+  --raia-radius: .625rem;
+  --raia-border: rgba(100, 116, 139, .24);
+  --raia-surface: rgba(100, 116, 139, .06);
+  --raia-muted: rgba(100, 116, 139, 1);
+  --raia-accent: #2563eb;
+  --raia-product: #2563eb;
+  --raia-dev: #059669;
+  --raia-ops: #d97706;
+  --raia-human: #7c3aed;
+}
+
+/* ---- Layout ------------------------------------------------------------ */
+
+[data-testid="stMainBlockContainer"] {
+  max-width: 1180px;
+  padding-bottom: 4rem;
+}
+
+h1, h2, h3 { letter-spacing: -0.015em; }
+
+/* Keep the one highlighted menu entry (the tester assessment) visible. */
+[data-testid="stTopNavLink"][href$="/assessment"] span,
+[data-testid="stTopNavLink"][href$="/assessment"] p {
+  color: var(--raia-accent);
+  font-weight: 600;
+}
+
+/* ---- Page header ------------------------------------------------------- */
+
+.raia-crumbs {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--raia-space-2);
+  font-size: .8125rem; color: var(--raia-muted); margin-bottom: var(--raia-space-2);
+}
+.raia-crumbs .sep { opacity: .55; }
+.raia-eyebrow {
+  font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--raia-muted); margin: 0 0 var(--raia-space-2);
+}
+
+.raia-subtitle { font-size: 1rem; color: var(--raia-muted); margin: var(--raia-space-2) 0 0; max-width: 72ch; line-height: 1.55; }
+
+/* ---- Stat tiles -------------------------------------------------------- */
+
+.raia-stats {
+  display: grid; gap: var(--raia-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin: var(--raia-space-2) 0 var(--raia-space-4);
+}
+.raia-stat {
+  border: 1px solid var(--raia-border); border-radius: var(--raia-radius);
+  padding: var(--raia-space-4); background: var(--raia-surface);
+}
+.raia-stat-label { font-size: .8125rem; color: var(--raia-muted); font-weight: 500; }
+.raia-stat-value { font-size: 1.75rem; font-weight: 700; line-height: 1.2; margin-top: var(--raia-space-1); font-variant-numeric: tabular-nums; }
+.raia-stat-hint { font-size: .75rem; color: var(--raia-muted); margin-top: var(--raia-space-1); }
+.raia-stat.is-attention { border-color: rgba(217, 119, 6, .55); }
+
+/* ---- Pills and dots ---------------------------------------------------- */
+
+.raia-dot { display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; vertical-align: middle; }
+.raia-layer-tag {
+  display: inline-flex; align-items: center; gap: .375rem;
+  font-size: .6875rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+}
+.raia-layer-tag.product { color: var(--raia-product); }
+.raia-layer-tag.dev { color: var(--raia-dev); }
+.raia-layer-tag.ops { color: var(--raia-ops); }
+
+/* ---- Empty state ------------------------------------------------------- */
+
+.raia-empty {
+  border: 1px dashed var(--raia-border); border-radius: var(--raia-radius);
+  padding: var(--raia-space-8) var(--raia-space-6); text-align: center;
+}
+.raia-empty h4 { margin: 0 0 var(--raia-space-2); font-size: 1.0625rem; }
+.raia-empty p { margin: 0 auto; color: var(--raia-muted); max-width: 52ch; }
+
+/* ---- Prose (legal and documentation pages) ----------------------------- */
+
+.raia-meta { font-size: .8125rem; color: var(--raia-muted); }
+
+.raia-rule { border: none; border-top: 1px solid var(--raia-border); margin: .25rem 0; }
+.raia-header { margin-bottom: var(--raia-space-2); }
+.raia-header h1.raia-title { padding: 0 !important; margin: 0 0 .35rem !important; }
+.raia-header p { margin-bottom: 0; }
