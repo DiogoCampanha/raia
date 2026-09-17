@@ -38,7 +38,18 @@ LLM_MODEL: str = os.getenv("RAIA_LLM_MODEL", "claude-sonnet-5")
 
 #: Sampling temperature. Kept low: agents produce normative analyses,
 #: not creative text, so determinism aids reproducibility and auditability.
-LLM_TEMPERATURE: float = float(os.getenv("RAIA_LLM_TEMPERATURE", "0.2"))
+#: Some newer models no longer accept a temperature at all. Set
+#: ``RAIA_LLM_TEMPERATURE = "none"`` (or leave it empty) to omit it; if a model
+#: rejects it anyway, :func:`raia.llm.invoke_chat` retries once without it and
+#: the provenance records ``temperature: null`` from then on.
+def _optional_float(raw: str):
+    raw = (raw or "").strip().lower()
+    if raw in ("", "none", "null", "default", "omit"):
+        return None
+    return float(raw)
+
+
+LLM_TEMPERATURE = _optional_float(os.getenv("RAIA_LLM_TEMPERATURE", "0.2"))
 
 #: Maximum tokens per agent response. Agents now carry a computed rationale
 #: block and a machine-readable summary in addition to their analysis, and a

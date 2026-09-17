@@ -116,6 +116,17 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-17 — Models that reject a temperature
+
+- **DEP-T1** A live run on a newer model failed with `400 invalid_request_error:
+  temperature is deprecated for this model`. RAIA always sent `temperature=0.2`.
+- `RAIA_LLM_TEMPERATURE` now accepts `none` (or empty) to omit the parameter.
+- `raia.llm.invoke_chat` recognises a temperature rejection, retries once without
+  it, and stops sending it for the rest of the process; provenance then records
+  `temperature: null`, so artifacts state what was actually sent.
+- Default model id updated to `claude-sonnet-5`.
+- Test: `tests/test_engines.py` (models that reject a temperature).
+
 ### 2026-09-17 — Interface rebuilt as separate pages on branch `ui-revamp`
 
 Decisions D15–D20.
