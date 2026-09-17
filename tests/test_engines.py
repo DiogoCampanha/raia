@@ -257,9 +257,45 @@ def test_principles() -> None:
     check(not cov["wellbeing"], "an untouched principle reads as a gap")
 
 
+def test_temperature_fallback() -> None:
+    print("== models that reject a temperature ==")
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from raia import config, llm
+
+    saved_temp, saved_factory = config.LLM_TEMPERATURE, llm.get_chat_model
+    sent = []
+
+    class Fake:
+        def __init__(self, temperature):
+            self.temperature = temperature
+
+        def invoke(self, messages):
+            sent.append(self.temperature)
+            if self.temperature is not None:
+                raise Exception("Error code: 400 - invalid_request_error: "
+                                "`temperature` is deprecated for this model.")
+            return AIMessage(content="ok", response_metadata={"stop_reason": "end_turn"})
+
+    try:
+        config.LLM_TEMPERATURE = 0.2
+        llm.get_chat_model = lambda: Fake(config.LLM_TEMPERATURE)
+        reply = llm.invoke_chat([HumanMessage(content="hi")])
+        check(reply.text == "ok" and sent == [0.2, None],
+              "a temperature rejection is retried once without it")
+        check(config.LLM_TEMPERATURE is None,
+              "…and provenance from then on records that no temperature was sent")
+        check(config._optional_float("none") is None and config._optional_float("0.3") == 0.3,
+              "RAIA_LLM_TEMPERATURE accepts 'none'")
+        check(not llm.rejects_temperature(Exception("overloaded")), "other errors are not mistaken for it")
+    finally:
+        config.LLM_TEMPERATURE, llm.get_chat_model = saved_temp, saved_factory
+
+
 def main() -> None:
     for fn in (test_risk_screen, test_coverage, test_story_map, test_traceability,
-               test_drift, test_validators, test_sanitize, test_principles):
+               test_drift, test_validators, test_sanitize, test_principles,
+               test_temperature_fallback):
         fn()
     print()
     if FAILURES:

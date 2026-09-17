@@ -214,8 +214,8 @@ only when its file really is the official wording.
 | Var | Default | Notes |
 |---|---|---|
 | `RAIA_LLM_PROVIDER` | `anthropic` | `anthropic` \| `openai` \| `mock` |
-| `RAIA_LLM_MODEL` | `claude-sonnet-4-5` | |
-| `RAIA_LLM_TEMPERATURE` | `0.2` | low for reproducibility |
+| `RAIA_LLM_MODEL` | `claude-sonnet-5` | |
+| `RAIA_LLM_TEMPERATURE` | `0.2` | low for reproducibility; `none` omits it (models that reject a temperature are also detected and retried without it) |
 | `RAIA_LLM_MAX_TOKENS` | `8192` | truncation is detected, not tolerated |
 | `RAIA_LLM_RETRIES` | `2` | transient provider failures only |
 | `RAIA_RAG_TOP_K` | `12` | plus the excerpts each procedure pins |

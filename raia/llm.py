@@ -207,11 +207,8 @@ def get_chat_model() -> BaseChatModel:
                 "Provider 'anthropic' selected but langchain-anthropic is not "
                 "installed. Run: pip install langchain-anthropic"
             ) from exc
-        return ChatAnthropic(
-            model=config.LLM_MODEL,
-            temperature=config.LLM_TEMPERATURE,
-            max_tokens=config.LLM_MAX_TOKENS,
-        )
+        return ChatAnthropic(model=config.LLM_MODEL, max_tokens=config.LLM_MAX_TOKENS,
+                             **_temperature_kwargs())
 
     if provider == "openai":
         try:
@@ -221,14 +218,24 @@ def get_chat_model() -> BaseChatModel:
                 "Provider 'openai' selected but langchain-openai is not "
                 "installed. Run: pip install langchain-openai"
             ) from exc
-        return ChatOpenAI(
-            model=config.LLM_MODEL,
-            temperature=config.LLM_TEMPERATURE,
-            max_tokens=config.LLM_MAX_TOKENS,
-        )
+        return ChatOpenAI(model=config.LLM_MODEL, max_tokens=config.LLM_MAX_TOKENS,
+                          **_temperature_kwargs())
 
     raise ValueError(
         f"Unknown RAIA_LLM_PROVIDER '{provider}'. Use 'anthropic', 'openai', or 'mock'."
+    )
+
+
+def _temperature_kwargs() -> Dict[str, Any]:
+    return {} if config.LLM_TEMPERATURE is None else {"temperature": config.LLM_TEMPERATURE}
+
+
+def rejects_temperature(exc: BaseException) -> bool:
+    """The provider refused the request because the model takes no temperature."""
+    low = f"{exc}".lower()
+    return "temperature" in low and any(
+        word in low for word in ("deprecated", "not supported", "unsupported", "not allowed",
+                                 "does not support", "invalid")
     )
 
 
@@ -252,27 +259,50 @@ def invoke_chat(messages: Sequence[BaseMessage], model: Optional[BaseChatModel] 
     llm = model or get_chat_model()
     attempts = max(0, config.LLM_RETRIES) + 1
     last: BaseException = RuntimeError("no attempt was made")
+    dropped_temperature = False
 
     for i in range(attempts):
         try:
             message = llm.invoke(list(messages))
         except BaseException as exc:  # noqa: BLE001 - re-raised below
             last = exc
+            if (model is None and not dropped_temperature and config.LLM_TEMPERATURE is not None
+                    and rejects_temperature(exc)):
+                # The model takes no temperature. Stop sending one for the rest of
+                # this process, so the provenance of every draft states what was
+                # actually sent, and retry immediately.
+                config.LLM_TEMPERATURE = None
+                dropped_temperature = True
+                llm = get_chat_model()
+                try:
+                    message = llm.invoke(list(messages))
+                except BaseException as retry_exc:  # noqa: BLE001
+                    last = retry_exc
+                    if not is_transient(retry_exc) or i == attempts - 1:
+                        raise
+                    time.sleep(config.LLM_RETRY_BASE_DELAY * (2 ** i))
+                    continue
+                else:
+                    return _response(message, i)
             if not is_transient(exc) or i == attempts - 1:
                 raise
             time.sleep(config.LLM_RETRY_BASE_DELAY * (2 ** i))
             continue
 
-        content = message.content
-        if isinstance(content, list):  # multimodal / block content
-            content = "".join(
-                part.get("text", "") if isinstance(part, dict) else str(part) for part in content
-            )
-        return ChatResponse(
-            text=str(content),
-            finish_reason=finish_reason_of(message),
-            retries=i,
-            raw=message if isinstance(message, AIMessage) else None,
-        )
+        return _response(message, i)
 
     raise last
+
+
+def _response(message: Any, retries: int) -> ChatResponse:
+    content = message.content
+    if isinstance(content, list):  # multimodal / block content
+        content = "".join(
+            part.get("text", "") if isinstance(part, dict) else str(part) for part in content
+        )
+    return ChatResponse(
+        text=str(content),
+        finish_reason=finish_reason_of(message),
+        retries=retries,
+        raw=message if isinstance(message, AIMessage) else None,
+    )
