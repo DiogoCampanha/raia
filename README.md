@@ -271,6 +271,7 @@ only when its file really is the official wording.
 | `RAIA_MAX_RUNS_PER_DAY` | `60` | model calls per person per UTC day; `0` = unlimited |
 | `RAIA_CORPUS_DIR` / `RAIA_CHROMA_DIR` | `./corpus` / `./.chroma` | |
 | `RAIA_FAKE_EMBED` | `0` | `1` = hash embeddings for CI / offline |
+| `RAIA_PROFILE` | `0` | `1` = log each page run's duration and database round trips (diagnosing a slow deployment) |
 
 ## Hosted Deployment (Streamlit Community Cloud + Neon + Google sign-in)
 

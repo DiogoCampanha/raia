@@ -55,10 +55,11 @@ if state["missing"]:
 
 current = repo.read_artifact(spec.output_key)
 pending = st.session_state.get(pkey("pending", agent_key))
-if pending and not svc.has_thread(user, proj.id, agent_key):
+thread_alive = svc.has_thread(user, proj.id, agent_key)
+if pending and not thread_alive:
     pending = None
     st.session_state.pop(pkey("pending", agent_key), None)
-if not pending and svc.has_thread(user, proj.id, agent_key):
+if not pending and thread_alive:
     pending = repo.load_pending(agent_key)
 if not pending:
     saved = repo.load_pending(agent_key)

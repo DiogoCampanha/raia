@@ -113,6 +113,7 @@ Recorded so the log stays honest about its own errors.
 | D23 | The model places findings on likelihood and magnitude; code computes risk level and priority with a published matrix and floors (prohibited practice → critical and blocking; legal grounding → at least high; computed severity is a floor). | NIST AI RMF asks for likelihood and magnitude but fixes no scale. A model-assigned priority varies between runs for no inspectable reason; a computed one carries its basis. The levels and matrix are stated as RAIA's operationalisation. |
 | D24 | Reviewers edit the record's fields at the gate, not the rendered text. Persistence re-finalises, re-renders and re-validates the edited record; free-text edits are refused. | Otherwise the standard would stop being one at the exact point a person touched it, and priorities would no longer match placements. |
 | D25 | The output-contract work lands on its own branch, committed locally and not pushed. | The panel evaluates a frozen build. Whether this change enters the evaluated build is a decision for the author, taken knowingly rather than by a redeploy. |
+| D26 | A page run reads each project's current files and pending drafts once (a snapshot per repository object, dropped by any write to the project in the process), and each membership once (a memo scoped to the run). Single statements run without BEGIN/COMMIT, and a pooled connection is probed only after it sat idle. | On a hosted database every statement is a network round trip. Membership is still checked on every run, so removal still takes effect on the next click; the recorded history is never cached. |
 
 ---
 
@@ -121,6 +122,65 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-23 — Pages redraw without a wait (branch `tester-feedback`)
+
+Decision D26.
+
+#### What was wrong
+
+- **TST-1** Changing any answer on a stage page left the page blank or faded for
+  seconds. Every change re-runs the page, and one re-run of a stage page issued
+  26 SQL statements in 24 transactions. On PostgreSQL each of those cost about
+  four network round trips — a liveness probe on checkout, BEGIN, the statement,
+  COMMIT — so roughly a hundred round trips per changed answer. The causes:
+  every file read was its own query (a stage's status checks each
+  prerequisite, so the same files were read over and over); the same membership
+  was looked up five times per run; the account was re-created (`sign_in`, a
+  write) on every click; the graph thread was looked up twice; and the project
+  page zipped the whole project, re-verifying the hash chain, on every redraw,
+  twice.
+
+#### What changed
+
+- `raia/db.py` — a lone statement runs on an autocommit connection without
+  BEGIN/COMMIT (it is already atomic); a pooled connection is probed only if it
+  sat idle for more than 30 seconds, and idle connections are closed after four
+  minutes, below the point where a managed database suspends. `Database.stats`
+  counts statements and explicit transactions.
+- `raia/storage.py` — `DatabaseRepository` reads the current version of every
+  file, and every pending draft, in one query per repository object. A write to
+  the project anywhere in the process invalidates the snapshot; history,
+  chain verification and events are not cached.
+- `raia/projects.py` — `ProjectService.request_scope()` remembers membership
+  answers for one page run; methods that change projects or memberships run
+  without the memo and drop it. `app.py` wraps each run in it.
+- `app.py` — the account is created or refreshed once per browser session; later
+  runs re-read it with one query (an accepted agreement or a deleted account is
+  still seen on the next click). `RAIA_PROFILE=1` logs each run's duration and
+  round trips.
+- `raia/ui/gate.py` — the intake fields are a fragment: changing an answer
+  redraws the form and saves it, not the whole page.
+- `views/project.py`, `views/settings.py` — downloads are built when the button
+  is pressed.
+
+Measured on the demo project with the database backend, statements per redraw:
+stage page 26 → 8, project page 62 → 14, Home 22 → 8, none of them in an
+explicit transaction.
+
+#### Tests
+
+- `tests/test_ui.py` section 3b holds the stage, project and Home pages to a
+  round-trip budget on each backend.
+- The suite passes on the Git backend, the database backend on SQLite, and on
+  PostgreSQL 16 (`tests/test_projects.py`, `tests/test_ui.py`).
+
+#### Still open
+
+- The graph checkpointer's own queries (one lookup per stage page on
+  PostgreSQL) are not counted by `Database.stats`.
+- Neon's scale-to-zero still makes the first request after an idle period slow;
+  that is a hosting setting, not code.
+
 ### 2026-09-23 — A cut-off reply no longer wastes a stage (branch `contract-token-budget`)
 
 #### What was wrong

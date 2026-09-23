@@ -37,7 +37,7 @@ st.subheader("Your data", anchor=False)
 with st.container(border=True):
     st.markdown("Download everything RAIA holds about you: account, memberships, invitations "
                 "and assessment answers. Project content is downloaded from each project.")
-    st.download_button("Download my data (JSON)", data=svc.my_data_export(user),
+    st.download_button("Download my data (JSON)", data=lambda: svc.my_data_export(user),
                        file_name="raia-my-data.json", mime="application/json",
                        icon=I.DOWNLOAD, key="my_data")
 

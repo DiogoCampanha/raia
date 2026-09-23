@@ -20,6 +20,17 @@ svc = get_service()
 proj = open_project("id")
 repo = svc.repository(user, proj.id, "view")
 summary = svc.stage_summary(user, proj.id)
+
+
+def _bundle() -> bytes:
+    """Built when the button is pressed, not on every redraw of the page.
+
+    Zipping the project reads its whole history and re-verifies the hash chain;
+    doing that on each click anywhere on the page made every click slow. It
+    re-opens the repository, so membership is checked again at download time.
+    """
+    return session_bundle(svc.repository(user, proj.id, "view"), proj.name)
+
 stages = summary["stages"]
 
 page_header(proj.name, proj.description,
@@ -39,7 +50,7 @@ with st.container(border=True):
     if focus is None:
         c1.markdown(f"{I.OK} **All five stages are approved.** Revisit any stage from the "
                     "tracker below, or download the project.")
-        c2.download_button("Download project", data=session_bundle(repo, proj.name),
+        c2.download_button("Download project", data=_bundle,
                            file_name=bundle_name(proj.name), mime="application/zip",
                            icon=I.DOWNLOAD, key="cta_export", width="stretch")
     else:
@@ -99,7 +110,7 @@ with tab_docs:
     c1, c2 = st.columns([4, 1.4], vertical_alignment="center")
     c1.caption("Approved artifacts with their provenance. The project download contains "
                "every artifact, structured record, version history and pseudonymized events.")
-    c2.download_button("Download project", data=session_bundle(repo, proj.name),
+    c2.download_button("Download project", data=_bundle,
                        file_name=bundle_name(proj.name), mime="application/zip",
                        icon=I.DOWNLOAD, key="docs_export", width="stretch")
     existing = repo.existing_artifacts()

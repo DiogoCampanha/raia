@@ -139,6 +139,10 @@ STORE_BACKEND: str = os.getenv(
 AUTH_MODE: str = os.getenv("RAIA_AUTH", "").lower()
 
 #: The identity used in ``dev`` mode.
+#: Log, for every page run, how long it took and how many database round trips
+#: it made (``1`` to enable). For diagnosing a slow deployment; off by default.
+PROFILE: bool = os.getenv("RAIA_PROFILE", "0") == "1"
+
 DEV_USER_EMAIL: str = os.getenv("RAIA_DEV_USER_EMAIL", "developer@raia.local")
 DEV_USER_NAME: str = os.getenv("RAIA_DEV_USER_NAME", "Local developer")
 

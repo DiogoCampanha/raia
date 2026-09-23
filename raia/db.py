@@ -22,6 +22,7 @@ import contextlib
 import datetime as _dt
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence
 
@@ -130,17 +131,67 @@ def is_postgres_url(url: str) -> bool:
     return url.startswith(("postgres://", "postgresql://"))
 
 
+#: A pooled connection used within this many seconds is handed out without a
+#: liveness probe. Probing on every checkout cost one network round trip per
+#: query — on a hosted database, most of the time a page took to redraw.
+#: Connections idle for longer are still probed, which is what survives a
+#: managed database that scaled to zero and dropped them.
+FRESH_SECONDS = 30.0
+
+#: Idle pooled connections are closed after this long, below the ~5 minutes
+#: after which managed providers such as Neon suspend an idle database.
+POOL_MAX_IDLE = 240.0
+
+
+class Stats:
+    """Round trips issued by this process, for profiling and query budgets.
+
+    ``statements`` counts SQL statements sent; ``transactions`` counts explicit
+    BEGIN/COMMIT pairs (two extra round trips each on PostgreSQL). A test holds
+    the pages to a budget so a redraw cannot quietly grow back to dozens of
+    database calls.
+    """
+
+    def __init__(self) -> None:
+        self.statements = 0
+        self.transactions = 0
+
+    def reset(self) -> None:
+        self.statements = 0
+        self.transactions = 0
+
+    @property
+    def round_trips(self) -> int:
+        return self.statements + 2 * self.transactions
+
+
+def _check_if_stale(conn: Any) -> None:
+    """Pool check: probe only a connection that sat idle, not every checkout."""
+    last = getattr(conn, "_raia_last_used", None)
+    if last is not None and time.monotonic() - last < FRESH_SECONDS:
+        return
+    from psycopg_pool import ConnectionPool
+
+    ConnectionPool.check_connection(conn)
+
+
 class Tx:
     """One unit of work. ``?`` placeholders on every engine."""
 
-    def __init__(self, conn: Any, postgres: bool) -> None:
+    def __init__(self, conn: Any, postgres: bool, stats: Optional["Stats"] = None) -> None:
         self._conn = conn
         self._pg = postgres
+        self._stats = stats
 
     def _sql(self, sql: str) -> str:
         return sql.replace("?", "%s") if self._pg else sql
 
+    def _count(self) -> None:
+        if self._stats is not None:
+            self._stats.statements += 1
+
     def execute(self, sql: str, params: Sequence[Any] = ()) -> None:
+        self._count()
         cur = self._conn.cursor()
         try:
             cur.execute(self._sql(sql), tuple(params))
@@ -148,6 +199,7 @@ class Tx:
             cur.close()
 
     def query(self, sql: str, params: Sequence[Any] = ()) -> List[Dict[str, Any]]:
+        self._count()
         cur = self._conn.cursor()
         try:
             cur.execute(self._sql(sql), tuple(params))
@@ -171,20 +223,23 @@ class Database:
         self.url = url
         self.postgres = is_postgres_url(url)
         self._lock = threading.RLock()
+        self.stats = Stats()
         if self.postgres:
             from psycopg.rows import dict_row
             from psycopg_pool import ConnectionPool
 
             # prepare_threshold=None keeps the pool compatible with the
             # transaction-mode connection poolers managed providers put in
-            # front of Postgres; check_connection survives a database that
-            # scaled to zero and dropped idle connections.
+            # front of Postgres. A connection that sat idle is probed before
+            # use (a database that scaled to zero drops them); one used a
+            # moment ago is not, because that probe is a full round trip.
             self.pool = ConnectionPool(
                 url,
                 min_size=1,
                 max_size=6,
                 kwargs={"autocommit": True, "prepare_threshold": None, "row_factory": dict_row},
-                check=ConnectionPool.check_connection,
+                check=_check_if_stale,
+                max_idle=POOL_MAX_IDLE,
                 open=True,
             )
             self._sqlite = None
@@ -200,39 +255,74 @@ class Database:
         self.migrate()
 
     @contextlib.contextmanager
-    def tx(self) -> Iterator[Tx]:
-        if self.postgres:
-            with self.pool.connection() as conn:
-                with conn.transaction():
-                    yield Tx(conn, True)
-            return
+    def _pg_connection(self) -> Iterator[Any]:
+        with self.pool.connection() as conn:
+            try:
+                yield conn
+            finally:
+                try:
+                    conn._raia_last_used = time.monotonic()
+                except Exception:  # noqa: BLE001 - only an optimisation hint
+                    pass
+
+    @contextlib.contextmanager
+    def _sqlite_tx(self) -> Iterator[Tx]:
         with self._lock:
             conn = self._sqlite
             conn.execute("BEGIN IMMEDIATE")
             try:
-                yield Tx(conn, False)
+                yield Tx(conn, False, self.stats)
             except BaseException:
                 conn.execute("ROLLBACK")
                 raise
             else:
                 conn.execute("COMMIT")
 
+    @contextlib.contextmanager
+    def tx(self) -> Iterator[Tx]:
+        """An explicit transaction, for work of more than one statement."""
+        self.stats.transactions += 1
+        if self.postgres:
+            with self._pg_connection() as conn:
+                with conn.transaction():
+                    yield Tx(conn, True, self.stats)
+            return
+        with self._sqlite_tx() as t:
+            yield t
+
+    @contextlib.contextmanager
+    def _single(self) -> Iterator[Tx]:
+        """One statement, atomic on its own.
+
+        On PostgreSQL the pooled connections are in autocommit mode, so a lone
+        statement already runs as its own transaction; wrapping it in
+        BEGIN/COMMIT only added two network round trips to every read. SQLite
+        is local and keeps its explicit transaction under the process lock.
+        """
+        if self.postgres:
+            with self._pg_connection() as conn:
+                yield Tx(conn, True, self.stats)
+            return
+        with self._sqlite_tx() as t:
+            yield t
+
     def migrate(self) -> None:
         with self.tx() as t:
             for stmt in SCHEMA:
                 t.execute(stmt)
+        self.stats.reset()
 
     # Convenience wrappers for single statements.
     def execute(self, sql: str, params: Sequence[Any] = ()) -> None:
-        with self.tx() as t:
+        with self._single() as t:
             t.execute(sql, params)
 
     def query(self, sql: str, params: Sequence[Any] = ()) -> List[Dict[str, Any]]:
-        with self.tx() as t:
+        with self._single() as t:
             return t.query(sql, params)
 
     def one(self, sql: str, params: Sequence[Any] = ()) -> Optional[Dict[str, Any]]:
-        with self.tx() as t:
+        with self._single() as t:
             return t.one(sql, params)
 
     def close(self) -> None:

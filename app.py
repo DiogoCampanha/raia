@@ -14,6 +14,10 @@ project itself and each of its stages — are registered but hidden from the
 menu, and take their context from the URL.
 """
 
+import contextlib
+import logging
+import time
+
 import streamlit as st
 
 # --- Configuration bridge (MUST run before importing raia.config) ----------
@@ -21,7 +25,8 @@ from raia.deploy import apply_secrets  # noqa: E402
 
 apply_secrets()
 
-from raia import auth                                  # noqa: E402
+from raia import auth, config                          # noqa: E402
+from raia.projects import ProjectService, normalize_email  # noqa: E402
 from raia.deploy import runtime_status                 # noqa: E402
 from raia.ui import legal, routes, theme               # noqa: E402
 from raia.ui.state import ensure_normative_index, get_service  # noqa: E402
@@ -34,7 +39,54 @@ def _page(name: str, title: str, icon: str, url_path: str, **kw) -> "st.Page":
     )
 
 
+log = logging.getLogger("raia.profile")
+
+
+@contextlib.contextmanager
+def _profiled():
+    """With RAIA_PROFILE=1, log how long this run took and its database round trips.
+
+    The counters are process-wide, so with several people active at once a
+    line also includes their queries; read it on a quiet deployment.
+    """
+    if not config.PROFILE:
+        yield
+        return
+    from raia.db import get_database
+
+    stats = get_database().stats
+    t0, s0, x0 = time.perf_counter(), stats.statements, stats.transactions
+    try:
+        yield
+    finally:
+        statements, transactions = stats.statements - s0, stats.transactions - x0
+        log.warning("page run: %.0f ms, %d statements, %d explicit transactions, ~%d round trips",
+                    (time.perf_counter() - t0) * 1000, statements, transactions,
+                    statements + 2 * transactions)
+
+
+def _account(identity: auth.Identity):
+    """The signed-in person's account.
+
+    The account is created or refreshed (``sign_in``: a write) once per browser
+    session. Every later run re-reads it with one query, which still picks up
+    an accepted agreement or a deleted account on the next click.
+    """
+    svc = get_service()
+    known = st.session_state.get("_user")
+    if known is not None and known.email == normalize_email(identity.email):
+        fresh = svc.get_user(known.id)
+        if fresh is not None:
+            return fresh
+    return svc.sign_in(identity.email, identity.name)
+
+
 def main() -> None:
+    with _profiled():
+        _main()
+
+
+def _main() -> None:
     st.set_page_config(page_title="RAIA", page_icon=theme.ICON, layout="wide")
     theme.apply()
     st.logo(theme.LOGO, size="large")
@@ -51,7 +103,7 @@ def main() -> None:
         st.navigation([login, privacy], position="top").run()
         return
 
-    user = get_service().sign_in(identity.email, identity.name)
+    user = _account(identity)
     st.session_state["_user"] = user
 
     if legal.needs_acceptance(user.consented_at):
@@ -78,10 +130,12 @@ def main() -> None:
     if user.is_admin:
         account.insert(1, _page(routes.RESEARCH, "Research data", I.RESEARCH, "research"))
 
-    st.navigation(
+    nav = st.navigation(
         {"": [home, project, stage, agents, assessment], "Account": account},
         position="top",
-    ).run()
+    )
+    with ProjectService.request_scope():
+        nav.run()
 
 
 if __name__ == "__main__":

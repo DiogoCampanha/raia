@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -35,6 +36,23 @@ from .db import Database, get_database, utcnow
 from .repository import ArtifactRepository, BaseRepository
 
 GENESIS = "0" * 64
+
+#: Per project, a counter bumped by every write made in this process. A
+#: repository object's read snapshot is valid only while the counter is where
+#: it was when the snapshot was taken, so a write made through any other
+#: repository object for the same project is seen by the next read — at no
+#: database cost.
+_generation: Dict[str, int] = {}
+_generation_lock = threading.Lock()
+
+
+def _bump(project: str) -> None:
+    with _generation_lock:
+        _generation[project] = _generation.get(project, 0) + 1
+
+
+def _gen(project: str) -> int:
+    return _generation.get(project, 0)
 
 
 def _event_time() -> str:
@@ -69,16 +87,42 @@ class DatabaseRepository(BaseRepository):
     def __init__(self, project: str, db: Optional[Database] = None) -> None:
         super().__init__(project)
         self.db = db or get_database()
+        # Read-through snapshots, one per repository object. A repository is
+        # opened for one service call or one page run, and a page run reads
+        # the same handful of files many times over (every stage's status
+        # checks its prerequisites). One query for the current version of every
+        # file replaces a round trip per read. Any write to the project made in
+        # this process invalidates the snapshot (see ``_generation``); the
+        # recorded history itself is never cached.
+        self._files: Optional[Dict[str, str]] = None
+        self._pending: Optional[Dict[str, str]] = None
+        self._seen = -1
+
+    def _fresh(self) -> None:
+        """Drop the snapshots if the project was written since they were taken."""
+        gen = _gen(self.project)
+        if gen != self._seen:
+            self._files = None
+            self._pending = None
+            self._seen = gen
 
     # -- Versioned files --------------------------------------------------------
 
+    def _current(self) -> Dict[str, str]:
+        self._fresh()
+        if self._files is None:
+            rows = self.db.query(
+                "SELECT f.name, f.content FROM project_files f "
+                "JOIN (SELECT name, MAX(seq) AS seq FROM project_files WHERE project_id = ? "
+                "GROUP BY name) m ON f.name = m.name AND f.seq = m.seq "
+                "WHERE f.project_id = ? ORDER BY f.name",
+                (self.project, self.project),
+            )
+            self._files = {r["name"]: r["content"] for r in rows}
+        return self._files
+
     def _read_file(self, name: str) -> Optional[str]:
-        row = self.db.one(
-            "SELECT content FROM project_files WHERE project_id = ? AND name = ? "
-            "ORDER BY seq DESC LIMIT 1",
-            (self.project, name),
-        )
-        return row["content"] if row else None
+        return self._current().get(name)
 
     def _commit_files(self, files: Dict[str, str], message: str) -> str:
         at = utcnow()
@@ -103,6 +147,7 @@ class DatabaseRepository(BaseRepository):
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (self.project, seq, at, message, json.dumps(sorted(files)), parent, digest),
             )
+        _bump(self.project)
         return digest[:8]
 
     def history(self, limit: int = 50) -> List[Dict[str, str]]:
@@ -117,13 +162,7 @@ class DatabaseRepository(BaseRepository):
         ]
 
     def current_files(self) -> Dict[str, str]:
-        rows = self.db.query(
-            "SELECT f.name, f.content FROM project_files f "
-            "JOIN (SELECT name, MAX(seq) AS seq FROM project_files WHERE project_id = ? GROUP BY name) m "
-            "ON f.name = m.name AND f.seq = m.seq WHERE f.project_id = ? ORDER BY f.name",
-            (self.project, self.project),
-        )
-        return {r["name"]: r["content"] for r in rows}
+        return dict(self._current())
 
     def chain(self) -> List[Dict[str, Any]]:
         """The full commit chain, oldest first (exported for offline verification)."""
@@ -166,6 +205,15 @@ class DatabaseRepository(BaseRepository):
 
     # -- Working state ---------------------------------------------------------
 
+    def _pending_map(self) -> Dict[str, str]:
+        self._fresh()
+        if self._pending is None:
+            rows = self.db.query(
+                "SELECT agent_key, payload FROM pending_reviews WHERE project_id = ?", (self.project,)
+            )
+            self._pending = {r["agent_key"]: r["payload"] for r in rows}
+        return self._pending
+
     def _pending_write(self, agent_key: str, text: str) -> None:
         self.db.execute(
             "INSERT INTO pending_reviews (project_id, agent_key, payload, updated_at) VALUES (?, ?, ?, ?) "
@@ -173,25 +221,20 @@ class DatabaseRepository(BaseRepository):
             "updated_at = excluded.updated_at",
             (self.project, agent_key, text, utcnow()),
         )
+        _bump(self.project)
 
     def _pending_read(self, agent_key: str) -> Optional[str]:
-        row = self.db.one(
-            "SELECT payload FROM pending_reviews WHERE project_id = ? AND agent_key = ?",
-            (self.project, agent_key),
-        )
-        return row["payload"] if row else None
+        return self._pending_map().get(agent_key)
 
     def _pending_all(self) -> Dict[str, str]:
-        rows = self.db.query(
-            "SELECT agent_key, payload FROM pending_reviews WHERE project_id = ?", (self.project,)
-        )
-        return {r["agent_key"]: r["payload"] for r in rows}
+        return dict(self._pending_map())
 
     def _pending_delete(self, agent_key: str) -> None:
         self.db.execute(
             "DELETE FROM pending_reviews WHERE project_id = ? AND agent_key = ?",
             (self.project, agent_key),
         )
+        _bump(self.project)
 
     def save_intake(self, agent_key: str, values: Dict[str, Any], by: str = "") -> None:
         self.db.execute(
@@ -241,6 +284,7 @@ class DatabaseRepository(BaseRepository):
             for table in ("project_files", "project_commits", "pending_reviews",
                           "intake_drafts", "project_events"):
                 t.execute(f"DELETE FROM {table} WHERE project_id = ?", (self.project,))
+        _bump(self.project)
 
 
 def open_repository(project_id: str) -> BaseRepository:

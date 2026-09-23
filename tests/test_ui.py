@@ -148,6 +148,33 @@ def main() -> None:
           any("Action plan (CSV)" in str(d.proto) for d in at.get("download_button")),
           "…with a CSV export")
 
+    print("== 3b. A redraw stays within a database budget ==")
+    # Each statement is a network round trip on a hosted database. A stage page
+    # once made 26 statements in 24 transactions (about 100 round trips) every
+    # time a field changed; this keeps it from growing back.
+    from raia import config as _config
+    from raia.db import get_database
+
+    stats = get_database().stats
+    budgets = {"stage": 10, "project": 16, "home": 10} if _config.STORE_BACKEND == "database" \
+        else {"stage": 6, "project": 6, "home": 6}
+    goto(at, "stage", project=pid1, agent="story_refiner")
+    ok(at.run(), "the next stage opens")
+    field = next(t for t in at.text_area if t.key and "::in::story_refiner::" in t.key)
+    field.input("A changed answer")
+    stats.reset()
+    ok(at.run(), "a changed answer redraws the page")
+    check(stats.transactions == 0 and stats.round_trips <= budgets["stage"],
+          f"a stage redraw makes at most {budgets['stage']} round trips "
+          f"({stats.statements} statements, {stats.transactions} explicit transactions)")
+    for view, params in (("project", {"id": pid1}), ("home", {})):
+        goto(at, view, **params)
+        stats.reset()
+        ok(at.run(), f"the {view} page redraws")
+        check(stats.round_trips <= budgets[view],
+              f"a {view} page redraw makes at most {budgets[view]} round trips "
+              f"({stats.statements} statements, {stats.transactions} explicit transactions)")
+
     print("== 4. Revise an approved stage: downstream is flagged, not re-run ==")
     goto(at, "stage", project=pid1, agent="risk_classifier")
     ok(at.run(), "the approved stage opens in read mode")
