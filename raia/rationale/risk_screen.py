@@ -6,7 +6,8 @@ Deterministic legal risk screen for the Risk Classifier.
 
 What is enumerable is decided here, in code: the prohibited-practice lists,
 the high-risk purpose-area lists for both jurisdictions, the role-dependent
-obligation tables, and the transparency triggers. What is open-textured —
+obligation tables, the transparency triggers, and whether the declared
+techniques put the product within the legal definition of an AI system. What is open-textured —
 whether a narrow-task exemption actually holds, whether a harm is
 "significant" — is left to the model, which must justify it and may disagree
 with the screen. Disagreement is escalated, never averaged.
@@ -180,6 +181,37 @@ DATA_OPTIONS = options(
     ("none", "None of these"),
 )
 
+#: How the AI works. Both instruments define an AI system by its capacity to
+#: *infer* how to generate outputs; rules written solely by people do not
+#: infer. ``INFERRING`` lists the techniques that do.
+TECHNIQUE_OPTIONS = options(
+    ("rules", "Rules or thresholds written by people — nothing is learned from data"),
+    ("machine_learning", "Machine learning trained on data (including deep learning) — "
+                         "classifies, scores, ranks, predicts or recommends"),
+    ("generative", "Generative AI — produces text, images, audio, video or code (for example an LLM)"),
+    ("knowledge_based", "Logic- or knowledge-based inference — reasons over encoded knowledge "
+                        "(expert system, knowledge graph)"),
+)
+INFERRING = {"machine_learning", "generative", "knowledge_based"}
+
+#: Where in the product the AI acts. Read against the transparency and
+#: autonomy answers, so an inconsistency between them is surfaced.
+PIPELINE_OPTIONS = options(
+    ("input_processing", "Reads or prepares inputs — extraction, transcription, enrichment"),
+    ("scoring", "Scores, ranks, classifies or predicts"),
+    ("generation", "Generates content that people see or receive"),
+    ("interaction", "Talks with people directly (chat, voice, assistant)"),
+    ("decision", "Makes or carries out a decision with no person in between"),
+    ("monitoring", "Monitors people, processes or systems"),
+)
+
+MODEL_SOURCE_OPTIONS = options(
+    ("in_house", "Built and trained by us"),
+    ("adapted", "A third-party model we fine-tune or otherwise adapt"),
+    ("third_party", "A third-party model or AI service used as-is (for example through an API)"),
+    ("none", "No trained model — the logic is rules only"),
+)
+
 STAGE_OPTIONS = options(
     ("idea", "Idea / discovery"),
     ("development", "In development"),
@@ -220,6 +252,8 @@ BR_ALL_TIERS = [
     ("br.rights", "Operationalize affected persons' rights: prior information, explanation, contestation, human review, non-discrimination"),
 ]
 
+SECTION_EU_SCOPE = "Scope and Approach"
+SECTION_BR_SCOPE = "Purpose and Approach"
 SECTION_EU_ART5 = "Article 5 — Prohibited AI Practices (Unacceptable Risk)"
 SECTION_EU_ANNEX = "Article 6 and Annex III — High-Risk AI Systems"
 SECTION_EU_OBLIG = "Obligations for High-Risk Systems (Articles 8–15)"
@@ -266,8 +300,51 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
     art63 = is_yes(inputs, "art63_claim")
     significant = chosen(inputs, "significant_effects", "unsure")
 
+    techniques = _clean(selected(inputs, "ai_techniques"))
+    pipeline = _clean(selected(inputs, "ai_pipeline"))
+    model_source = chosen(inputs, "model_source", "")
+
     eu_in_scope = "eu" in markets
     br_in_scope = "br" in markets
+
+    # -- 0. How the AI works ----------------------------------------------------
+    #
+    # Two things are settled here, both conservatively. First, whether the
+    # declared techniques infer at all: a product built only on rules written
+    # by people may fall outside both instruments' definition of an AI system.
+    # The engine never concludes that — it screens the product as if it were
+    # in scope and asks a person. Second, whether the technique and pipeline
+    # answers imply a transparency duty the transparency question missed: a
+    # generative system that was not declared as generating content still
+    # carries the marking duty. The duty is applied and the disagreement is
+    # escalated, so the reviewer sees both answers.
+
+    rules_only = bool(techniques) and not any(t in INFERRING for t in techniques)
+    derived_triggers: List[str] = []
+    if ("generative" in techniques or "generation" in pipeline) and "synthetic_content" not in triggers:
+        derived_triggers.append("synthetic_content")
+    if "interaction" in pipeline and "chat_interaction" not in triggers:
+        derived_triggers.append("chat_interaction")
+    triggers = triggers + derived_triggers
+    trigger_labels = {o.value: o.label for o in TRANSPARENCY_OPTIONS}
+
+    if rules_only:
+        r.findings.append(
+            Finding(
+                code="scope.ai_definition",
+                label="Only rules written by people were declared",
+                detail="may fall outside the AI-system definition (EU Art. 3(1); PL 2338/2023 Art. 4); "
+                       "screened as in scope until a person decides",
+            )
+        )
+    for t in derived_triggers:
+        r.findings.append(
+            Finding(
+                code=f"transparency.{t}",
+                label=trigger_labels[t],
+                detail="implied by how the AI works, though not selected among the transparency answers",
+            )
+        )
 
     # -- 1. Prohibited-practice screen -------------------------------------
 
@@ -451,6 +528,40 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
             "the product decision, or apply the stricter one.",
             type="normative_conflict", decision_owner="legal_compliance", blocking=False,
         )
+    if rules_only:
+        r.raise_issue(
+            "Only rules written by people were declared as the system's logic. A system that does "
+            "not infer its outputs may fall outside the legal definition of an AI system in both "
+            "regimes. The screen treats the product as in scope; a person must decide whether it is.",
+            type="missing_information", decision_owner="legal_compliance", blocking=False,
+        )
+    if derived_triggers:
+        r.raise_issue(
+            "How the AI works implies transparency duties that were not selected ("
+            + "; ".join(trigger_labels[t] for t in derived_triggers)
+            + "). The screen applies them; confirm, or correct the answers and re-run.",
+            type="missing_information", decision_owner="product", blocking=False,
+        )
+    if model_source == "none" and any(t in INFERRING for t in techniques):
+        r.raise_issue(
+            "The answers disagree: no trained model was declared, yet the techniques include "
+            "learning or inference. Correct whichever answer is wrong.",
+            type="missing_information", decision_owner="product", blocking=False,
+        )
+    if gpai and model_source == "third_party":
+        r.raise_issue(
+            "The answers disagree: you declared that you provide a general-purpose AI model, and "
+            "also that the model is a third party's, used as-is. The general-purpose model duties "
+            "fall on the model's provider; confirm which you are.",
+            type="missing_information", decision_owner="legal_compliance", blocking=False,
+        )
+    if "decision" in pipeline and autonomy in ("human_override", "informational"):
+        r.raise_issue(
+            "The answers disagree: the AI is declared to make or carry out decisions with no person "
+            "in between, but the autonomy answer says a person reviews its output or no decision "
+            "follows. Human arbitration required.",
+            type="risk_acceptance", decision_owner="product", blocking=False,
+        )
     if not markets:
         r.notes.append("No target market was selected; both regimes were screened as informational.")
 
@@ -466,6 +577,11 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
         r.notes.append(
             "Proxies for protected attributes are processed without the attributes themselves — "
             "bias testing cannot rely on the absence of protected attributes in the feature set."
+        )
+    if model_source in ("adapted", "third_party"):
+        r.notes.append(
+            "A third party's model is part of the system: its documentation and instructions for "
+            "use are evidence the later stages will ask for."
         )
     r.notes.append(f"Declared lifecycle stage: {stage}.")
     if not eu_in_scope:
@@ -493,6 +609,11 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
         ]
     if triggers:
         r.pins.append(Pin("eu_ai_act", SECTION_EU_ART50, "transparency duties"))
+    if rules_only:
+        r.pins += [
+            Pin("eu_ai_act", SECTION_EU_SCOPE, "AI-system definition"),
+            Pin("pl_2338_2023", SECTION_BR_SCOPE, "AI-system definition"),
+        ]
     if gpai:
         r.pins.append(Pin("eu_ai_act", SECTION_EU_GPAI, "general-purpose model duties"))
 
@@ -508,6 +629,9 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
         ChecklistItem("next_steps", "Give concrete next steps for this lifecycle stage"),
         ChecklistItem("open_issues", "Carry forward every open issue raised here, plus any you add"),
     ]
+    if rules_only:
+        r.checklist.insert(0, ChecklistItem(
+            "ai_scope", "Say whether the product meets the AI-system definition, given the declared techniques"))
 
     # -- 9. Retrieval facets -------------------------------------------------
 
@@ -516,6 +640,8 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
         + [PROHIBITED_PRACTICES[p]["label"] for p in practices if p in PROHIBITED_PRACTICES]
         + [tier_eu, tier_br, f"role {role}"]
         + data_cats
+        + (["definition of an AI system, inference, rules defined by natural persons"] if rules_only else [])
+        + [trigger_labels[t] for t in derived_triggers]
     )
 
     r.data.update(
@@ -535,6 +661,11 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
             "gpai_provider": gpai,
             "art_6_3_claimed": art63,
             "art_6_3_reason": text_of(inputs, "art63_reason"),
+            "ai_techniques": techniques,
+            "ai_pipeline": pipeline,
+            "model_source": model_source,
+            "ai_definition_uncertain": rules_only,
+            "derived_transparency_triggers": derived_triggers,
             "eu_is_high_risk": eu_is_high,
             "br_is_high_risk": br_is_high,
         }

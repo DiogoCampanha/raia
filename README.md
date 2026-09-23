@@ -42,7 +42,7 @@ the agent cards in [`docs/agents/`](docs/agents/) and the JSON Schemas in
 
 | Agent | Layer | Decision procedure | Grounded in |
 |---|---|---|---|
-| **Risk Classifier** | 🟦 Product | Prohibited-practice screen, high-risk area match for both regimes, narrow-task exemption handling, role-dependent obligation assembly | EU AI Act, PL 2338/2023 |
+| **Risk Classifier** | 🟦 Product | Prohibited-practice screen, high-risk area match for both regimes, AI-system definition check, transparency duties implied by how the AI works, narrow-task exemption handling, role-dependent obligation assembly | EU AI Act, PL 2338/2023 |
 | **Requirements Reviewer** | 🟦 Product | Obligation × principle coverage matrix against stated requirements and existing controls; assigns the requirement register | IEEE 7000, MS RAI v2 |
 | **User Story Refiner** | 🟩 Dev | ECCOLA card selection from risk tier, data categories and sprint capabilities; story register as a counted invariant | ECCOLA, MS RAI v2 |
 | **Auditor** | 🟩 Dev | Evidence matching against the approved register; items with no evidence are marked NOT VERIFIED by code | MS RAI v2, NIST AI RMF |
@@ -173,8 +173,8 @@ artifact.
 ```
 raia/
 ├── app.py                     # entry point: sign-in, agreement, page registry (top menu)
-├── views/                     # one file per page: home, project, stage, agents,
-│                              #   assessment, settings, research, legal, login, consent
+├── views/                     # one file per page: home, guide, project, stage, agents,
+│                              #   assessment, settings, research, legal, login, consent, signout
 ├── ingest.py                  # Builds the Chroma normative index from corpus/
 ├── raia/
 │   ├── config.py              # env-driven settings; authority + source registries
@@ -208,7 +208,7 @@ raia/
 │   ├── projects.py            # people, projects, roles, invitations, authorization
 │   ├── lineage.py             # stage dependencies and the derived "needs review" flag
 │   ├── ui/                    # routes, theme (CSS + icons), components, approval gate,
-│   │                          #   agent docs, assessment instrument, legal page
+│   │                          #   agent docs, tester guide, assessment instrument, legal page
 │   ├── auth.py                # Google sign-in via Streamlit, or a local dev identity
 │   ├── pipeline.py            # the graph: generate → human gate → persist
 │   ├── sanitize.py            # injection screening (EN + PT), flag-never-delete
@@ -223,7 +223,7 @@ raia/
 │   ├── templates/             # agent card and project-log entry templates
 │   ├── PROJECT_LOG.md         # what was wrong, what was decided, what changed
 │   ├── legal/PRIVACY_AND_TERMS.md  # public privacy policy and user agreement
-│   └── TESTERS.md             # guided walkthrough for the evaluation panel
+│   └── TESTERS.md             # tester guide, generated from raia/ui/guide.py (also the Guide page)
 └── tests/
     ├── smoke_test.py          # offline end-to-end, including the invariants
     ├── test_engines.py        # deterministic unit checks
@@ -271,6 +271,7 @@ only when its file really is the official wording.
 | `RAIA_MAX_RUNS_PER_DAY` | `60` | model calls per person per UTC day; `0` = unlimited |
 | `RAIA_CORPUS_DIR` / `RAIA_CHROMA_DIR` | `./corpus` / `./.chroma` | |
 | `RAIA_FAKE_EMBED` | `0` | `1` = hash embeddings for CI / offline |
+| `RAIA_PROFILE` | `0` | `1` = log each page run's duration and database round trips (diagnosing a slow deployment) |
 
 ## Hosted Deployment (Streamlit Community Cloud + Neon + Google sign-in)
 

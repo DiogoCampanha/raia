@@ -254,6 +254,13 @@ def _persist_product_brief(repo, agent, inputs: Dict[str, Any], approver: str,
     """
     fields = [f for f in agent.spec.input_fields if f.is_text and f.group.endswith("The product")]
     parts = [f"## {f.label}\n{inputs[f.key]}" for f in fields if inputs.get(f.key)]
+    # How the AI works is part of what the product *is*, and later stages
+    # (requirements, audit, monitoring) need it as much as the prose.
+    tech = [f for f in agent.spec.input_fields if f.group.endswith("How the AI works")
+            and not f.is_empty(inputs.get(f.key))]
+    if parts and tech:
+        parts.append("## How the AI works\n" + "\n".join(
+            f"**{f.label}**\n{f.render(inputs.get(f.key))}" for f in tech))
     if not parts:
         return
     structured = {f.key: inputs.get(f.key) for f in agent.spec.input_fields}

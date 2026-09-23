@@ -166,8 +166,24 @@ def intake_form(project: Project, agent, can_run: bool) -> Dict[str, Any]:
     if not can_run:
         st.caption("You are a reviewer on this project: you can read the inputs, but only "
                    "owners and editors change them and run agents.")
-    elif st.button("Load example (resume-screening scenario)", key=pkey("ex", spec.key),
-                   icon=I.EXAMPLE, type="secondary"):
+    _intake_fields(project, agent, can_run)
+    current = _current_inputs(spec.key, spec.input_fields)
+    return {f.key: current[f.key] for f in spec.input_fields if f.visible(current)}
+
+
+@st.fragment
+def _intake_fields(project: Project, agent, can_run: bool) -> None:
+    """The fields themselves, redrawn on their own.
+
+    Changing an answer re-runs only this fragment — the fields, their
+    conditional visibility and the autosave — not the whole stage page with its
+    header, status and tracker, each of which reads from the database. The Run
+    button sits outside, so pressing it re-runs the page and reads every answer
+    from the session.
+    """
+    spec = agent.spec
+    if can_run and st.button("Load example (resume-screening scenario)", key=pkey("ex", spec.key),
+                             icon=I.EXAMPLE, type="secondary"):
         for f in spec.input_fields:
             value = EXAMPLES.get(spec.key, {}).get(f.key)
             if value is not None:
@@ -188,9 +204,6 @@ def intake_form(project: Project, agent, can_run: bool) -> Dict[str, Any]:
     if can_run:
         _autosave_intake(project, spec)
         st.caption("Answers are saved to this project as you type.")
-
-    current = _current_inputs(spec.key, spec.input_fields)
-    return {f.key: current[f.key] for f in spec.input_fields if f.visible(current)}
 
 
 # ---------------------------------------------------------------------------

@@ -37,7 +37,10 @@ stage gates already compute the only one that matters.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import datetime as _dt
+import functools
 import hashlib
 import hmac
 import io
@@ -46,7 +49,7 @@ import re
 import uuid
 import zipfile
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 from . import config
 from .db import Database, get_database, utcnow
@@ -140,6 +143,35 @@ def pseudonym(user_id: str) -> str:
     return "P-" + hmac.new(key, user_id.encode("utf-8"), hashlib.sha256).hexdigest()[:10]
 
 
+#: Membership answers already looked up during the current page run. Set by
+#: :meth:`ProjectService.request_scope`; ``None`` outside one, which means no
+#: memo at all (every call queries).
+_ACCESS_MEMO: "contextvars.ContextVar[Optional[Dict[Any, Any]]]" = contextvars.ContextVar(
+    "raia_access_memo", default=None
+)
+
+
+def _changes_access(fn):
+    """Mark a method that changes projects or memberships.
+
+    It runs without the per-run membership memo (so it reads what it just
+    wrote), and the memo is dropped afterwards for the rest of the run.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        memo = _ACCESS_MEMO.get()
+        token = _ACCESS_MEMO.set(None)
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            _ACCESS_MEMO.reset(token)
+            if memo is not None:
+                memo.clear()
+
+    return wrapper
+
+
 class ProjectService:
     """All project operations, each one authorized."""
 
@@ -154,6 +186,26 @@ class ProjectService:
 
             self._runner = StageRunner()
         return self._runner
+
+    # -- One page run -------------------------------------------------------------
+
+    @staticmethod
+    @contextlib.contextmanager
+    def request_scope() -> Iterator[None]:
+        """Look up each membership once per page run instead of once per call.
+
+        A page asks for the same project's membership several times (the
+        project, its repository, its stage summary...). Inside this scope the
+        first answer is reused for the rest of the run; the next run — the next
+        click — asks the database again, so a person removed from a project
+        still loses access on their next click. Any change to projects or
+        memberships made during the run drops the memo.
+        """
+        token = _ACCESS_MEMO.set({})
+        try:
+            yield
+        finally:
+            _ACCESS_MEMO.reset(token)
 
     # -- People -------------------------------------------------------------------
 
@@ -186,6 +238,7 @@ class ProjectService:
         self.db.execute("UPDATE users SET consented_at = ? WHERE id = ?", (utcnow(), user.id))
         return self.get_user(user.id)  # type: ignore[return-value]
 
+    @_changes_access
     def delete_account(self, user: User) -> None:
         """Remove a person and everything that exists only because of them.
 
@@ -216,6 +269,7 @@ class ProjectService:
         projects = [_project(r) for r in rows]
         return projects if include_archived else [p for p in projects if not p.archived_at]
 
+    @_changes_access
     def create_project(self, user: User, name: str, description: str = "") -> Project:
         name = (name or "").strip()
         if not name:
@@ -237,11 +291,18 @@ class ProjectService:
         return self.get_project(user, pid)
 
     def get_project(self, user: User, project_id: str) -> Project:
-        row = self.db.one(
-            "SELECT p.*, m.role FROM projects p JOIN project_members m ON m.project_id = p.id "
-            "WHERE p.id = ? AND m.user_id = ?",
-            (project_id, user.id),
-        )
+        memo = _ACCESS_MEMO.get()
+        key = (user.id, project_id)
+        if memo is not None and key in memo:
+            row = memo[key]
+        else:
+            row = self.db.one(
+                "SELECT p.*, m.role FROM projects p JOIN project_members m ON m.project_id = p.id "
+                "WHERE p.id = ? AND m.user_id = ?",
+                (project_id, user.id),
+            )
+            if memo is not None:
+                memo[key] = row
         if row is None:
             # Same answer whether the project does not exist or is someone
             # else's: an id must not be usable to probe for projects.
@@ -265,6 +326,7 @@ class ProjectService:
     def touch(self, project_id: str) -> None:
         self.db.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (utcnow(), project_id))
 
+    @_changes_access
     def update_project(self, user: User, project_id: str, *, name: Optional[str] = None,
                        description: Optional[str] = None,
                        require_second_approver: Optional[bool] = None) -> Project:
@@ -283,6 +345,7 @@ class ProjectService:
             t.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (utcnow(), project_id))
         return self.get_project(user, project_id)
 
+    @_changes_access
     def set_archived(self, user: User, project_id: str, archived: bool) -> Project:
         self.authorize(user, project_id, "manage")
         self.db.execute("UPDATE projects SET archived_at = ? WHERE id = ?",
@@ -293,6 +356,7 @@ class ProjectService:
         self.authorize(user, project_id, "manage")
         self._delete_project_data(project_id)
 
+    @_changes_access
     def _delete_project_data(self, project_id: str) -> None:
         open_repository(project_id).reset()
         with self.db.tx() as t:
@@ -370,6 +434,7 @@ class ProjectService:
             (normalize_email(user.email),),
         )
 
+    @_changes_access
     def respond_to_invitation(self, user: User, invitation_id: str, accept: bool) -> Optional[Project]:
         with self.db.tx() as t:
             inv = t.one(
@@ -394,6 +459,7 @@ class ProjectService:
         )
         return self.get_project(user, inv["project_id"])
 
+    @_changes_access
     def change_role(self, user: User, project_id: str, member_id: str, role: str) -> None:
         self.authorize(user, project_id, "manage")
         if role not in ROLES:
@@ -403,6 +469,7 @@ class ProjectService:
             t.execute("UPDATE project_members SET role = ? WHERE project_id = ? AND user_id = ?",
                       (role, project_id, member_id))
 
+    @_changes_access
     def remove_member(self, user: User, project_id: str, member_id: str) -> None:
         if member_id == user.id:
             self.authorize(user, project_id, "view")  # anyone may leave

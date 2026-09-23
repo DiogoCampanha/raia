@@ -10,14 +10,19 @@ named in exactly one place.
 Route              File                         Menu                  Sign-in
 =================  ===========================  ====================  ==========
 ``/``              views/home.py                Home                  required
+``/guide``         views/guide.py               Guide                 required
 ``/project``       views/project.py             hidden (from Home)    required
 ``/stage``         views/stage.py               hidden (from Project) required
 ``/agents``        views/agents.py              Agents                required
 ``/assessment``    views/assessment.py          Assessment            required
 ``/settings``      views/settings.py            Account > Settings    required
 ``/research``      views/research.py            Account (admins only) required
-``/privacy``       views/legal.py               Privacy & terms       public
+``/privacy``       views/legal.py               Account > Privacy     public
+``/signout``       views/signout.py             Account > Sign out    required
 =================  ===========================  ====================  ==========
+
+*Sign out* is listed only when there is someone to sign out: the local
+developer mode has one fixed identity and no sign-in.
 
 ``/project`` takes ``?id=<project id>``; ``/stage`` takes
 ``?project=<project id>&agent=<agent key>``. Query parameters keep links
@@ -31,6 +36,7 @@ from typing import Dict, Optional
 import streamlit as st
 
 HOME = "home"
+GUIDE = "guide"
 PROJECT = "project"
 STAGE = "stage"
 AGENTS = "agents"
@@ -39,9 +45,11 @@ SETTINGS = "settings"
 RESEARCH = "research"
 PRIVACY = "privacy"
 LOGIN = "login"
+SIGN_OUT = "signout"
 
 FILES = {
     HOME: "views/home.py",
+    GUIDE: "views/guide.py",
     PROJECT: "views/project.py",
     STAGE: "views/stage.py",
     AGENTS: "views/agents.py",
@@ -50,6 +58,7 @@ FILES = {
     RESEARCH: "views/research.py",
     PRIVACY: "views/legal.py",
     LOGIN: "views/login.py",
+    SIGN_OUT: "views/signout.py",
 }
 
 _PAGES: Dict[str, "st.Page"] = {}

@@ -111,6 +111,11 @@ def main() -> None:
     button(at, "consent_continue").click()
     ok(at.run(), "acceptance is recorded")
     check("Projects" in text(at), "then lands on Home")
+    check("New to RAIA?" in text(at) and has_button(at, "home_guide"),
+          "a newcomer is pointed to the Guide")
+    button(at, "home_guide_hide").click()
+    ok(at.run(), "the pointer can be hidden")
+    check(not has_button(at, "home_guide"), "…and stays hidden")
     no_emoji(at, "home page")
 
     print("== 2. The demo project ==")
@@ -131,6 +136,11 @@ def main() -> None:
               else next(k.split("::")[-1] for k in at.session_state.filtered_state
                         if k.startswith(f"{pid1}::in::{agent}::")))],
               "the demo project's saved answers fill the form")
+        if agent == "risk_classifier":
+            check("How the AI works" in text(at)
+                  and any(t.label.startswith("What does the AI produce or decide?") for t in at.text_area)
+                  and any(m.label.startswith("What kind of AI does it use?") for m in at.multiselect),
+                  "the Risk Classifier asks what the AI produces and how it works")
         button(at, f"{pid1}::run::{agent}").click()
         ok(at.run(), "the run pauses at the gate")
         check("Human review required" in text(at), "the gate is shown")
@@ -141,12 +151,45 @@ def main() -> None:
         ok(at.run(), "the draft is approved")
         check("Approved and committed" in text(at), "approval is confirmed")
     no_emoji(at, "stage page")
+    from raia.storage import open_repository
+
+    brief = open_repository(pid1).read_artifact("product_brief") or ""
+    check("## What does the AI produce or decide?" in brief and "## How the AI works" in brief
+          and "Machine learning" in brief,
+          "the approved product brief carries the new answers for later stages")
     goto(at, "project", id=pid1)
     ok(at.run(), "the project page renders after approvals")
     check(any("Action plan" in t.label for t in at.tabs), "the project has an action plan tab")
     check("Action plan (CSV)" in [d.proto.label for d in at.get("download_button")] or
           any("Action plan (CSV)" in str(d.proto) for d in at.get("download_button")),
           "…with a CSV export")
+
+    print("== 3b. A redraw stays within a database budget ==")
+    # Each statement is a network round trip on a hosted database. A stage page
+    # once made 26 statements in 24 transactions (about 100 round trips) every
+    # time a field changed; this keeps it from growing back.
+    from raia import config as _config
+    from raia.db import get_database
+
+    stats = get_database().stats
+    budgets = {"stage": 10, "project": 16, "home": 10} if _config.STORE_BACKEND == "database" \
+        else {"stage": 6, "project": 6, "home": 6}
+    goto(at, "stage", project=pid1, agent="story_refiner")
+    ok(at.run(), "the next stage opens")
+    field = next(t for t in at.text_area if t.key and "::in::story_refiner::" in t.key)
+    field.input("A changed answer")
+    stats.reset()
+    ok(at.run(), "a changed answer redraws the page")
+    check(stats.transactions == 0 and stats.round_trips <= budgets["stage"],
+          f"a stage redraw makes at most {budgets['stage']} round trips "
+          f"({stats.statements} statements, {stats.transactions} explicit transactions)")
+    for view, params in (("project", {"id": pid1}), ("home", {})):
+        goto(at, view, **params)
+        stats.reset()
+        ok(at.run(), f"the {view} page redraws")
+        check(stats.round_trips <= budgets[view],
+              f"a {view} page redraw makes at most {budgets[view]} round trips "
+              f"({stats.statements} statements, {stats.transactions} explicit transactions)")
 
     print("== 4. Revise an approved stage: downstream is flagged, not re-run ==")
     goto(at, "stage", project=pid1, agent="risk_classifier")
@@ -213,6 +256,20 @@ def main() -> None:
     check("Project not available" in text(at) and has_button(at, "notfound_home"),
           "a clear dead end, not an error")
 
+    print("== 7b. Guide page ==")
+    goto(at, "guide")
+    ok(at.run(), "the Guide opens")
+    body = text(at)
+    check("Step by step" in body and "Answer the Risk Classifier's questions" in body,
+          "…with the step-by-step walkthrough")
+    check(all(a.spec.name in body for a in __import__("raia.agents", fromlist=["AGENTS"]).AGENTS.values()),
+          "…and every agent in the at-a-glance table")
+    no_emoji(at, "guide page")
+    from raia.ui import guide as _guide
+
+    check(_guide.DOCUMENT.read_text(encoding="utf-8") == _guide.markdown(),
+          "docs/TESTERS.md is generated from the guide and up to date (python -m raia.ui.guide)")
+
     print("== 8. Agents page ==")
     goto(at, "agents")
     ok(at.run(), "the Agents page opens")
@@ -250,6 +307,31 @@ def main() -> None:
     check("Download my data" in "\n".join(str(d.proto.label) for d in at.get("download_button")),
           "personal data can be downloaded")
     check("Delete my account" in text(at), "the account can be deleted")
+    check(not has_button(at, "logout"), "Settings carries no sign-out button of its own")
+    from raia.ui import routes as _routes
+
+    check(_routes.SIGN_OUT not in _routes._PAGES,
+          "local developer mode lists no Sign out (there is no sign-in to end)")
+
+    print("== 11. Sign out from the Account menu ==")
+    from raia import auth
+
+    saved = (auth.mode, auth.current_identity, auth.configuration_problem, auth.logout)
+    logouts = []
+    auth.mode = lambda: "google"
+    auth.configuration_problem = lambda: None
+    auth.current_identity = lambda: auth.Identity(config.DEV_USER_EMAIL, config.DEV_USER_NAME)
+    auth.logout = lambda: logouts.append(True)
+    try:
+        g = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180)
+        ok(g.run(), "the app runs for a person signed in with Google")
+        check(_routes.SIGN_OUT in _routes._PAGES, "the Account menu lists Sign out")
+        goto(g, "signout")
+        ok(g.run(), "Sign out opens")
+        check(logouts == [True], "…hands over to the identity provider's logout")
+        check("_user" not in g.session_state, "…and clears the session")
+    finally:
+        auth.mode, auth.current_identity, auth.configuration_problem, auth.logout = saved
 
 
 if __name__ == "__main__":

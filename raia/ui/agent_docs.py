@@ -23,12 +23,16 @@ DOCS: Dict[str, Dict[str, object]] = {
         "decides": [
             "Matches the declared purpose and practices against the prohibited-practice and "
             "high-risk area lists of the EU AI Act and the Brazilian PL 2338/2023.",
+            "Reads how the AI works: flags a rules-only product that may fall outside the legal "
+            "definition of an AI system, and applies transparency duties that the techniques "
+            "imply even when they were not selected.",
             "Derives the risk tier for each jurisdiction and the obligations that follow "
             "from that tier and from your role (provider or deployer).",
             "Identifies the legal excerpts that must be in front of the reviewer.",
         ],
         "you": [
             "Whether a narrow-task exemption actually holds for your system.",
+            "Whether a rules-only product is an AI system in the legal sense.",
             "Whether the classification fits how the product is really used.",
         ],
     },
