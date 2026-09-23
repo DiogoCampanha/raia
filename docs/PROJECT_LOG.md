@@ -114,6 +114,7 @@ Recorded so the log stays honest about its own errors.
 | D24 | Reviewers edit the record's fields at the gate, not the rendered text. Persistence re-finalises, re-renders and re-validates the edited record; free-text edits are refused. | Otherwise the standard would stop being one at the exact point a person touched it, and priorities would no longer match placements. |
 | D25 | The output-contract work lands on its own branch, committed locally and not pushed. | The panel evaluates a frozen build. Whether this change enters the evaluated build is a decision for the author, taken knowingly rather than by a redeploy. |
 | D26 | A page run reads each project's current files and pending drafts once (a snapshot per repository object, dropped by any write to the project in the process), and each membership once (a memo scoped to the run). Single statements run without BEGIN/COMMIT, and a pooled connection is probed only after it sat idle. | On a hosted database every statement is a network round trip. Membership is still checked on every run, so removal still takes effect on the next click; the recorded history is never cached. |
+| D27 | *Sign out* is an entry of the Account menu (its own page, `/signout`), not a button inside Settings. It is listed only when there is a sign-in to end. | Ending a session is a navigation action people look for in the account menu; burying it in a settings page made testers hunt for it. |
 
 ---
 
@@ -122,6 +123,21 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-23 — Sign out from the Account menu (branch `tester-feedback`)
+
+Decision D27.
+
+- **TST-2** Signing out meant opening Settings and scrolling to a *Session*
+  section; the Account menu only listed Settings and Privacy & terms.
+- `views/signout.py` clears the session and hands over to the identity
+  provider's logout. `app.py` lists it as the last entry of the Account menu
+  when sign-in is on; `raia/ui/routes.py` documents the route. The button in
+  Settings is gone; the agreement page keeps its own, since it has no menu.
+- `tests/test_ui.py` section 11 signs in as a Google identity (the auth layer
+  is substituted in the test), checks the menu lists Sign out, opens it and
+  checks the session is cleared and the provider logout called; section 10
+  checks Settings no longer carries the button and developer mode lists none.
+
 ### 2026-09-23 — Pages redraw without a wait (branch `tester-feedback`)
 
 Decision D26.

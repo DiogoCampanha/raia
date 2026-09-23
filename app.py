@@ -129,6 +129,8 @@ def _main() -> None:
     account = [settings, privacy]
     if user.is_admin:
         account.insert(1, _page(routes.RESEARCH, "Research data", I.RESEARCH, "research"))
+    if auth.mode() != "dev":
+        account.append(_page(routes.SIGN_OUT, "Sign out", I.LOGOUT, "signout"))
 
     nav = st.navigation(
         {"": [home, project, stage, agents, assessment], "Account": account},

@@ -277,6 +277,31 @@ def main() -> None:
     check("Download my data" in "\n".join(str(d.proto.label) for d in at.get("download_button")),
           "personal data can be downloaded")
     check("Delete my account" in text(at), "the account can be deleted")
+    check(not has_button(at, "logout"), "Settings carries no sign-out button of its own")
+    from raia.ui import routes as _routes
+
+    check(_routes.SIGN_OUT not in _routes._PAGES,
+          "local developer mode lists no Sign out (there is no sign-in to end)")
+
+    print("== 11. Sign out from the Account menu ==")
+    from raia import auth
+
+    saved = (auth.mode, auth.current_identity, auth.configuration_problem, auth.logout)
+    logouts = []
+    auth.mode = lambda: "google"
+    auth.configuration_problem = lambda: None
+    auth.current_identity = lambda: auth.Identity(config.DEV_USER_EMAIL, config.DEV_USER_NAME)
+    auth.logout = lambda: logouts.append(True)
+    try:
+        g = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180)
+        ok(g.run(), "the app runs for a person signed in with Google")
+        check(_routes.SIGN_OUT in _routes._PAGES, "the Account menu lists Sign out")
+        goto(g, "signout")
+        ok(g.run(), "Sign out opens")
+        check(logouts == [True], "…hands over to the identity provider's logout")
+        check("_user" not in g.session_state, "…and clears the session")
+    finally:
+        auth.mode, auth.current_identity, auth.configuration_problem, auth.logout = saved
 
 
 if __name__ == "__main__":

@@ -36,8 +36,8 @@ entries:
 - **Agents** — how RAIA works: the architecture (select an agent in the
   diagram to see what it reads and produces) and each agent's documentation.
 - **Assessment** — the evaluation form for this study.
-- **Account** — Settings (profile, your data, delete account) and the Privacy
-  Policy and User Agreement.
+- **Account** — Settings (profile, your data, delete account), the Privacy
+  Policy and User Agreement, and **Sign out**.
 
 A **project page** shows where the project stands: the next action, the five
 stages with their status, and tabs for *Documents* (approved artifacts and the
