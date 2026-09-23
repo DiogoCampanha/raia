@@ -66,6 +66,20 @@ if svc.my_latest_rating(user) is None and any(summaries[p.id]["approved"] for p 
         if c2.button("Open", key="home_assessment", type="primary"):
             routes.go(routes.ASSESSMENT)
 
+# ---- First steps ------------------------------------------------------------------
+
+if not st.session_state.get("guide_hint_hidden") and not any(
+        summaries[p.id]["approved"] for p in projects):
+    with st.container(border=True):
+        c1, c2, c3 = st.columns([5, 1, 1], vertical_alignment="center")
+        c1.markdown(f"{I.GUIDE} **New to RAIA?** The Guide walks you through a project step by "
+                    "step: what each agent asks, how to review a draft, and what to look for.")
+        if c2.button("Open the guide", key="home_guide", type="primary"):
+            routes.go(routes.GUIDE)
+        if c3.button("Hide", key="home_guide_hide"):
+            st.session_state["guide_hint_hidden"] = True
+            st.rerun()
+
 # ---- Overview tiles ------------------------------------------------------------
 
 awaiting = sum(len(summaries[p.id]["in_review"]) for p in active)

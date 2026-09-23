@@ -173,8 +173,8 @@ artifact.
 ```
 raia/
 ├── app.py                     # entry point: sign-in, agreement, page registry (top menu)
-├── views/                     # one file per page: home, project, stage, agents,
-│                              #   assessment, settings, research, legal, login, consent
+├── views/                     # one file per page: home, guide, project, stage, agents,
+│                              #   assessment, settings, research, legal, login, consent, signout
 ├── ingest.py                  # Builds the Chroma normative index from corpus/
 ├── raia/
 │   ├── config.py              # env-driven settings; authority + source registries
@@ -208,7 +208,7 @@ raia/
 │   ├── projects.py            # people, projects, roles, invitations, authorization
 │   ├── lineage.py             # stage dependencies and the derived "needs review" flag
 │   ├── ui/                    # routes, theme (CSS + icons), components, approval gate,
-│   │                          #   agent docs, assessment instrument, legal page
+│   │                          #   agent docs, tester guide, assessment instrument, legal page
 │   ├── auth.py                # Google sign-in via Streamlit, or a local dev identity
 │   ├── pipeline.py            # the graph: generate → human gate → persist
 │   ├── sanitize.py            # injection screening (EN + PT), flag-never-delete
@@ -223,7 +223,7 @@ raia/
 │   ├── templates/             # agent card and project-log entry templates
 │   ├── PROJECT_LOG.md         # what was wrong, what was decided, what changed
 │   ├── legal/PRIVACY_AND_TERMS.md  # public privacy policy and user agreement
-│   └── TESTERS.md             # guided walkthrough for the evaluation panel
+│   └── TESTERS.md             # tester guide, generated from raia/ui/guide.py (also the Guide page)
 └── tests/
     ├── smoke_test.py          # offline end-to-end, including the invariants
     ├── test_engines.py        # deterministic unit checks

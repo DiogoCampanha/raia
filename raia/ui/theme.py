@@ -25,6 +25,7 @@ class I:  # noqa: E742 - short on purpose: I.HOME reads well at call sites
     PROJECT = ":material/folder_open:"
     AGENTS = ":material/hub:"
     ASSESSMENT = ":material/fact_check:"
+    GUIDE = ":material/school:"
     SETTINGS = ":material/settings:"
     PRIVACY = ":material/policy:"
     RESEARCH = ":material/analytics:"

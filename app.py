@@ -121,6 +121,7 @@ def _main() -> None:
                    "secrets to run for real.", icon=I.MOCK)
 
     home = _page(routes.HOME, "Home", I.HOME, "home", default=True)
+    guide = _page(routes.GUIDE, "Guide", I.GUIDE, "guide")
     project = _page(routes.PROJECT, "Project", I.PROJECT, "project", visibility="hidden")
     stage = _page(routes.STAGE, "Stage", I.AGENTS, "stage", visibility="hidden")
     agents = _page(routes.AGENTS, "Agents", I.AGENTS, "agents")
@@ -133,7 +134,7 @@ def _main() -> None:
         account.append(_page(routes.SIGN_OUT, "Sign out", I.LOGOUT, "signout"))
 
     nav = st.navigation(
-        {"": [home, project, stage, agents, assessment], "Account": account},
+        {"": [home, guide, project, stage, agents, assessment], "Account": account},
         position="top",
     )
     with ProjectService.request_scope():

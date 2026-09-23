@@ -111,6 +111,11 @@ def main() -> None:
     button(at, "consent_continue").click()
     ok(at.run(), "acceptance is recorded")
     check("Projects" in text(at), "then lands on Home")
+    check("New to RAIA?" in text(at) and has_button(at, "home_guide"),
+          "a newcomer is pointed to the Guide")
+    button(at, "home_guide_hide").click()
+    ok(at.run(), "the pointer can be hidden")
+    check(not has_button(at, "home_guide"), "…and stays hidden")
     no_emoji(at, "home page")
 
     print("== 2. The demo project ==")
@@ -250,6 +255,20 @@ def main() -> None:
     ok(at.run(), "the page handles it")
     check("Project not available" in text(at) and has_button(at, "notfound_home"),
           "a clear dead end, not an error")
+
+    print("== 7b. Guide page ==")
+    goto(at, "guide")
+    ok(at.run(), "the Guide opens")
+    body = text(at)
+    check("Step by step" in body and "Answer the Risk Classifier's questions" in body,
+          "…with the step-by-step walkthrough")
+    check(all(a.spec.name in body for a in __import__("raia.agents", fromlist=["AGENTS"]).AGENTS.values()),
+          "…and every agent in the at-a-glance table")
+    no_emoji(at, "guide page")
+    from raia.ui import guide as _guide
+
+    check(_guide.DOCUMENT.read_text(encoding="utf-8") == _guide.markdown(),
+          "docs/TESTERS.md is generated from the guide and up to date (python -m raia.ui.guide)")
 
     print("== 8. Agents page ==")
     goto(at, "agents")

@@ -10,6 +10,7 @@ named in exactly one place.
 Route              File                         Menu                  Sign-in
 =================  ===========================  ====================  ==========
 ``/``              views/home.py                Home                  required
+``/guide``         views/guide.py               Guide                 required
 ``/project``       views/project.py             hidden (from Home)    required
 ``/stage``         views/stage.py               hidden (from Project) required
 ``/agents``        views/agents.py              Agents                required
@@ -35,6 +36,7 @@ from typing import Dict, Optional
 import streamlit as st
 
 HOME = "home"
+GUIDE = "guide"
 PROJECT = "project"
 STAGE = "stage"
 AGENTS = "agents"
@@ -47,6 +49,7 @@ SIGN_OUT = "signout"
 
 FILES = {
     HOME: "views/home.py",
+    GUIDE: "views/guide.py",
     PROJECT: "views/project.py",
     STAGE: "views/stage.py",
     AGENTS: "views/agents.py",
