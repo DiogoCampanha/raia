@@ -108,6 +108,11 @@ Recorded so the log stays honest about its own errors.
 | D18 | Revising an approved stage flags the approved stages that depend on it as *Needs review*. Nothing is re-run automatically; a person revises or re-confirms each one, and both are recorded. | An automatic re-run would call the model and produce drafts nobody requested, against the rule that nothing advances without a person. The flag is derived from the event log, like all progress. |
 | D19 | The tester assessment uses the evaluation plan's five dimensions (utility, completeness, usability, methodological rigor, generalizability) on a five-point agreement scale, plus open questions, optional broad profile questions and optional per-stage items. Instrument id `raia-panel-v1`. | The plan's success criterion is computed over exactly these dimensions. The earlier per-stage usefulness/ease/trust items did not map to it. The plan defines the dimensions but not item wording, so each statement is the plan's definition of its dimension, translated to English; the id changes if the wording does. |
 | D20 | A public Privacy Policy and User Agreement page, served by the app without sign-in from `docs/legal/PRIVACY_AND_TERMS.md`; people re-accept when its effective date changes. | Google's OAuth consent screen requires a public policy URL. One Markdown source serves both the app and any external copy. |
+| D21 | Every agent answers in one standard record: a shared core (summary, findings, actions, typed open issues, not grounded, declared coverage) plus one extension per agent. The model returns JSON validated against its schema; code renders the Markdown. | Free prose inside fixed headings made two projects incomparable and made each stage's layout new to the reviewer. A template the model fills in as prose would standardise the look, not the content. |
+| D22 | Every vocabulary, scale and field is drawn only from the project's normative sources — the seven adopted principles, NIST AI RMF 1.0, IEEE 7000-2021, Microsoft RAI Standard v2, ECCOLA, the EU AI Act and PL 2338/2023. No other standard is used. | The software operationalises the frameworks the research integrates; importing others would make the artifact evaluate something the research does not claim. A test asserts that the vocabularies occur in the corpus. |
+| D23 | The model places findings on likelihood and magnitude; code computes risk level and priority with a published matrix and floors (prohibited practice → critical and blocking; legal grounding → at least high; computed severity is a floor). | NIST AI RMF asks for likelihood and magnitude but fixes no scale. A model-assigned priority varies between runs for no inspectable reason; a computed one carries its basis. The levels and matrix are stated as RAIA's operationalisation. |
+| D24 | Reviewers edit the record's fields at the gate, not the rendered text. Persistence re-finalises, re-renders and re-validates the edited record; free-text edits are refused. | Otherwise the standard would stop being one at the exact point a person touched it, and priorities would no longer match placements. |
+| D25 | The output-contract work lands on its own branch, committed locally and not pushed. | The panel evaluates a frozen build. Whether this change enters the evaluated build is a decision for the author, taken knowingly rather than by a redeploy. |
 
 ---
 
@@ -116,6 +121,95 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-17 — One standard record for every agent, on branch `output-contract`
+
+Decisions D21–D25. New finding prefix **OUT-** (output consistency).
+
+#### What was wrong
+
+- **OUT-1** Inside the required headings everything was free prose. Nothing
+  said what a recommendation must contain, so owners, deadlines and
+  verification appeared in one run and not the next, and two projects could not
+  be compared.
+- **OUT-2** Each agent used its own vocabulary for the same things
+  (*Recommendations for the Team*, *Recommended Actions*, *Upcoming Ethical
+  Checkpoints*), with no shared fields for risk, response, owner or priority.
+- **OUT-3** How serious a finding was depended on the model's tone everywhere
+  except the Drift Monitor.
+- **OUT-4** Structure was recovered from prose with regular expressions (the
+  machine block, acceptance-criterion ids, open-issue bullets), which is where
+  run-to-run drift entered the blackboard.
+- **OUT-5** Open issues were plain strings: no type, no deciding role, no
+  blocking flag.
+- **OUT-6** A reviewer's edit at the gate was free text, so an approved artifact
+  could leave any structure the draft had.
+
+#### What changed
+
+- `raia/contract/` — the RAIA record (`raia-record/1.0`): closed vocabularies
+  from the normative sources (`vocab.py`), the likelihood × magnitude matrix and
+  priority floors (`rubric.py`), one schema per agent (`schema.py`), the
+  contract as shown to the model (`prompt.py`), parse → bounded repair →
+  finalise → fallback (`assemble.py`), the one rendered layout (`render.py`),
+  record checks (`checks.py`), the project action plan (`actions.py`), and
+  generators for `docs/schema/` and `docs/agents/`.
+- Agent extensions follow their sources: legal screens, tier justifications,
+  obligation notes, oversight, rights and impact assessments (EU AI Act,
+  PL 2338/2023); context of use, direct and indirect stakeholders, value
+  register, gap analysis, ethical value requirements with fit criteria and
+  verification method, and an impact assessment (IEEE 7000, Microsoft RAI
+  Standard v2 A1); ECCOLA cards with their discussion, acceptance criteria in
+  the verifiable-requirement pattern, and a sprint ethics log; audit items,
+  accountability log and checkpoints (Microsoft RAI Standard v2 accountability,
+  NIST AI RMF GOVERN); alerts, representativeness, sample adequacy and a
+  response plan with deactivation criteria and community feedback (NIST AI RMF
+  MEASURE and MANAGE).
+- Rule engines raise typed issues (`RationaleResult.raise_issue`); code carries
+  them into every record, opens an issue for every declared disagreement and
+  every accepted risk, restores an upgraded audit verdict or a restated drift
+  severity and reports it, and raises the overall status where required.
+- `raia/agents/base.py` — the turn now parses and repairs the record
+  (`RAIA_CONTRACT_REPAIRS`, default 1), finalises and renders it, and runs the
+  record checks beside the existing validators. The sidecar carries the whole
+  approved record; downstream engines read requirement wording and criteria
+  from it instead of from prose.
+- `raia/pipeline.py` — approval accepts an edited record, re-finalises,
+  re-renders and re-validates it; free-text edits are refused. Typed issues
+  reach the register.
+- Gate: a structured record editor replaces the Markdown text box. Project
+  page: an **Action plan** tab with priority/owner/stage filters and CSV/JSON
+  export; typed issues shown with their deciding role and blocking flag. The
+  project download includes the action plan.
+- The mock model builds a conforming record from machine-readable contract
+  hints, exercising every field offline.
+- Docs: `docs/output-contract.md` (the standard), `docs/agents/*.md` (generated
+  agent cards), `docs/schema/*.schema.json`, `docs/templates/` (agent card,
+  project-log entry); README, architecture and tester guide updated.
+
+#### Tests
+
+- `tests/test_contract.py` — vocabularies occur in the corpus; the matrix is
+  monotonic and the floors apply; parsing, repair prompt and fallback;
+  finalisation (ids, priorities, carried and code-opened issues, evidence
+  discipline, status floor, idempotence); the layout and the model-facing
+  schema; published schemas and agent cards are current; the action plan.
+- `tests/smoke_test.py` — every approved artifact carries a record and follows
+  the layout; the register is typed; the action plan and export; a free-text
+  edit is refused and a field edit recomputes priority; an invalid reply is
+  repaired, and one that stays invalid yields a fallback record with a failed
+  check.
+- `tests/test_ui.py` — the gate shows the record editor and the standard
+  layout; the project page has the action plan and its export.
+- `tests/consistency_check.py` — run-to-run agreement of records. With the mock
+  model it is 1.0 by construction; it is meant for a live run.
+
+#### Still open, by decision
+
+- Not merged or pushed (D25). A live run with a real API key is needed to see
+  whether the model fills the record well and to measure consistency.
+- The magnitude and likelihood levels, the matrix and the floors are the
+  project's operationalisation; they are documented as such and should be
+  reviewed by the panel.
 ### 2026-09-17 — Models that reject a temperature
 
 - **DEP-T1** A live run on a newer model failed with `400 invalid_request_error:

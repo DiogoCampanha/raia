@@ -239,19 +239,22 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
     # -- 5. Open issues ------------------------------------------------------
 
     if (eu_high or br_high) and "impact_assessment" not in controls:
-        r.open_issues.append(
+        r.raise_issue(
             "The system is classified high-risk and no impact assessment is in place. "
-            "This blocks several obligations at once and needs an owner and a date."
+            "This blocks several obligations at once and needs an owner and a date.",
+            type="missing_information", decision_owner="product", blocking=False,
         )
     if "fairness" in values and "robustness" in values:
-        r.open_issues.append(
+        r.raise_issue(
             "Fairness and predictive accuracy were both declared as values at stake. Where they "
-            "trade off, the ranking between them is a human decision, not a technical one."
+            "trade off, the ranking between them is a human decision, not a technical one.",
+            type="value_tradeoff", decision_owner="leadership", blocking=False,
         )
     if constraints:
-        r.open_issues.append(
+        r.raise_issue(
             "Delivery constraints were declared alongside the requirements. Any ethical value "
-            "requirement that cannot be met within them must be recorded here rather than dropped."
+            "requirement that cannot be met within them must be recorded here rather than dropped.",
+            type="risk_acceptance", decision_owner="product", blocking=False,
         )
     if not controls:
         r.notes.append("The team declared no existing controls, so every obligation starts as a gap.")

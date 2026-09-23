@@ -84,10 +84,34 @@ class RationaleResult:
     checklist: List[ChecklistItem] = field(default_factory=list)
     pins: List[Pin] = field(default_factory=list)
     open_issues: List[str] = field(default_factory=list)
+    #: Typed metadata for each open issue, index-aligned with ``open_issues``
+    #: when raised through :meth:`raise_issue`: type, deciding role, blocking.
+    issue_meta: List[Dict[str, Any]] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
     tables: Dict[str, str] = field(default_factory=dict)
     data: Dict[str, Any] = field(default_factory=dict)
     query_terms: List[str] = field(default_factory=list)
+
+    def raise_issue(self, text: str, type: str = "missing_information",
+                    decision_owner: str = "product", blocking: bool = False) -> None:
+        """Escalate something only a person can settle, with its type and owner.
+
+        The text is what the reviewer reads; the type, the deciding role and the
+        blocking flag are what make two projects' registers comparable.
+        """
+        self.open_issues.append(text)
+        self.issue_meta.append(
+            {"text": text, "type": type, "decision_owner": decision_owner, "blocking": blocking}
+        )
+
+    def typed_issues(self) -> List[Dict[str, Any]]:
+        """Every engine issue with its metadata (untyped ones get safe defaults)."""
+        meta = {m["text"]: m for m in self.issue_meta}
+        return [
+            dict(meta.get(t) or {"text": t, "type": "missing_information",
+                                 "decision_owner": "product", "blocking": False})
+            for t in self.open_issues
+        ]
 
     # -- rendering ---------------------------------------------------------
 
@@ -141,6 +165,7 @@ class RationaleResult:
             "checklist": [{"key": c.key, "label": c.label} for c in self.checklist],
             "pins": [{"source": p.source, "section": p.section} for p in self.pins],
             "open_issues": list(self.open_issues),
+            "issue_meta": self.typed_issues(),
             "notes": list(self.notes),
             "data": self.data,
         }

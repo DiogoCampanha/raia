@@ -1,0 +1,370 @@
+"""
+raia.contract.schema
+====================
+
+The RAIA record: one shared core every agent fills, plus one extension per
+agent shaped by the normative source that agent operationalises.
+
+The model does not write a document. It returns one JSON object that must
+validate against the schema of its agent; code then computes what must not
+vary between runs (ids, risk level, priority, blocking flags, carried-forward
+issues), and renders the Markdown a person reads. The JSON is the record; the
+Markdown is a view of it.
+
+Fields marked ``computed`` are filled by code. They are removed from the schema
+the model is shown, and anything the model puts in them is overwritten.
+
+Shared core — what every stage answers, on every project:
+
+==========================  ==================================================
+Field                       Grounding
+==========================  ==================================================
+summary, overall_status     human oversight: the reviewer reads the bottom line first
+declared_verdict,           the reconciliation channel: agreement with the rule
+agrees_with_rule_engine     engine is declared, never implied
+findings[]                  NIST AI RMF MAP 5 (likelihood × magnitude), one of
+                            the seven principles, a NIST AI RMF category
+actions[]                   NIST AI RMF MANAGE 1 (mitigate/transfer/avoid/accept),
+                            lifecycle stage; Microsoft RAI Standard v2 (owner,
+                            review cadence, evidence artifact); IEEE 7000
+                            (test/audit/measurement/inspection)
+open_issues[]               authority precedence and same-level conflicts;
+                            human arbitration
+not_grounded[]              grounded recommendations: what the excerpts do not support
+coverage[]                  declared completeness
+==========================  ==================================================
+"""
+
+from __future__ import annotations
+
+import copy
+from typing import Any, Dict, List, Literal, Optional, Type
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from ..rationale.types import VALID_STATUSES
+from . import vocab as V
+
+Principle = Literal[V.PRINCIPLE_KEYS]  # type: ignore[valid-type]
+NistCategory = Literal[tuple(V.NIST_CATEGORIES)]  # type: ignore[valid-type]
+Magnitude = Literal[V.MAGNITUDE]  # type: ignore[valid-type]
+Likelihood = Literal[V.LIKELIHOOD]  # type: ignore[valid-type]
+Response = Literal[V.RESPONSES]  # type: ignore[valid-type]
+Lifecycle = Literal[V.LIFECYCLE_STAGES]  # type: ignore[valid-type]
+Owner = Literal[V.OWNER_ROLES]  # type: ignore[valid-type]
+Cadence = Literal[V.REVIEW_CADENCES]  # type: ignore[valid-type]
+Verification = Literal[V.VERIFICATION_METHODS]  # type: ignore[valid-type]
+IssueType = Literal[V.ISSUE_TYPES]  # type: ignore[valid-type]
+Status = Literal[V.OVERALL_STATUSES]  # type: ignore[valid-type]
+CoverageStatus = Literal[VALID_STATUSES]  # type: ignore[valid-type]
+MsGoal = Literal[tuple(V.MS_GOALS)]  # type: ignore[valid-type]
+Card = Literal[tuple(V.ECCOLA_CARDS)]  # type: ignore[valid-type]
+AuditVerdict = Literal[V.AUDIT_VERDICTS]  # type: ignore[valid-type]
+Severity = Literal["low", "medium", "high"]
+StakeholderKind = Literal[V.STAKEHOLDER_KINDS]  # type: ignore[valid-type]
+
+
+def computed(default: Any = None, **kw: Any) -> Any:
+    """A field filled by code, hidden from the schema the model sees."""
+    return Field(default=default, json_schema_extra={"computed": True}, **kw)
+
+
+class _Model(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+
+Citations = Field(default_factory=list, description=(
+    "Citation tags copied exactly from the retrieved excerpts, e.g. "
+    "\"[Source: ... | authority: legal]\". Never invent one."))
+
+
+# ---------------------------------------------------------------------------
+# Shared core
+# ---------------------------------------------------------------------------
+
+
+class Finding(_Model):
+    id: str = Field(description="Local identifier such as F1. Code assigns the final id.")
+    title: str = Field(max_length=160, description="One line naming the risk or gap.")
+    statement: str = Field(description="What could go wrong or is missing, for whom, and why it matters here.")
+    principle: Principle = Field(description="The Responsible AI principle at stake.")
+    nist_category: NistCategory = Field(description="The NIST AI RMF category this finding belongs to.")
+    magnitude: Magnitude = Field(description="Impact magnitude, using the anchored definitions.")
+    likelihood: Likelihood = Field(description="Likelihood, using the anchored definitions.")
+    placement_rationale: str = Field(description="Why this magnitude and likelihood, from the inputs and evidence.")
+    stakeholders: List[str] = Field(default_factory=list, description="Who is affected, direct and indirect.")
+    citations: List[str] = Citations
+    links: List[str] = Field(default_factory=list, description=(
+        "Identifiers from the computed block this finding concerns (obligation codes, EVR ids, "
+        "story ids, card ids, audit item ids, telemetry windows)."))
+    risk_level: Optional[str] = computed()
+    priority: Optional[str] = computed()
+    blocking: Optional[bool] = computed()
+    priority_basis: Optional[str] = computed()
+
+
+class Action(_Model):
+    id: str = Field(description="Local identifier such as A1. Code assigns the final id.")
+    finding_ids: List[str] = Field(description="The finding ids (local) this action responds to.")
+    action: str = Field(description="Imperative, specific, checkable: what is done.")
+    response: Response = Field(description="Risk response (NIST AI RMF MANAGE 1).")
+    owner_role: Owner = Field(description="The accountable role.")
+    lifecycle_stage: Lifecycle = Field(description="Lifecycle stage in which it must be done.")
+    review_cadence: Cadence = Field(description="How often it is reviewed.")
+    verification_method: Verification = Field(description="How completion is verified.")
+    evidence_artifact: str = Field(description="The artifact that will demonstrate completion.")
+    citations: List[str] = Citations
+    links: List[str] = Field(default_factory=list)
+    priority: Optional[str] = computed()
+
+
+class CoverageItem(_Model):
+    key: str
+    status: CoverageStatus
+    justification: str = Field(description="One sentence.")
+
+
+class OpenIssue(_Model):
+    id: str = Field(default="", description="Local identifier such as I1.")
+    type: IssueType
+    description: str
+    options: List[str] = Field(default_factory=list, description="The choices a person could make.")
+    decision_owner: Owner = Field(description="The role that must arbitrate.")
+    blocking: bool = Field(default=False, description="True if work must not proceed until decided.")
+    links: List[str] = Field(default_factory=list)
+    origin: Optional[str] = computed("agent")
+
+
+class RecordCore(_Model):
+    summary: str = Field(max_length=1200, description="The bottom line a reviewer reads first; at most five sentences.")
+    overall_status: Status
+    declared_verdict: Dict[str, str] = Field(default_factory=dict, description=(
+        "Your value for each verdict key named in the contract."))
+    agrees_with_rule_engine: bool
+    disagreement_rationale: str = Field(default="", description="Required when you disagree.")
+    findings: List[Finding] = Field(default_factory=list)
+    actions: List[Action] = Field(default_factory=list)
+    open_issues: List[OpenIssue] = Field(default_factory=list, description=(
+        "Issues you raise. The rule engine's issues are carried forward by code; do not repeat them."))
+    not_grounded: List[str] = Field(default_factory=list, description=(
+        "Claims you believe matter that the retrieved excerpts do not support."))
+    coverage: List[CoverageItem] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Risk Classifier — EU AI Act, PL 2338/2023
+# ---------------------------------------------------------------------------
+
+
+class ObligationNote(_Model):
+    code: str = Field(description="An obligation code from the computed table, exactly.")
+    meaning_for_this_product: str
+    citations: List[str] = Citations
+
+
+class RiskClassificationExt(_Model):
+    prohibited_screen: str = Field(description="Result of the EU AI Act Art. 5 and PL 2338 excessive-risk screen.")
+    eu_tier_justification: str = Field(description="Why the EU tier holds, naming the area or article.")
+    br_tier_justification: str = Field(description="Why the Brazilian tier holds, naming the area.")
+    obligations: List[ObligationNote] = Field(default_factory=list, description="One note per computed obligation code.")
+    human_oversight_assessment: str = Field(description="Whether the declared oversight design meets the oversight obligations.")
+    affected_persons_rights: str = Field(description="How affected persons' rights are operationalised in the product.")
+    impact_assessments: str = Field(description="Which impact assessments the instruments require (fundamental rights / algorithmic).")
+
+
+# ---------------------------------------------------------------------------
+# Requirements Reviewer — IEEE 7000 (Value-Based Engineering), Microsoft RAI v2 A1
+# ---------------------------------------------------------------------------
+
+
+class StakeholderEntry(_Model):
+    name: str
+    kind: StakeholderKind = Field(description="direct (uses the system) or indirect (affected without using it).")
+    values: List[Principle] = Field(default_factory=list)
+
+
+class ValueEntry(_Model):
+    value: Principle = Field(description="The core value.")
+    rank: int = Field(ge=1, description="1 = highest priority core value.")
+    threats: str = Field(description="How the design could harm this value.")
+    opportunities: str = Field(description="How the design could advance it.")
+
+
+class GapNote(_Model):
+    evr_id: str = Field(description="A computed EVR id, exactly.")
+    explanation: str = Field(description="What is missing and why it matters for this product.")
+    citations: List[str] = Citations
+
+
+class EthicalValueRequirement(_Model):
+    id: str = Field(description="An assigned EVR id, exactly.")
+    value: Principle
+    stakeholders: List[str]
+    statement: str = Field(description="The requirement, bound to this context of use.")
+    fit_criterion: str = Field(description="The measurable condition that settles whether it is met.")
+    verification_method: Verification
+    traces_to: List[str] = Field(default_factory=list, description="Obligation codes or principle refs it derives from.")
+    citations: List[str] = Citations
+
+
+class HarmBenefit(_Model):
+    stakeholder: str
+    harms: str
+    benefits: str
+
+
+class ImpactAssessment(_Model):
+    intended_uses: str = Field(description="Intended and out-of-scope uses.")
+    harms_and_benefits: List[HarmBenefit] = Field(default_factory=list, description="Potential harms and benefits per stakeholder.")
+    mitigations: str
+
+
+class RequirementsReviewExt(_Model):
+    context_of_use: str = Field(description="The operational environment and conditions of use (IEEE 7000 concept of operations).")
+    stakeholders: List[StakeholderEntry] = Field(default_factory=list, description="Direct and indirect stakeholders and the values at stake for each.")
+    value_register: List[ValueEntry] = Field(default_factory=list, description="Prioritised core values with threats and opportunities (IEEE 7000 Value Register).")
+    gap_analysis: List[GapNote] = Field(default_factory=list, description="One entry per computed EVR id.")
+    evrs: List[EthicalValueRequirement] = Field(default_factory=list, description="One ethical value requirement per assigned id.")
+    impact_assessment: ImpactAssessment = Field(description="Microsoft RAI Standard v2 goal A1 impact assessment.")
+
+
+# ---------------------------------------------------------------------------
+# User Story Refiner — ECCOLA, Microsoft RAI v2 verifiable requirements
+# ---------------------------------------------------------------------------
+
+
+class AcceptanceCriterion(_Model):
+    id: str = Field(description="AC-<story id>-<n>, e.g. AC-S1-1.")
+    ms_goal: MsGoal = Field(description="The Microsoft RAI Standard v2 goal it serves.")
+    stakeholder_group: str = Field(description="The affected stakeholder group.")
+    condition: str = Field(description="Measurable condition with its threshold.")
+    evidence_artifact: str = Field(description="The artifact that demonstrates compliance.")
+    owner_role: Owner
+    evr_ids: List[str] = Field(default_factory=list, description="Approved EVR ids this criterion implements.")
+
+
+class StoryEntry(_Model):
+    story_id: str = Field(description="A story id from the register, exactly.")
+    eccola_cards: List[Card] = Field(default_factory=list, description="Selected ECCOLA card ids that make the story relevant.")
+    card_discussion: str = Field(default="", description="The card questions, answered for this story.")
+    criteria: List[AcceptanceCriterion] = Field(default_factory=list, description="Verifiable acceptance criteria (Microsoft RAI Standard v2 requirement pattern).")
+    no_impact_reason: str = Field(default="", description="Only for a story with no ethical impact.")
+
+
+class RefinedStoriesExt(_Model):
+    stories: List[StoryEntry] = Field(default_factory=list, description="Exactly one entry per story id in the register.")
+    sprint_ethics_log: str = Field(description="Decisions and rationales taken this sprint (ECCOLA documentation step).")
+
+
+# ---------------------------------------------------------------------------
+# Auditor — Microsoft RAI v2 accountability, NIST AI RMF GOVERN
+# ---------------------------------------------------------------------------
+
+
+class AuditItem(_Model):
+    item_id: str = Field(description="A computed audit item id, exactly.")
+    verdict: AuditVerdict
+    evidence: str = Field(description="Quoted from the sprint outcomes or an upstream artifact; empty if none.")
+    evidence_needed: str = Field(default="", description="What would verify it, when not satisfied.")
+    downgrade_reason: str = Field(default="")
+    citations: List[str] = Citations
+    computed_verdict: Optional[str] = computed()
+
+
+class DecisionEntry(_Model):
+    decision: str
+    decided_by: str
+    artifact: str = Field(description="The approved artifact that records it.")
+    reference: str = Field(default="", description="Commit, date or approval header it was read from.")
+
+
+class Checkpoint(_Model):
+    checkpoint: str
+    triggered_by: str = Field(description="The planned epic or event that reaches it.")
+    item_ids: List[str] = Field(default_factory=list)
+    lifecycle_stage: Lifecycle
+
+
+class AuditReportExt(_Model):
+    items: List[AuditItem] = Field(default_factory=list, description="One entry per computed audit item.")
+    accountability_log: List[DecisionEntry] = Field(default_factory=list, description="Who decided what, from the upstream approval headers (NIST AI RMF GOVERN 2).")
+    upcoming_checkpoints: List[Checkpoint] = Field(default_factory=list, description="Ethical checkpoints the planned work will hit.")
+
+
+# ---------------------------------------------------------------------------
+# Drift Monitor — NIST AI RMF MEASURE and MANAGE
+# ---------------------------------------------------------------------------
+
+
+class Alert(_Model):
+    window: str = Field(description="A computed breach window label, exactly.")
+    severity: Severity = Field(description="Exactly the severity the engine computed.")
+    meaning_for_affected_people: str
+    citations: List[str] = Citations
+
+
+class ResponsePlan(_Model):
+    escalation_path: str = Field(description="Who is alerted, in what order, within what time.")
+    deactivation_criteria: str = Field(description="When the system is rolled back or deactivated (MANAGE 2).")
+    affected_community_feedback: str = Field(description="How input from users and affected communities is captured (MANAGE 4).")
+    recovery_and_communication: str = Field(description="How the system recovers and who is told.")
+
+
+class DriftAlertsExt(_Model):
+    alerts: List[Alert] = Field(default_factory=list, description="One alert per computed breach window.")
+    trend_interpretation: str = Field(description="The movement across windows (NIST AI RMF MEASURE 3).")
+    representativeness: str = Field(description="Whether the population mix shifted relative to the population affected (MEASURE 2).")
+    sample_adequacy: List[str] = Field(default_factory=list, description="Groups whose samples do not support a conclusion.")
+    response_plan: ResponsePlan = Field(description="Response, recovery and communication (NIST AI RMF MANAGE).")
+
+
+EXTENSIONS: Dict[str, Type[_Model]] = {
+    "risk_classifier": RiskClassificationExt,
+    "requirements_reviewer": RequirementsReviewExt,
+    "story_refiner": RefinedStoriesExt,
+    "auditor": AuditReportExt,
+    "drift_monitor": DriftAlertsExt,
+}
+
+_RECORDS: Dict[str, Type[RecordCore]] = {}
+
+
+def record_model(agent_key: str) -> Type[RecordCore]:
+    """The full record model for one agent: shared core + its extension."""
+    if agent_key not in _RECORDS:
+        ext = EXTENSIONS.get(agent_key)
+        if ext is None:
+            _RECORDS[agent_key] = RecordCore
+        else:
+            name = "".join(p.title() for p in agent_key.split("_")) + "Record"
+            _RECORDS[agent_key] = type(name, (RecordCore,), {
+                "__annotations__": {"extension": ext},
+                "__module__": __name__,
+            })
+    return _RECORDS[agent_key]
+
+
+def full_schema(agent_key: str) -> Dict[str, Any]:
+    return record_model(agent_key).model_json_schema()
+
+
+def model_facing_schema(agent_key: str) -> Dict[str, Any]:
+    """The JSON Schema shown to the model: computed fields removed."""
+    schema = copy.deepcopy(full_schema(agent_key))
+
+    def strip(node: Any) -> None:
+        if isinstance(node, dict):
+            props = node.get("properties")
+            if isinstance(props, dict):
+                for name in [k for k, v in props.items() if isinstance(v, dict) and v.get("computed")]:
+                    props.pop(name)
+                    if name in node.get("required", []):
+                        node["required"].remove(name)
+            for v in node.values():
+                strip(v)
+        elif isinstance(node, list):
+            for v in node:
+                strip(v)
+
+    strip(schema)
+    return schema

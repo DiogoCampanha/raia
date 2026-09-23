@@ -89,8 +89,8 @@ rather than requested in a prompt.
 flowchart LR
     A["1 · Structured intake<br/><i>typed fields a rule reads</i>"] --> B
     B["2 · Rule engine<br/><i>verdict · tables · pins · checklist</i>"] --> C
-    C["3 · Model pass<br/><i>justify · judge · write</i>"] --> D
-    D["4 · Validators<br/><i>citations · structure · coverage</i>"] --> E
+    C["3 · Model pass<br/><i>justify · judge · fill the record</i>"] --> D
+    D["4 · Contract + validators<br/><i>ids · priority · layout · checks</i>"] --> E
     E{{"5 · Human approval gate"}}
     E -- approve --> F[("Git commit:<br/>Markdown + JSON sidecar<br/>+ provenance")]
     E -- reject + reason code --> C
@@ -106,6 +106,27 @@ exemption really holds, whether a harm is significant, whether a lexical match
 is real evidence — those are open-textured, so they are argued by the model and
 settled by a person. Where the two disagree, neither wins silently: the
 disagreement is recorded as an open issue.
+
+**Every turn ends in the same record.** The model's reply is one JSON object
+validated against the agent's schema (`raia/contract/`): a shared core —
+summary, findings placed on likelihood and magnitude, actions, typed open
+issues, declared coverage — and an extension shaped by the agent's normative
+source. Code assigns the identifiers, computes risk level and priority,
+carries the engine's issues forward, and renders the one layout every artifact
+follows. A reviewer edits the record's fields at the gate, never its prose.
+The standard is specified in `docs/output-contract.md`.
+
+```mermaid
+flowchart LR
+    R["Model reply"] --> P{"validates against<br/>the agent's schema?"}
+    P -- no --> RP["repair once<br/>with the errors"] --> P2{"validates?"}
+    P2 -- no --> FB["fallback record<br/>raw reply shown · check fails"]
+    P -- yes --> FIN
+    P2 -- yes --> FIN["finalise<br/>ids · risk level · priority floors<br/>engine issues · disagreement · acceptance<br/>evidence discipline · status floor"]
+    FB --> FIN
+    FIN --> REN["render the standard layout<br/>+ machine block"] --> CHK["checks"] --> GATE{{"human gate<br/>edits fields → finalise again"}}
+    GATE -- approve --> SIDE[("artifact + sidecar with the record<br/>typed issues → register<br/>actions → action plan")]
+```
 
 ## 1b′. Interface: page map
 
@@ -361,6 +382,10 @@ stateDiagram-v2
 | Declared completeness | each engine emits a checklist; `validators.check_coverage` requires a status per key | code |
 | Anti-ethics-washing audit | `rationale/traceability.py` assigns NOT VERIFIED where no evidence exists; `validators.check_forbidden_verdicts` prevents an upgrade | code |
 | Metrics come from code | `rationale/drift.py` computes every figure; `validators.check_numbers` rejects any number not in the computed set | code |
+| One standard output for every agent | `raia/contract/` — schema per agent (shared core + extension), closed vocabularies from the normative sources, code-computed identifiers, risk level and priority, one rendered layout, bounded repair and an honest fallback; published in `docs/schema/` and `docs/output-contract.md` | code + test_contract |
+| Every identified risk is responded to | `contract.checks.check_responses` — every finding has an action or an open issue; accepting a risk opens an issue | code |
+| Structured human editing | the gate edits record fields; persistence re-finalises, re-renders and re-validates what was approved; free-text edits are refused | code + smoke test |
+| Project action plan | `contract.actions` — every action from every approved record, sorted by computed priority, exported as CSV/JSON | code |
 | Reproducible audit trail | `raia/provenance.py` — model, temperature, corpus version, excerpt ids, prompt hash, attempt, edits, rejection history, check results | code |
 | Data protection | projects are reachable only through a membership, checked in `ProjectService.authorize`; sign-in delegated to Google (no stored passwords); research exports pseudonymized with keyed participant codes; no retraining | code + test_projects |
 | Accountable approval | the approver is the authenticated identity; optional second-approver rule makes the runner ineligible to approve | code + test_projects |

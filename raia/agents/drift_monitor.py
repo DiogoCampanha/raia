@@ -16,12 +16,11 @@ as unable to support a conclusion. Every figure in the narrative is checked
 against the computed set — the model interprets numbers, it never produces one.
 """
 
-from typing import Any, Dict
-
 from .. import validators
+from ..contract import checks as contract_checks
+from ..contract.assemble import drift_severities
 from ..fields import InputField
 from ..rationale import drift
-from ..rationale.types import RationaleResult
 from .base import AgentSpec, BaseAgent
 
 G_TELEMETRY = "1 · Telemetry"
@@ -61,12 +60,6 @@ class DriftMonitorAgent(BaseAgent):
         output_key="drift_report",
         engine=drift.run,
         verdict_keys=["windows"],
-        required_sections=[
-            "Drift Alerts",
-            "Fairness & Representativeness Analysis",
-            "Recommended Actions",
-            "Open Issues",
-        ],
         input_fields=[
             InputField(
                 key="telemetry_csv", label="Production telemetry", kind="csv", group=G_TELEMETRY,
@@ -88,29 +81,29 @@ class DriftMonitorAgent(BaseAgent):
             ),
         ],
         task_prompt=(
-            "Interpret the fairness metrics computed from the telemetry. The numbers, the "
-            "threshold, the breaches, the trend and the sample-adequacy flags are all given to "
-            "you and are ground truth: never restate a different figure, never estimate one, "
-            "and never introduce a number that is not in the computed table. Your job is "
-            "meaning, not measurement.\n\n"
-            "Under **Drift Alerts**, raise one alert per computed breach — the window, the "
-            "severity the engine assigned, what it means for affected people — citing the "
-            "management practice that grounds the response.\n\n"
-            "Under **Fairness & Representativeness Analysis**, read the movement across "
-            "windows: the direction of the trend, whether the population mix shifted, and "
-            "whether the operational context plausibly explains it. Where a group's sample is "
-            "too small to conclude from, say so plainly rather than hedging.\n\n"
-            "Under **Recommended Actions**, give responses grounded in the retrieved practices: "
-            "what to investigate, what to retrain, which decisions to review by hand, what "
-            "would justify a rollback.\n\n"
-            "Under **Open Issues**, carry forward every issue the engine raised, plus anything "
-            "the telemetry cannot settle."
+            "Interpret the fairness metrics computed from the telemetry, following NIST AI RMF "
+            "MEASURE and MANAGE. The numbers, the threshold, the breaches, the trend, the "
+            "severities and the sample-adequacy flags are ground truth: never restate a different "
+            "figure, never estimate one, and never write a number that is not in the computed "
+            "table. Your job is meaning, not measurement.\n\n"
+            "In the extension: `alerts` has one entry per computed breach window, with exactly the "
+            "severity the engine computed and what it means for the people affected, cited. "
+            "`trend_interpretation` reads the movement across windows; `representativeness` says "
+            "whether the population mix shifted relative to the population affected; "
+            "`sample_adequacy` names where a group's sample is too small to conclude from. "
+            "`response_plan` gives the escalation path, the criteria that would justify rollback "
+            "or deactivation, how input from users and affected communities is captured, and "
+            "recovery and communication.\n\n"
+            "Findings are the measured risks — a breach is `observed` — linked to the window "
+            "labels. Actions are responses grounded in the retrieved management practices."
         ),
     )
 
-    def extra_checks(
-        self, report: validators.ValidationReport, draft: str, rationale: RationaleResult
-    ) -> None:
+    def extra_checks(self, report, draft, rationale, record) -> None:
         allowed = (rationale.data or {}).get("allowed_numbers") or []
         if allowed:
-            report.add(validators.check_numbers(draft, allowed, "Reported figures"))
+            report.add(validators.check_numbers(
+                contract_checks.narrative_text(record), allowed, "Reported figures"))
+        breaches = list(drift_severities(rationale))
+        alerts = [a.get("window") for a in (record.get("extension") or {}).get("alerts") or []]
+        report.add(contract_checks.check_registered_ids("Drift alerts", "alerts", breaches, alerts))

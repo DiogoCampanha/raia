@@ -4,6 +4,8 @@ import json
 
 import streamlit as st
 
+from raia.contract import actions as action_plan
+from raia.contract import vocab as V
 from raia.export import bundle_name, session_bundle
 from raia.projects import EDITOR, OWNER, REVIEWER, ROLE_LABELS
 from raia.repository import ACCEPTED, ARTIFACT_FILES, OPEN, RESOLVED
@@ -52,9 +54,12 @@ with st.container(border=True):
                      width="stretch"):
             routes.go(routes.STAGE, project=proj.id, agent=focus["agent"])
 
-tab_overview, tab_docs, tab_issues, tab_activity, tab_people = st.tabs([
+plan_rows = action_plan.project_actions(repo)
+
+tab_overview, tab_docs, tab_plan, tab_issues, tab_activity, tab_people = st.tabs([
     ":material/dashboard: Overview",
     ":material/description: Documents",
+    f":material/checklist: Action plan ({len(plan_rows)})" if plan_rows else ":material/checklist: Action plan",
     f":material/gavel: Open issues ({summary['open_issues']})" if summary["open_issues"]
     else ":material/gavel: Open issues",
     ":material/history: Activity",
@@ -135,6 +140,43 @@ with tab_docs:
                     mime="application/json", key=pkey("dlj", key), icon=I.DOWNLOAD,
                 )
 
+# ---- Action plan ------------------------------------------------------------------
+
+with tab_plan:
+    st.caption("Every action from every approved stage, in one list sorted by priority. Priority is "
+               "computed by the software from each finding's likelihood and magnitude (NIST AI RMF), "
+               "raised where a legal obligation, a prohibited practice or a measured severity "
+               "requires it. Drafts under review contribute nothing.")
+    if not plan_rows:
+        empty_state("No actions yet", "Approve a stage and its actions appear here.")
+    else:
+        counts = action_plan.summary(plan_rows)
+        stat_tiles([(p.capitalize(), n, "", p in ("critical", "high") and n > 0) for p, n in counts.items()])
+        f1, f2, f3 = st.columns(3)
+        pick_p = f1.multiselect("Priority", list(reversed(V.PRIORITIES)), key=pkey("plan_p"))
+        pick_o = f2.multiselect("Owner", list(V.OWNER_ROLES), format_func=V.OWNER_LABELS.get, key=pkey("plan_o"))
+        pick_s = f3.multiselect("Stage", sorted({r["stage"] for r in plan_rows}), key=pkey("plan_s"))
+        shown = [r for r in plan_rows if (not pick_p or r["priority"] in pick_p)
+                 and (not pick_o or r["owner_role"] in pick_o) and (not pick_s or r["stage"] in pick_s)]
+        st.dataframe(
+            [{
+                "ID": r["id"], "Priority": r["priority"], "Blocking": "yes" if r["blocking"] else "",
+                "Action": r["action"], "Response": r["response"],
+                "Owner": V.OWNER_LABELS.get(r["owner_role"], r["owner_role"]),
+                "Lifecycle stage": V.LIFECYCLE_LABELS.get(r["lifecycle_stage"], r["lifecycle_stage"]),
+                "Review cadence": r["review_cadence"].replace("_", " "),
+                "Verification": r["verification_method"], "Evidence artifact": r["evidence_artifact"],
+                "Findings": r["findings"], "Principles": r["principles"],
+                "NIST AI RMF": r["nist_categories"], "Stage": r["stage"],
+            } for r in shown],
+            width="stretch", hide_index=True,
+        )
+        d1, d2, _ = st.columns([1, 1, 2])
+        d1.download_button("Action plan (CSV)", action_plan.to_csv(plan_rows), file_name="action_plan.csv",
+                           mime="text/csv", key=pkey("plan_csv"), icon=I.DOWNLOAD)
+        d2.download_button("Action plan (JSON)", action_plan.to_json(plan_rows), file_name="action_plan.json",
+                           mime="application/json", key=pkey("plan_json"), icon=I.DOWNLOAD)
+
 # ---- Open issues -------------------------------------------------------------------
 
 with tab_issues:
@@ -157,6 +199,12 @@ with tab_issues:
             with st.container(border=True):
                 st.badge(issue["id"], color=color)
                 st.markdown(issue["text"])
+                st.caption(
+                    V.ISSUE_TYPE_LABELS.get(issue.get("type"), "Needs a human decision")
+                    + f" · decided by {V.OWNER_LABELS.get(issue.get('decision_owner'), 'the team')}"
+                    + (" · **blocking**" if issue.get("blocking") else "")
+                    + (f" · options: {'; '.join(issue['options'])}" if issue.get("options") else "")
+                )
                 st.caption(
                     f"Raised by {issue.get('raised_by', '?')} · {issue.get('raised_at', '?')}"
                     + (f" · artifact `{issue['artifact']}`" if issue.get("artifact") else "")

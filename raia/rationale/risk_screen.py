@@ -416,34 +416,40 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
     # -- 5. Open issues ------------------------------------------------------
 
     if hard_eu or hard_br:
-        r.open_issues.append(
+        r.raise_issue(
             "A prohibited practice was declared. Development cannot proceed on this design; "
-            "escalate to legal before any further stage."
+            "escalate to legal before any further stage.",
+            type="prohibited_practice", decision_owner="legal_compliance", blocking=True,
         )
     if conditional:
-        r.open_issues.append(
+        r.raise_issue(
             "A restricted practice was declared (narrow legal exceptions only). Confirm the "
-            "specific legal basis and authorisation before proceeding."
+            "specific legal basis and authorisation before proceeding.",
+            type="prohibited_practice", decision_owner="legal_compliance", blocking=True,
         )
     if art63:
-        r.open_issues.append(
+        r.raise_issue(
             "The narrow-task exemption is claimed. It must be documented before market placement "
-            "and remains reviewable by authorities — the rule engine cannot confirm it."
+            "and remains reviewable by authorities — the rule engine cannot confirm it.",
+            type="missing_information", decision_owner="legal_compliance", blocking=False,
         )
     if significant == "unsure":
-        r.open_issues.append(
+        r.raise_issue(
             "Whether outputs produce legal or similarly significant effects on people is undetermined. "
-            "This drives affected-persons' rights and must be settled by a human."
+            "This drives affected-persons' rights and must be settled by a human.",
+            type="missing_information", decision_owner="legal_compliance", blocking=False,
         )
     if autonomy in ("fully_automated", "human_confirms") and oversight in ("none_designed", "monitoring_only"):
-        r.open_issues.append(
+        r.raise_issue(
             "Automation level and the designed oversight are inconsistent: decisions are effectively "
-            "automated while no case-level human intervention exists. Human arbitration required."
+            "automated while no case-level human intervention exists. Human arbitration required.",
+            type="risk_acceptance", decision_owner="product", blocking=False,
         )
     if eu_is_high != br_is_high and eu_in_scope and br_in_scope:
-        r.open_issues.append(
+        r.raise_issue(
             "The two jurisdictions classify this system differently. Record which regime governs "
-            "the product decision, or apply the stricter one."
+            "the product decision, or apply the stricter one.",
+            type="normative_conflict", decision_owner="legal_compliance", blocking=False,
         )
     if not markets:
         r.notes.append("No target market was selected; both regimes were screened as informational.")

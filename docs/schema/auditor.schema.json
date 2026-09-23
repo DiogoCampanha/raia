@@ -1,0 +1,662 @@
+{
+  "$id": "raia-record/1.0/auditor",
+  "title": "AuditorRecord",
+  "$defs": {
+    "Action": {
+      "properties": {
+        "id": {
+          "description": "Local identifier such as A1. Code assigns the final id.",
+          "title": "Id",
+          "type": "string"
+        },
+        "finding_ids": {
+          "description": "The finding ids (local) this action responds to.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Finding Ids",
+          "type": "array"
+        },
+        "action": {
+          "description": "Imperative, specific, checkable: what is done.",
+          "title": "Action",
+          "type": "string"
+        },
+        "response": {
+          "description": "Risk response (NIST AI RMF MANAGE 1).",
+          "enum": [
+            "mitigate",
+            "transfer",
+            "avoid",
+            "accept"
+          ],
+          "title": "Response",
+          "type": "string"
+        },
+        "owner_role": {
+          "description": "The accountable role.",
+          "enum": [
+            "product",
+            "engineering",
+            "data_science",
+            "legal_compliance",
+            "operations",
+            "leadership"
+          ],
+          "title": "Owner Role",
+          "type": "string"
+        },
+        "lifecycle_stage": {
+          "description": "Lifecycle stage in which it must be done.",
+          "enum": [
+            "plan_and_design",
+            "collect_and_process_data",
+            "build_and_use_model",
+            "verify_and_validate",
+            "deploy_and_use",
+            "operate_and_monitor"
+          ],
+          "title": "Lifecycle Stage",
+          "type": "string"
+        },
+        "review_cadence": {
+          "description": "How often it is reviewed.",
+          "enum": [
+            "once",
+            "every_sprint",
+            "every_release",
+            "continuous"
+          ],
+          "title": "Review Cadence",
+          "type": "string"
+        },
+        "verification_method": {
+          "description": "How completion is verified.",
+          "enum": [
+            "test",
+            "audit",
+            "measurement",
+            "inspection"
+          ],
+          "title": "Verification Method",
+          "type": "string"
+        },
+        "evidence_artifact": {
+          "description": "The artifact that will demonstrate completion.",
+          "title": "Evidence Artifact",
+          "type": "string"
+        },
+        "citations": {
+          "description": "Citation tags copied exactly from the retrieved excerpts, e.g. \"[Source: ... | authority: legal]\". Never invent one.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "links": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Links",
+          "type": "array"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "computed": true,
+          "default": null,
+          "title": "Priority"
+        }
+      },
+      "required": [
+        "id",
+        "finding_ids",
+        "action",
+        "response",
+        "owner_role",
+        "lifecycle_stage",
+        "review_cadence",
+        "verification_method",
+        "evidence_artifact"
+      ],
+      "title": "Action",
+      "type": "object"
+    },
+    "AuditItem": {
+      "properties": {
+        "item_id": {
+          "description": "A computed audit item id, exactly.",
+          "title": "Item Id",
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "satisfied",
+            "partially_satisfied",
+            "at_risk",
+            "not_verified"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        },
+        "evidence": {
+          "description": "Quoted from the sprint outcomes or an upstream artifact; empty if none.",
+          "title": "Evidence",
+          "type": "string"
+        },
+        "evidence_needed": {
+          "default": "",
+          "description": "What would verify it, when not satisfied.",
+          "title": "Evidence Needed",
+          "type": "string"
+        },
+        "downgrade_reason": {
+          "default": "",
+          "title": "Downgrade Reason",
+          "type": "string"
+        },
+        "citations": {
+          "description": "Citation tags copied exactly from the retrieved excerpts, e.g. \"[Source: ... | authority: legal]\". Never invent one.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "computed_verdict": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "computed": true,
+          "default": null,
+          "title": "Computed Verdict"
+        }
+      },
+      "required": [
+        "item_id",
+        "verdict",
+        "evidence"
+      ],
+      "title": "AuditItem",
+      "type": "object"
+    },
+    "AuditReportExt": {
+      "properties": {
+        "items": {
+          "description": "One entry per computed audit item.",
+          "items": {
+            "$ref": "#/$defs/AuditItem"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "accountability_log": {
+          "description": "Who decided what, from the upstream approval headers (NIST AI RMF GOVERN 2).",
+          "items": {
+            "$ref": "#/$defs/DecisionEntry"
+          },
+          "title": "Accountability Log",
+          "type": "array"
+        },
+        "upcoming_checkpoints": {
+          "description": "Ethical checkpoints the planned work will hit.",
+          "items": {
+            "$ref": "#/$defs/Checkpoint"
+          },
+          "title": "Upcoming Checkpoints",
+          "type": "array"
+        }
+      },
+      "title": "AuditReportExt",
+      "type": "object"
+    },
+    "Checkpoint": {
+      "properties": {
+        "checkpoint": {
+          "title": "Checkpoint",
+          "type": "string"
+        },
+        "triggered_by": {
+          "description": "The planned epic or event that reaches it.",
+          "title": "Triggered By",
+          "type": "string"
+        },
+        "item_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Item Ids",
+          "type": "array"
+        },
+        "lifecycle_stage": {
+          "enum": [
+            "plan_and_design",
+            "collect_and_process_data",
+            "build_and_use_model",
+            "verify_and_validate",
+            "deploy_and_use",
+            "operate_and_monitor"
+          ],
+          "title": "Lifecycle Stage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "checkpoint",
+        "triggered_by",
+        "lifecycle_stage"
+      ],
+      "title": "Checkpoint",
+      "type": "object"
+    },
+    "CoverageItem": {
+      "properties": {
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "covered",
+            "not-applicable",
+            "not-grounded"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "justification": {
+          "description": "One sentence.",
+          "title": "Justification",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "status",
+        "justification"
+      ],
+      "title": "CoverageItem",
+      "type": "object"
+    },
+    "DecisionEntry": {
+      "properties": {
+        "decision": {
+          "title": "Decision",
+          "type": "string"
+        },
+        "decided_by": {
+          "title": "Decided By",
+          "type": "string"
+        },
+        "artifact": {
+          "description": "The approved artifact that records it.",
+          "title": "Artifact",
+          "type": "string"
+        },
+        "reference": {
+          "default": "",
+          "description": "Commit, date or approval header it was read from.",
+          "title": "Reference",
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision",
+        "decided_by",
+        "artifact"
+      ],
+      "title": "DecisionEntry",
+      "type": "object"
+    },
+    "Finding": {
+      "properties": {
+        "id": {
+          "description": "Local identifier such as F1. Code assigns the final id.",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "description": "One line naming the risk or gap.",
+          "maxLength": 160,
+          "title": "Title",
+          "type": "string"
+        },
+        "statement": {
+          "description": "What could go wrong or is missing, for whom, and why it matters here.",
+          "title": "Statement",
+          "type": "string"
+        },
+        "principle": {
+          "description": "The Responsible AI principle at stake.",
+          "enum": [
+            "accountability",
+            "fairness",
+            "human_oversight",
+            "privacy",
+            "robustness",
+            "transparency",
+            "wellbeing"
+          ],
+          "title": "Principle",
+          "type": "string"
+        },
+        "nist_category": {
+          "description": "The NIST AI RMF category this finding belongs to.",
+          "enum": [
+            "GOVERN 1",
+            "GOVERN 2",
+            "GOVERN 3",
+            "GOVERN 4",
+            "GOVERN 5",
+            "GOVERN 6",
+            "MAP 1",
+            "MAP 2",
+            "MAP 3",
+            "MAP 4",
+            "MAP 5",
+            "MEASURE 1",
+            "MEASURE 2",
+            "MEASURE 3",
+            "MEASURE 4",
+            "MANAGE 1",
+            "MANAGE 2",
+            "MANAGE 3",
+            "MANAGE 4"
+          ],
+          "title": "Nist Category",
+          "type": "string"
+        },
+        "magnitude": {
+          "description": "Impact magnitude, using the anchored definitions.",
+          "enum": [
+            "negligible",
+            "limited",
+            "significant",
+            "severe"
+          ],
+          "title": "Magnitude",
+          "type": "string"
+        },
+        "likelihood": {
+          "description": "Likelihood, using the anchored definitions.",
+          "enum": [
+            "rare",
+            "possible",
+            "likely",
+            "observed"
+          ],
+          "title": "Likelihood",
+          "type": "string"
+        },
+        "placement_rationale": {
+          "description": "Why this magnitude and likelihood, from the inputs and evidence.",
+          "title": "Placement Rationale",
+          "type": "string"
+        },
+        "stakeholders": {
+          "description": "Who is affected, direct and indirect.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Stakeholders",
+          "type": "array"
+        },
+        "citations": {
+          "description": "Citation tags copied exactly from the retrieved excerpts, e.g. \"[Source: ... | authority: legal]\". Never invent one.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "links": {
+          "description": "Identifiers from the computed block this finding concerns (obligation codes, EVR ids, story ids, card ids, audit item ids, telemetry windows).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Links",
+          "type": "array"
+        },
+        "risk_level": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "computed": true,
+          "default": null,
+          "title": "Risk Level"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "computed": true,
+          "default": null,
+          "title": "Priority"
+        },
+        "blocking": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "computed": true,
+          "default": null,
+          "title": "Blocking"
+        },
+        "priority_basis": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "computed": true,
+          "default": null,
+          "title": "Priority Basis"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "statement",
+        "principle",
+        "nist_category",
+        "magnitude",
+        "likelihood",
+        "placement_rationale"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "OpenIssue": {
+      "properties": {
+        "id": {
+          "default": "",
+          "description": "Local identifier such as I1.",
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "normative_conflict",
+            "engine_disagreement",
+            "value_tradeoff",
+            "not_grounded",
+            "missing_information",
+            "risk_acceptance",
+            "prohibited_practice"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "options": {
+          "description": "The choices a person could make.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "decision_owner": {
+          "description": "The role that must arbitrate.",
+          "enum": [
+            "product",
+            "engineering",
+            "data_science",
+            "legal_compliance",
+            "operations",
+            "leadership"
+          ],
+          "title": "Decision Owner",
+          "type": "string"
+        },
+        "blocking": {
+          "default": false,
+          "description": "True if work must not proceed until decided.",
+          "title": "Blocking",
+          "type": "boolean"
+        },
+        "links": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Links",
+          "type": "array"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "computed": true,
+          "default": "agent",
+          "title": "Origin"
+        }
+      },
+      "required": [
+        "type",
+        "description",
+        "decision_owner"
+      ],
+      "title": "OpenIssue",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "summary": {
+      "description": "The bottom line a reviewer reads first; at most five sentences.",
+      "maxLength": 1200,
+      "title": "Summary",
+      "type": "string"
+    },
+    "overall_status": {
+      "enum": [
+        "on_track",
+        "needs_attention",
+        "blocked"
+      ],
+      "title": "Overall Status",
+      "type": "string"
+    },
+    "declared_verdict": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Your value for each verdict key named in the contract.",
+      "title": "Declared Verdict",
+      "type": "object"
+    },
+    "agrees_with_rule_engine": {
+      "title": "Agrees With Rule Engine",
+      "type": "boolean"
+    },
+    "disagreement_rationale": {
+      "default": "",
+      "description": "Required when you disagree.",
+      "title": "Disagreement Rationale",
+      "type": "string"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "actions": {
+      "items": {
+        "$ref": "#/$defs/Action"
+      },
+      "title": "Actions",
+      "type": "array"
+    },
+    "open_issues": {
+      "description": "Issues you raise. The rule engine's issues are carried forward by code; do not repeat them.",
+      "items": {
+        "$ref": "#/$defs/OpenIssue"
+      },
+      "title": "Open Issues",
+      "type": "array"
+    },
+    "not_grounded": {
+      "description": "Claims you believe matter that the retrieved excerpts do not support.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Not Grounded",
+      "type": "array"
+    },
+    "coverage": {
+      "items": {
+        "$ref": "#/$defs/CoverageItem"
+      },
+      "title": "Coverage",
+      "type": "array"
+    },
+    "extension": {
+      "$ref": "#/$defs/AuditReportExt"
+    }
+  },
+  "required": [
+    "summary",
+    "overall_status",
+    "agrees_with_rule_engine",
+    "extension"
+  ],
+  "type": "object"
+}

@@ -334,20 +334,23 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
     # -- Open issues -----------------------------------------------------------
 
     if thresholds["parity_difference"]["source"].startswith("system default"):
-        r.open_issues.append(
+        r.raise_issue(
             "No fairness threshold was found in the approved artifacts, so a system default was "
             "applied. The threshold this product is held to is a human decision and should be "
-            "written into an ethical requirement."
+            "written into an ethical requirement.",
+            type="missing_information", decision_owner="product", blocking=False,
         )
     if breaches and not (risk.get("eu_is_high_risk") or risk.get("br_is_high_risk")):
-        r.open_issues.append(
+        r.raise_issue(
             "A threshold is breached on a system not classified high-risk. Confirm the "
-            "classification still holds, or record why the breach is acceptable."
+            "classification still holds, or record why the breach is acceptable.",
+            type="missing_information", decision_owner="legal_compliance", blocking=False,
         )
     if incident != "none":
-        r.open_issues.append(
+        r.raise_issue(
             f"An operational event was declared ({incident}). Whether it explains the metric "
-            "movement, or is a separate failure, needs a human judgement."
+            "movement, or is a separate failure, needs a human judgement.",
+            type="missing_information", decision_owner="operations", blocking=False,
         )
     if notes:
         r.notes.append(

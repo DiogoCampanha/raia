@@ -6,6 +6,8 @@ import streamlit as st
 
 from raia import config
 from raia.agents import AGENTS
+from raia.contract import SCHEMA_VERSION
+from raia.contract.assemble import RECORD_TYPES
 from raia.repository import ARTIFACT_FILES
 from raia.ui.agent_docs import DOCS, LAYERS, TURN
 from raia.ui.components import esc, page_header
@@ -172,7 +174,8 @@ for tab, (key, agent) in zip(tabs, AGENTS.items()):
                                       for u in spec.upstream_keys) or "- Nothing: first stage")
             with g2:
                 st.caption("Produces")
-                st.markdown(f"- `{ARTIFACT_FILES.get(spec.output_key, spec.output_key)}`, with "
+                st.markdown(f"- `{ARTIFACT_FILES.get(spec.output_key, spec.output_key)}` — a "
+                            f"{RECORD_TYPES.get(spec.key, 'RAIA record').lower()} (`{SCHEMA_VERSION}`), with "
                             "sections: " + ", ".join(spec.required_sections))
                 st.caption("Grounded in")
                 st.markdown("\n".join(f"- {config.SOURCE_NAMES.get(g, g)}"
