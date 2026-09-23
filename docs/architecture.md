@@ -119,7 +119,7 @@ The standard is specified in `docs/output-contract.md`.
 ```mermaid
 flowchart LR
     R["Model reply"] --> P{"validates against<br/>the agent's schema?"}
-    P -- no --> RP["repair once<br/>with the errors"] --> P2{"validates?"}
+    P -- no --> RP["retry once<br/>errors, or more room<br/>if it was cut off"] --> P2{"validates?"}
     P2 -- no --> FB["fallback record<br/>raw reply shown · check fails"]
     P -- yes --> FIN
     P2 -- yes --> FIN["finalise<br/>ids · risk level · priority floors<br/>engine issues · disagreement · acceptance<br/>evidence discipline · status floor"]

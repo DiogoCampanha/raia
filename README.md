@@ -159,8 +159,10 @@ artifact.
   hash, which attempt was approved, whether a human edited it, the rejection
   history, and the result of every check.
 - **(h′) A standard record** — the model returns JSON that must validate
-  against its agent's schema; an invalid reply is repaired once, then shown as
-  a fallback record that fails its check. Priority, identifiers and the layout
+  against its agent's schema; an invalid reply is sent back once (with its
+  validation errors, or, when it was cut off at the token limit, with more room
+  and an instruction to be compact), then shown as a fallback record that fails
+  its check. Priority, identifiers and the layout
   are computed, so two projects are comparable line by line.
 - **(i) Transient-failure retry** — provider overloads and rate limits are
   retried with backoff; nothing else is, because retrying a bad request only
@@ -251,7 +253,8 @@ only when its file really is the official wording.
 | `RAIA_LLM_PROVIDER` | `anthropic` | `anthropic` \| `openai` \| `mock` |
 | `RAIA_LLM_MODEL` | `claude-sonnet-5` | |
 | `RAIA_LLM_TEMPERATURE` | `0.2` | low for reproducibility; `none` omits it (models that reject a temperature are also detected and retried without it) |
-| `RAIA_LLM_MAX_TOKENS` | `8192` | truncation is detected, not tolerated |
+| `RAIA_LLM_MAX_TOKENS` | `16384` | a standard record for a high-risk system is long; truncation is detected, not tolerated |
+| `RAIA_LLM_MAX_TOKENS_CEILING` | `32000` | the budget one retry may raise to after a reply was cut off |
 | `RAIA_LLM_RETRIES` | `2` | transient provider failures only |
 | `RAIA_CONTRACT_REPAIRS` | `1` | a reply that does not validate against the record schema is returned with its errors this many times |
 | `RAIA_RAG_TOP_K` | `12` | plus the excerpts each procedure pins |

@@ -121,6 +121,51 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-23 — A cut-off reply no longer wastes a stage (branch `contract-token-budget`)
+
+#### What was wrong
+
+- **OUT-7** Found on a live run of the Risk Classifier with a real model, on a
+  high-risk employment product: the reply was cut off at the token limit part
+  way through the fourth finding, so the record could not be parsed and the
+  stage showed a fallback record. The agent had produced good analysis and all
+  of it was thrown away. Three consequences followed from that single cause —
+  no findings, no declared coverage, and no obligation notes — and the check
+  text blamed "the RAIA record schema" and claimed a repair attempt that never
+  happened, because truncation was explicitly excluded from the repair loop.
+  The root cause was a budget too small for a record with fifteen obligation
+  notes and several findings, and nothing in the contract bounded the length of
+  what the model wrote.
+
+#### What changed
+
+- Truncation is now the one condition worth retrying: the reply comes back with
+  a larger budget (`RAIA_LLM_MAX_TOKENS_CEILING`, default 32000) and an
+  instruction to send the whole record compactly. The truncated text is not
+  resent, only noted, so the retry is not paid for twice.
+- `RAIA_LLM_MAX_TOKENS` default raised from 8192 to 16384;
+  `llm.get_chat_model` and `invoke_chat` take a per-call budget, so a retry can
+  have more room without changing what the rest of the session reports.
+- Every free-text field in the record now has a `maxLength`, and the contract
+  asks for at most three sentences per field, one or two per obligation note,
+  and for obligations met by the same work to be grouped. A record that does
+  not fit one reply is a record nobody reads at the gate either.
+- The fallback record and the contract check now say whether the reply was cut
+  off or malformed, name the limit it hit and the number of retries that really
+  ran, and point at the setting to change. Provenance records the budget the
+  approved draft was written with.
+
+#### Tests
+
+- `tests/smoke_test.py` — section 17b reproduces the live failure (a reply
+  halved and marked `max_tokens`): the retry gets a larger budget, the record
+  comes back complete, and provenance records the budget. A reply that keeps
+  being cut off yields a fallback record that says so.
+
+#### Still open
+
+- The live quality of the analyses is still unmeasured beyond this one run; the
+  consistency script needs a real provider to mean anything.
 ### 2026-09-17 — One standard record for every agent, on branch `output-contract`
 
 Decisions D21–D25. New finding prefix **OUT-** (output consistency).

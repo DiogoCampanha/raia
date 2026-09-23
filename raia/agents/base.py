@@ -366,20 +366,35 @@ class BaseAgent:
 
         # 5. Model pass, with retry on transient provider failures only. The
         #    reply must be a record that validates; one that does not is sent
-        #    back with its errors, a bounded number of times.
+        #    back a bounded number of times — with its validation errors, or,
+        #    when the reply was cut off at the token limit, with more room and
+        #    an instruction to be compact. A record that will not fit is a
+        #    record nobody can review at the gate either.
         messages = [SystemMessage(content=system), HumanMessage(content=user)]
+        budget = config.LLM_MAX_TOKENS
         response = invoke_chat(messages)
         record, errors = assemble.parse_record(self.spec.key, response.text)
         repairs = 0
-        while record is None and repairs < max(0, config.CONTRACT_REPAIRS) \
-                and (response.finish_reason or "").lower() not in ("max_tokens", "length"):
+        while record is None and repairs < max(0, config.CONTRACT_REPAIRS):
             repairs += 1
-            messages = messages + [AIMessage(content=response.text),
-                                   HumanMessage(content=assemble.repair_prompt(errors))]
-            response = invoke_chat(messages)
+            truncated = assemble.was_truncated(response.finish_reason)
+            if truncated:
+                follow_up = assemble.compact_prompt(budget)
+                budget = max(budget, min(budget * 2, config.LLM_MAX_TOKENS_CEILING))
+                previous = "(the reply was cut off at the token limit)"
+            else:
+                follow_up = assemble.repair_prompt(errors)
+                previous = response.text
+            messages = messages + [AIMessage(content=previous),
+                                   HumanMessage(content=follow_up)]
+            response = invoke_chat(messages, max_tokens=budget)
             record, errors = assemble.parse_record(self.spec.key, response.text)
         if record is None:
-            record = assemble.fallback_record(self.spec.key, rationale, errors, response.text)
+            truncated = assemble.was_truncated(response.finish_reason)
+            if truncated:
+                errors = [f"the reply was cut off at the token limit ({budget} tokens)"] + list(errors)
+            record = assemble.fallback_record(self.spec.key, rationale, errors, response.text,
+                                              truncated=truncated, budget=budget)
 
         # 6. Code finalises the record and renders the standard document.
         evidence = [{"citation": c.citation(), "authority": c.authority} for c in chunks]
@@ -408,6 +423,7 @@ class BaseAgent:
             "schema_version": (record.get("meta") or {}).get("schema_version"),
             "repairs": repairs,
             "conforms": not record.get("schema_errors"),
+            "max_tokens_used": budget,
         }
         return AgentRun(
             draft=draft,

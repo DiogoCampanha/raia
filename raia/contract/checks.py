@@ -23,12 +23,20 @@ from ..validators import FAIL, PASS, WARN, ValidationItem
 def check_schema(record: Dict[str, Any], repairs: int = 0) -> ValidationItem:
     errors = record.get("schema_errors") or []
     if errors:
-        return ValidationItem(
-            "contract.schema_invalid", FAIL, "Output contract",
-            "The model's reply did not validate against the RAIA record schema, even after a "
-            "repair attempt. No analysis from this attempt can be relied on — reject to regenerate.",
-            list(errors),
-        )
+        tail = (f" after {repairs} retry attempt(s)" if repairs else
+                " and no retry was possible")
+        if record.get("truncated"):
+            detail = (
+                "The model's reply was cut off at the token limit" + tail + ", so it could not be "
+                "read as a RAIA record. No analysis from this attempt can be relied on — reject to "
+                "regenerate. If it recurs, raise RAIA_LLM_MAX_TOKENS or split what the stage covers."
+            )
+        else:
+            detail = (
+                "The model's reply did not validate against the RAIA record schema" + tail + ". No "
+                "analysis from this attempt can be relied on — reject to regenerate."
+            )
+        return ValidationItem("contract.schema_invalid", FAIL, "Output contract", detail, list(errors))
     tail = f" after {repairs} repair attempt(s)" if repairs else ""
     return ValidationItem("contract.schema_valid", PASS, "Output contract",
                           f"The record conforms to {record.get('meta', {}).get('schema_version', 'the schema')}{tail}.")

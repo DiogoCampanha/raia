@@ -92,7 +92,7 @@ Schema `raia-record/1.0` — `docs/schema/risk_classifier.schema.json`. Identifi
 | `br_tier_justification` | Why the Brazilian tier holds, naming the area. |
 | `obligations` | One note per computed obligation code. |
 | `obligations[].code` | An obligation code from the computed table, exactly. |
-| `obligations[].meaning_for_this_product` | — |
+| `obligations[].meaning_for_this_product` | One or two sentences for this product. |
 | `obligations[].citations` | Citation tags copied exactly from the retrieved excerpts, e.g. "[Source: ... / authority: legal]". Never invent one. |
 | `human_oversight_assessment` | Whether the declared oversight design meets the oversight obligations. |
 | `affected_persons_rights` | How affected persons' rights are operationalised in the product. |

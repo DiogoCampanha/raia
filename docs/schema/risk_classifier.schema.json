@@ -19,6 +19,7 @@
         },
         "action": {
           "description": "Imperative, specific, checkable: what is done.",
+          "maxLength": 400,
           "title": "Action",
           "type": "string"
         },
@@ -83,6 +84,7 @@
         },
         "evidence_artifact": {
           "description": "The artifact that will demonstrate completion.",
+          "maxLength": 200,
           "title": "Evidence Artifact",
           "type": "string"
         },
@@ -146,6 +148,7 @@
         },
         "justification": {
           "description": "One sentence.",
+          "maxLength": 300,
           "title": "Justification",
           "type": "string"
         }
@@ -173,6 +176,7 @@
         },
         "statement": {
           "description": "What could go wrong or is missing, for whom, and why it matters here.",
+          "maxLength": 700,
           "title": "Statement",
           "type": "string"
         },
@@ -240,6 +244,7 @@
         },
         "placement_rationale": {
           "description": "Why this magnitude and likelihood, from the inputs and evidence.",
+          "maxLength": 400,
           "title": "Placement Rationale",
           "type": "string"
         },
@@ -341,6 +346,8 @@
           "type": "string"
         },
         "meaning_for_this_product": {
+          "description": "One or two sentences for this product.",
+          "maxLength": 500,
           "title": "Meaning For This Product",
           "type": "string"
         },
@@ -382,6 +389,7 @@
           "type": "string"
         },
         "description": {
+          "maxLength": 700,
           "title": "Description",
           "type": "string"
         },
@@ -445,16 +453,19 @@
       "properties": {
         "prohibited_screen": {
           "description": "Result of the EU AI Act Art. 5 and PL 2338 excessive-risk screen.",
+          "maxLength": 800,
           "title": "Prohibited Screen",
           "type": "string"
         },
         "eu_tier_justification": {
           "description": "Why the EU tier holds, naming the area or article.",
+          "maxLength": 800,
           "title": "Eu Tier Justification",
           "type": "string"
         },
         "br_tier_justification": {
           "description": "Why the Brazilian tier holds, naming the area.",
+          "maxLength": 800,
           "title": "Br Tier Justification",
           "type": "string"
         },
@@ -468,16 +479,19 @@
         },
         "human_oversight_assessment": {
           "description": "Whether the declared oversight design meets the oversight obligations.",
+          "maxLength": 900,
           "title": "Human Oversight Assessment",
           "type": "string"
         },
         "affected_persons_rights": {
           "description": "How affected persons' rights are operationalised in the product.",
+          "maxLength": 900,
           "title": "Affected Persons Rights",
           "type": "string"
         },
         "impact_assessments": {
           "description": "Which impact assessments the instruments require (fundamental rights / algorithmic).",
+          "maxLength": 700,
           "title": "Impact Assessments",
           "type": "string"
         }

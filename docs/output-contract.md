@@ -224,11 +224,20 @@ followed by the machine block (`schema`, `verdict.*`, `coverage.*`).
 
 ## 9. Parsing, repair and fallback
 
-A reply that does not validate is sent back once (`RAIA_CONTRACT_REPAIRS`) with
-its validation errors. If it still fails, the stage shows a **fallback record**:
-it says the reply did not conform, shows the raw reply, carries the rule
-engine's issues, and fails the contract check. Truncated replies are not
-repaired; they are reported.
+A reply that does not validate is sent back once (`RAIA_CONTRACT_REPAIRS`):
+
+- **Malformed or off-contract** — returned with its validation errors.
+- **Cut off at the token limit** — returned with a larger budget
+  (`RAIA_LLM_MAX_TOKENS_CEILING`) and an instruction to send the whole record
+  compactly. The cure is a shorter record as much as a bigger budget: every
+  free-text field has a `maxLength`, because a record that does not fit one
+  reply is a record nobody reads at the gate either.
+
+If it still fails, the stage shows a **fallback record**: it says whether the
+reply was cut off or malformed, names the limit it hit, shows the raw reply,
+carries the rule engine's issues, and fails the contract check. The provenance
+records the number of retries and the budget the approved draft was written
+with.
 
 ## 10. Checks
 

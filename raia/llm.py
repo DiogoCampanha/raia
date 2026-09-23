@@ -95,9 +95,15 @@ class MockChatModel(BaseChatModel):
         return ChatResult(generations=[ChatGeneration(message=message)])
 
 
-def get_chat_model() -> BaseChatModel:
-    """Return the chat model selected by configuration."""
+def get_chat_model(max_tokens: Optional[int] = None) -> BaseChatModel:
+    """Return the chat model selected by configuration.
+
+    ``max_tokens`` overrides the configured budget for one call. The contract
+    uses it to give a cut-off reply more room on its retry, without changing
+    the budget the rest of the session (and the provenance record) reports.
+    """
     provider = config.LLM_PROVIDER
+    budget = max_tokens or config.LLM_MAX_TOKENS
 
     if provider == "mock":
         return MockChatModel()
@@ -110,7 +116,7 @@ def get_chat_model() -> BaseChatModel:
                 "Provider 'anthropic' selected but langchain-anthropic is not "
                 "installed. Run: pip install langchain-anthropic"
             ) from exc
-        return ChatAnthropic(model=config.LLM_MODEL, max_tokens=config.LLM_MAX_TOKENS,
+        return ChatAnthropic(model=config.LLM_MODEL, max_tokens=budget,
                              **_temperature_kwargs())
 
     if provider == "openai":
@@ -121,7 +127,7 @@ def get_chat_model() -> BaseChatModel:
                 "Provider 'openai' selected but langchain-openai is not "
                 "installed. Run: pip install langchain-openai"
             ) from exc
-        return ChatOpenAI(model=config.LLM_MODEL, max_tokens=config.LLM_MAX_TOKENS,
+        return ChatOpenAI(model=config.LLM_MODEL, max_tokens=budget,
                           **_temperature_kwargs())
 
     raise ValueError(
@@ -157,9 +163,10 @@ def finish_reason_of(message: AIMessage) -> Optional[str]:
     return None
 
 
-def invoke_chat(messages: Sequence[BaseMessage], model: Optional[BaseChatModel] = None) -> ChatResponse:
+def invoke_chat(messages: Sequence[BaseMessage], model: Optional[BaseChatModel] = None,
+                max_tokens: Optional[int] = None) -> ChatResponse:
     """Call the configured model, retrying only what is worth retrying."""
-    llm = model or get_chat_model()
+    llm = model or get_chat_model(max_tokens)
     attempts = max(0, config.LLM_RETRIES) + 1
     last: BaseException = RuntimeError("no attempt was made")
     dropped_temperature = False
@@ -176,7 +183,7 @@ def invoke_chat(messages: Sequence[BaseMessage], model: Optional[BaseChatModel] 
                 # actually sent, and retry immediately.
                 config.LLM_TEMPERATURE = None
                 dropped_temperature = True
-                llm = get_chat_model()
+                llm = get_chat_model(max_tokens)
                 try:
                     message = llm.invoke(list(messages))
                 except BaseException as retry_exc:  # noqa: BLE001

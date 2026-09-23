@@ -278,7 +278,7 @@ def main() -> None:
     real = _base.invoke_chat
     calls = {"n": 0}
 
-    def flaky(messages, model=None):
+    def flaky(messages, model=None, max_tokens=None):
         calls["n"] += 1
         response = real(messages, model)
         if calls["n"] == 1:
@@ -292,9 +292,38 @@ def main() -> None:
         _base.invoke_chat = real
     check(run.repairs == 1 and not run.record.get("schema_errors"), "an invalid reply is repaired once")
 
-    def broken(messages, model=None):
+    print("== 17b. A reply cut off at the token limit is retried with more room ==")
+    budgets = []
+    calls["n"] = 0
+
+    def truncated(messages, model=None, max_tokens=None):
+        calls["n"] += 1
+        budgets.append(max_tokens)
+        response = real(messages, model)
+        if calls["n"] == 1:
+            # Exactly what a live run produced: a record that ran out of tokens
+            # halfway through a finding, so the JSON never closes.
+            response.text = response.text[: len(response.text) // 2]
+            response.finish_reason = "max_tokens"
+        return response
+
+    _base.invoke_chat = truncated
+    try:
+        run = AGENTS["risk_classifier"].run(ArtifactRepository("repair-project"), EXAMPLES["risk_classifier"])
+    finally:
+        _base.invoke_chat = real
+    from raia import config as _config
+    check(run.repairs == 1 and not run.record.get("schema_errors"),
+          "a cut-off reply is retried and the record comes back complete")
+    check(budgets[1] and budgets[1] > _config.LLM_MAX_TOKENS,
+          f"…with a larger token budget ({budgets[1]} > {_config.LLM_MAX_TOKENS})")
+    check(run.provenance["contract"]["max_tokens_used"] == budgets[1],
+          "…and provenance records the budget the approved draft was written with")
+
+    def broken(messages, model=None, max_tokens=None):
         response = real(messages, model)
         response.text = "Still prose."
+        response.finish_reason = "max_tokens"
         return response
 
     _base.invoke_chat = broken
@@ -304,6 +333,8 @@ def main() -> None:
         _base.invoke_chat = real
     check(run.record.get("schema_errors") and run.validation.level == "fail",
           "a reply that stays invalid produces a fallback record and a failed check")
+    check(run.record.get("truncated") and "cut off at the token limit" in run.record["summary"],
+          "…and a reply that keeps being cut off says so, with the limit it hit")
     check(len(run.record["open_issues"]) > 0, "…which still carries the rule engine's issues")
 
     print("== 18. Deterministic unit checks ==")

@@ -55,16 +55,23 @@ LLM_TEMPERATURE = _optional_float(os.getenv("RAIA_LLM_TEMPERATURE", "0.2"))
 #: block and a machine-readable summary in addition to their analysis, and a
 #: response truncated at the limit is a reliability defect, so the ceiling is
 #: generous and truncation is detected rather than tolerated.
-LLM_MAX_TOKENS: int = int(os.getenv("RAIA_LLM_MAX_TOKENS", "8192"))
+LLM_MAX_TOKENS: int = int(os.getenv("RAIA_LLM_MAX_TOKENS", "16384"))
+
+#: The ceiling a retry may raise the budget to after a reply was cut off at the
+#: limit. A standard record for a high-risk system carries a note per obligation
+#: and several findings, so the first budget can be too small on a real project;
+#: one retry with more room is cheaper than a wasted stage.
+LLM_MAX_TOKENS_CEILING: int = int(os.getenv("RAIA_LLM_MAX_TOKENS_CEILING", "32000"))
 
 #: Retries for transient provider failures (overload / rate limit / timeout).
 #: Applied with exponential backoff; non-transient errors are never retried.
 LLM_RETRIES: int = int(os.getenv("RAIA_LLM_RETRIES", "2"))
 LLM_RETRY_BASE_DELAY: float = float(os.getenv("RAIA_LLM_RETRY_BASE_DELAY", "2.0"))
 
-#: How many times a reply that does not validate against the RAIA record schema
-#: is sent back to the model with its validation errors before the stage shows
-#: a fallback record. Each repair is one more model call.
+#: How many times a reply that cannot be read as a RAIA record is sent back to
+#: the model — with its validation errors, or, when it was cut off at the token
+#: limit, with a larger budget and an instruction to be compact — before the
+#: stage shows a fallback record. Each repair is one more model call.
 CONTRACT_REPAIRS: int = int(os.getenv("RAIA_CONTRACT_REPAIRS", "1"))
 
 # ---------------------------------------------------------------------------

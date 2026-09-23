@@ -40,6 +40,7 @@
         },
         "condition": {
           "description": "Measurable condition with its threshold.",
+          "maxLength": 400,
           "title": "Condition",
           "type": "string"
         },
@@ -97,6 +98,7 @@
         },
         "action": {
           "description": "Imperative, specific, checkable: what is done.",
+          "maxLength": 400,
           "title": "Action",
           "type": "string"
         },
@@ -161,6 +163,7 @@
         },
         "evidence_artifact": {
           "description": "The artifact that will demonstrate completion.",
+          "maxLength": 200,
           "title": "Evidence Artifact",
           "type": "string"
         },
@@ -224,6 +227,7 @@
         },
         "justification": {
           "description": "One sentence.",
+          "maxLength": 300,
           "title": "Justification",
           "type": "string"
         }
@@ -251,6 +255,7 @@
         },
         "statement": {
           "description": "What could go wrong or is missing, for whom, and why it matters here.",
+          "maxLength": 700,
           "title": "Statement",
           "type": "string"
         },
@@ -318,6 +323,7 @@
         },
         "placement_rationale": {
           "description": "Why this magnitude and likelihood, from the inputs and evidence.",
+          "maxLength": 400,
           "title": "Placement Rationale",
           "type": "string"
         },
@@ -433,6 +439,7 @@
           "type": "string"
         },
         "description": {
+          "maxLength": 700,
           "title": "Description",
           "type": "string"
         },
@@ -504,6 +511,7 @@
         },
         "sprint_ethics_log": {
           "description": "Decisions and rationales taken this sprint (ECCOLA documentation step).",
+          "maxLength": 1200,
           "title": "Sprint Ethics Log",
           "type": "string"
         }
@@ -555,6 +563,7 @@
         "card_discussion": {
           "default": "",
           "description": "The card questions, answered for this story.",
+          "maxLength": 900,
           "title": "Card Discussion",
           "type": "string"
         },
@@ -569,6 +578,7 @@
         "no_impact_reason": {
           "default": "",
           "description": "Only for a story with no ethical impact.",
+          "maxLength": 300,
           "title": "No Impact Reason",
           "type": "string"
         }

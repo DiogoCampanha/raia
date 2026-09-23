@@ -19,6 +19,7 @@
         },
         "action": {
           "description": "Imperative, specific, checkable: what is done.",
+          "maxLength": 400,
           "title": "Action",
           "type": "string"
         },
@@ -83,6 +84,7 @@
         },
         "evidence_artifact": {
           "description": "The artifact that will demonstrate completion.",
+          "maxLength": 200,
           "title": "Evidence Artifact",
           "type": "string"
         },
@@ -147,6 +149,7 @@
           "type": "string"
         },
         "meaning_for_affected_people": {
+          "maxLength": 600,
           "title": "Meaning For Affected People",
           "type": "string"
         },
@@ -184,6 +187,7 @@
         },
         "justification": {
           "description": "One sentence.",
+          "maxLength": 300,
           "title": "Justification",
           "type": "string"
         }
@@ -208,11 +212,13 @@
         },
         "trend_interpretation": {
           "description": "The movement across windows (NIST AI RMF MEASURE 3).",
+          "maxLength": 900,
           "title": "Trend Interpretation",
           "type": "string"
         },
         "representativeness": {
           "description": "Whether the population mix shifted relative to the population affected (MEASURE 2).",
+          "maxLength": 900,
           "title": "Representativeness",
           "type": "string"
         },
@@ -252,6 +258,7 @@
         },
         "statement": {
           "description": "What could go wrong or is missing, for whom, and why it matters here.",
+          "maxLength": 700,
           "title": "Statement",
           "type": "string"
         },
@@ -319,6 +326,7 @@
         },
         "placement_rationale": {
           "description": "Why this magnitude and likelihood, from the inputs and evidence.",
+          "maxLength": 400,
           "title": "Placement Rationale",
           "type": "string"
         },
@@ -434,6 +442,7 @@
           "type": "string"
         },
         "description": {
+          "maxLength": 700,
           "title": "Description",
           "type": "string"
         },
@@ -497,21 +506,25 @@
       "properties": {
         "escalation_path": {
           "description": "Who is alerted, in what order, within what time.",
+          "maxLength": 600,
           "title": "Escalation Path",
           "type": "string"
         },
         "deactivation_criteria": {
           "description": "When the system is rolled back or deactivated (MANAGE 2).",
+          "maxLength": 600,
           "title": "Deactivation Criteria",
           "type": "string"
         },
         "affected_community_feedback": {
           "description": "How input from users and affected communities is captured (MANAGE 4).",
+          "maxLength": 600,
           "title": "Affected Community Feedback",
           "type": "string"
         },
         "recovery_and_communication": {
           "description": "How the system recovers and who is told.",
+          "maxLength": 600,
           "title": "Recovery And Communication",
           "type": "string"
         }

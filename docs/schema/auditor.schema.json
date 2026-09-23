@@ -19,6 +19,7 @@
         },
         "action": {
           "description": "Imperative, specific, checkable: what is done.",
+          "maxLength": 400,
           "title": "Action",
           "type": "string"
         },
@@ -83,6 +84,7 @@
         },
         "evidence_artifact": {
           "description": "The artifact that will demonstrate completion.",
+          "maxLength": 200,
           "title": "Evidence Artifact",
           "type": "string"
         },
@@ -148,17 +150,20 @@
         },
         "evidence": {
           "description": "Quoted from the sprint outcomes or an upstream artifact; empty if none.",
+          "maxLength": 700,
           "title": "Evidence",
           "type": "string"
         },
         "evidence_needed": {
           "default": "",
           "description": "What would verify it, when not satisfied.",
+          "maxLength": 500,
           "title": "Evidence Needed",
           "type": "string"
         },
         "downgrade_reason": {
           "default": "",
+          "maxLength": 500,
           "title": "Downgrade Reason",
           "type": "string"
         },
@@ -225,6 +230,7 @@
     "Checkpoint": {
       "properties": {
         "checkpoint": {
+          "maxLength": 300,
           "title": "Checkpoint",
           "type": "string"
         },
@@ -278,6 +284,7 @@
         },
         "justification": {
           "description": "One sentence.",
+          "maxLength": 300,
           "title": "Justification",
           "type": "string"
         }
@@ -293,6 +300,7 @@
     "DecisionEntry": {
       "properties": {
         "decision": {
+          "maxLength": 400,
           "title": "Decision",
           "type": "string"
         },
@@ -335,6 +343,7 @@
         },
         "statement": {
           "description": "What could go wrong or is missing, for whom, and why it matters here.",
+          "maxLength": 700,
           "title": "Statement",
           "type": "string"
         },
@@ -402,6 +411,7 @@
         },
         "placement_rationale": {
           "description": "Why this magnitude and likelihood, from the inputs and evidence.",
+          "maxLength": 400,
           "title": "Placement Rationale",
           "type": "string"
         },
@@ -517,6 +527,7 @@
           "type": "string"
         },
         "description": {
+          "maxLength": 700,
           "title": "Description",
           "type": "string"
         },
