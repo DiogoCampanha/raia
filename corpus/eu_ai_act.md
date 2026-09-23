@@ -11,6 +11,16 @@ AI system poses to health, safety, and fundamental rights. It applies to
 providers placing AI systems on the EU market and to deployers using them in
 the EU, regardless of where the provider is established (Art. 2).
 
+An **AI system** (Art. 3(1)) is a machine-based system designed to operate
+with varying levels of autonomy, which may adapt after deployment, and which
+infers from the input it receives how to generate outputs such as
+predictions, content, recommendations or decisions that can influence
+physical or virtual environments. The capacity to infer is the distinguishing
+feature: it covers machine-learning approaches and logic- and knowledge-based
+approaches that infer from encoded knowledge, but not systems based on rules
+defined solely by natural persons to execute operations automatically
+(Recital 12).
+
 ## Article 5 — Prohibited AI Practices (Unacceptable Risk)
 
 The following practices are prohibited (Art. 5(1)):

@@ -28,9 +28,14 @@ Classifies the AI system into a legal risk tier and lists the obligations that f
 
 | Group | Question | Kind | Required |
 |---|---|---|---|
-| The product | Product brief | textarea | yes |
-| The product | Intended use | textarea | yes |
-| The product | Target users and affected people | textarea | yes |
+| The product | What is the product? | textarea | yes |
+| The product | What does the AI produce or decide? | textarea | yes |
+| The product | Where, how and by whom will it be used? | textarea | yes |
+| The product | Who uses it, and who is affected by its outputs? | textarea | yes |
+| The product | What should it not be used for? | textarea | no |
+| How the AI works | What kind of AI does it use? | multiselect | yes |
+| How the AI works | Where in the product does the AI act? | multiselect | yes |
+| How the AI works | Where does the model come from? | select | yes |
 | Legal footprint | Your role | select | yes |
 | Legal footprint | Where will it be placed on the market or used? | multiselect | yes |
 | Legal footprint | Is it deployed by a public body, or to provide a public service? | boolean | no |
@@ -50,6 +55,7 @@ Classifies the AI system into a legal risk tier and lists the obligations that f
 ## 5. What the decision procedure settles in code
 
 - Matches the declared purpose and practices against the prohibited-practice and high-risk area lists of the EU AI Act and the Brazilian PL 2338/2023.
+- Reads how the AI works: flags a rules-only product that may fall outside the legal definition of an AI system, and applies transparency duties that the techniques imply even when they were not selected.
 - Derives the risk tier for each jurisdiction and the obligations that follow from that tier and from your role (provider or deployer).
 - Identifies the legal excerpts that must be in front of the reviewer.
 
@@ -78,6 +84,7 @@ Excerpts pinned for the canonical scenario:
 ## 6. What a person decides
 
 - Whether a narrow-task exemption actually holds for your system.
+- Whether a rules-only product is an AI system in the legal sense.
 - Whether the classification fits how the product is really used.
 - Every open issue the record raises, and whether to approve, edit or reject the record.
 

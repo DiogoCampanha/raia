@@ -26,6 +26,10 @@ EXAMPLES: Dict[str, Dict[str, Any]] = {
             "filters job applications, producing a shortlist for recruiters. The AI component "
             "scores each resume against the job description and against historical hiring data."
         ),
+        "ai_output": (
+            "A fit score for every application and a ranked shortlist per vacancy. Applications "
+            "below the cut-off are rejected automatically and never reach a recruiter."
+        ),
         "intended_use": (
             "Used by corporate HR departments in Brazil and the EU to screen high-volume "
             "vacancies. Recruiters see the ranked shortlist and decide whom to interview. "
@@ -36,6 +40,12 @@ EXAMPLES: Dict[str, Dict[str, Any]] = {
             "members of protected groups; candidates filtered out never interact with the "
             "system directly and are not told a model was involved."
         ),
+        "out_of_scope": (
+            "Not for internal promotions, performance reviews or dismissals."
+        ),
+        "ai_techniques": ["machine_learning"],
+        "ai_pipeline": ["input_processing", "scoring", "decision"],
+        "model_source": "in_house",
         "role": "provider",
         "markets": ["eu", "br"],
         "public_sector": "no",

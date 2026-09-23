@@ -37,6 +37,8 @@ RESUME_INTAKE = {
     "decision_autonomy": "fully_automated", "human_oversight": "none_designed",
     "deployment_stage": "development", "significant_effects": "yes",
     "public_sector": "no", "annex_i_product": "no", "gpai_provider": "no", "art63_claim": "no",
+    "ai_techniques": ["machine_learning"], "ai_pipeline": ["input_processing", "scoring", "decision"],
+    "model_source": "in_house",
 }
 
 
@@ -72,6 +74,56 @@ def test_risk_screen() -> None:
     check("eu.art26" in dcodes and "eu.art27" in dcodes,
           "public-sector deployer gets deployer duties and the impact assessment")
     check("eu.art9" not in dcodes, "provider duties are not assembled for a deployer")
+
+
+def test_risk_screen_how_the_ai_works() -> None:
+    print("== risk screen: how the AI works ==")
+    base = risk_screen.run(RESUME_INTAKE)
+    check(not base.data["ai_definition_uncertain"] and not base.data["derived_transparency_triggers"],
+          "a machine-learning product raises no definition or transparency question")
+    check(not any("disagree" in i for i in base.open_issues),
+          "consistent answers raise no inconsistency")
+
+    rules = risk_screen.run({**RESUME_INTAKE, "ai_techniques": ["rules"], "model_source": "none",
+                             "ai_pipeline": ["scoring"]})
+    check(rules.data["ai_definition_uncertain"], "a rules-only product is flagged against the AI-system definition")
+    check(rules.verdict["eu_tier"] == risk_screen.TIER_HIGH,
+          "…but still screened as in scope: the engine never concludes it is out")
+    check(any("definition of an AI system" in i for i in rules.open_issues),
+          "…and a person is asked to decide")
+    check({p.section for p in rules.pins} >= {risk_screen.SECTION_EU_SCOPE, risk_screen.SECTION_BR_SCOPE},
+          "…with both definitions pinned")
+    check("ai_scope" in rules.checklist_keys(), "…and the record must address it")
+
+    gen = risk_screen.run({**RESUME_INTAKE, "purpose_areas": ["none"], "ai_techniques": ["generative"],
+                           "ai_pipeline": ["generation", "interaction"], "model_source": "third_party",
+                           "decision_autonomy": "informational"})
+    check(set(gen.data["derived_transparency_triggers"]) == {"synthetic_content", "chat_interaction"},
+          "generative content and direct interaction imply the transparency triggers left unselected")
+    check(gen.verdict["eu_tier"] == risk_screen.TIER_LIMITED,
+          "…so a product declared with no trigger is not screened as minimal risk")
+    check(any(o["code"] == "eu.art50" for o in gen.data["obligations"]), "…and the disclosure duty is assembled")
+    check(any("implies transparency duties" in i for i in gen.open_issues), "…and the disagreement is escalated")
+    check(any("third party" in n for n in gen.notes), "a third-party model is noted for later stages")
+
+    declared = risk_screen.run({**RESUME_INTAKE, "ai_techniques": ["generative"], "ai_pipeline": ["generation"],
+                                "transparency_triggers": ["synthetic_content"]})
+    check(not declared.data["derived_transparency_triggers"], "a trigger already selected is not derived again")
+
+    clash = risk_screen.run({**RESUME_INTAKE, "gpai_provider": "yes", "model_source": "third_party",
+                             "decision_autonomy": "human_override"})
+    check(any("general-purpose AI model" in i and "disagree" in i for i in clash.open_issues),
+          "providing a general-purpose model while using a third party's as-is is questioned")
+    check(any("no person in between" in i for i in clash.open_issues),
+          "a deciding AI with a human-review autonomy answer is questioned")
+    nomodel = risk_screen.run({**RESUME_INTAKE, "model_source": "none"})
+    check(any("no trained model" in i for i in nomodel.open_issues),
+          "a learning technique with no trained model is questioned")
+
+    old = {k: v for k, v in RESUME_INTAKE.items() if k not in ("ai_techniques", "ai_pipeline", "model_source")}
+    legacy = risk_screen.run(old)
+    check(legacy.verdict == base.verdict and not legacy.data["ai_definition_uncertain"],
+          "an intake saved before these questions existed screens as before")
 
 
 def test_coverage() -> None:
@@ -293,7 +345,7 @@ def test_temperature_fallback() -> None:
 
 
 def main() -> None:
-    for fn in (test_risk_screen, test_coverage, test_story_map, test_traceability,
+    for fn in (test_risk_screen, test_risk_screen_how_the_ai_works, test_coverage, test_story_map, test_traceability,
                test_drift, test_validators, test_sanitize, test_principles,
                test_temperature_fallback):
         fn()

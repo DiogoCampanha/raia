@@ -2,8 +2,9 @@
 Risk Classifier agent (Product layer — Conception / value definition).
 
 RAIA agent specification:
-  Inputs   : product brief, intended use, target users, and the structured
-             facts that actually decide a classification
+  Inputs   : what the product is, what the AI produces, where and by whom it
+             is used, how the AI works, and the structured facts that
+             actually decide a classification
   Outputs  : risk classification with applicable legal obligations
              and recommendations
   Grounding: EU AI Act risk tiers; Brazilian bill PL 2338/2023
@@ -22,11 +23,12 @@ from ..rationale import risk_screen
 from .base import AgentSpec, BaseAgent
 
 G_PRODUCT = "1 · The product"
-G_FOOTPRINT = "2 · Legal footprint"
-G_PURPOSE = "3 · Purpose and practices"
-G_DECISIONS = "4 · How decisions are made"
-G_DATA = "5 · Data"
-G_STATUS = "6 · Status and exemptions"
+G_TECH = "2 · How the AI works"
+G_FOOTPRINT = "3 · Legal footprint"
+G_PURPOSE = "4 · Purpose and practices"
+G_DECISIONS = "5 · How decisions are made"
+G_DATA = "6 · Data"
+G_STATUS = "7 · Status and exemptions"
 
 
 class RiskClassifierAgent(BaseAgent):
@@ -51,17 +53,70 @@ class RiskClassifierAgent(BaseAgent):
         engine=lambda inputs, upstream: risk_screen.run(inputs),
         verdict_keys=["eu_tier", "br_tier"],
         input_fields=[
+            # The product, in the team's words. Each question asks for one thing
+            # and shows an answer of the expected shape: the model reasons over
+            # these, and together they become the product brief every later
+            # stage reads.
             InputField(
-                key="product_brief", label="Product brief", group=G_PRODUCT, required=True,
-                help="What is the product? What problem does it solve? What does the AI component do?",
+                key="product_brief", label="What is the product?", group=G_PRODUCT, required=True,
+                height=110,
+                help="Name it, say what problem it solves and for whom, and which part of it uses AI. "
+                     "Two or three sentences are enough.",
+                placeholder="e.g. TalentMatch is a web tool that HR teams use to screen job "
+                            "applications. It reads each CV and ranks the applicants for an opening, "
+                            "so recruiters review the strongest candidates first.",
             ),
             InputField(
-                key="intended_use", label="Intended use", group=G_PRODUCT, required=True,
-                help="How and in which context will the system be used? Who operates it?",
+                key="ai_output", label="What does the AI produce or decide?", group=G_PRODUCT,
+                required=True, height=110,
+                help="Be concrete: a score, a ranking, a yes/no, generated text or images, an action it "
+                     "takes. Then say what happens next with that output, and to whom.",
+                placeholder="e.g. A 0–100 fit score per applicant and a shortlist of the top 20. "
+                            "Recruiters see only the shortlist; applicants below it receive an "
+                            "automatic rejection email.",
             ),
             InputField(
-                key="target_users", label="Target users and affected people", group=G_PRODUCT, required=True,
-                help="Who uses the system, and who is affected by its outputs (including non-users)?",
+                key="intended_use", label="Where, how and by whom will it be used?", group=G_PRODUCT,
+                required=True, height=110,
+                help="The setting, who operates it day to day, how often, and roughly how many "
+                     "people it affects (per month, say).",
+                placeholder="e.g. Used by in-house recruiters at mid-size companies in Brazil and "
+                            "Portugal, for every open vacancy: about 5,000 applications a month.",
+            ),
+            InputField(
+                key="target_users", label="Who uses it, and who is affected by its outputs?",
+                group=G_PRODUCT, required=True, height=110,
+                help="Name the people who operate it and the people its outputs are about — "
+                     "including people who never use the system themselves.",
+                placeholder="e.g. Operators: recruiters and HR managers. Affected: every applicant, "
+                            "including those rejected automatically, who never see the tool.",
+            ),
+            InputField(
+                key="out_of_scope", label="What should it not be used for?", group=G_PRODUCT,
+                height=90,
+                help="Uses you exclude or would treat as misuse. Obligations attach to the intended "
+                     "purpose, so this bounds what the classification covers.",
+                placeholder="e.g. Not for promotions, performance reviews or dismissals.",
+            ),
+
+            InputField(
+                key="ai_techniques", label="What kind of AI does it use?", kind="multiselect",
+                group=G_TECH, required=True, options=risk_screen.TECHNIQUE_OPTIONS,
+                help="Select every technique in the product. Both regimes define an AI system by "
+                     "its ability to infer outputs; rules written only by people may fall outside "
+                     "that definition.",
+            ),
+            InputField(
+                key="ai_pipeline", label="Where in the product does the AI act?", kind="multiselect",
+                group=G_TECH, required=True, options=risk_screen.PIPELINE_OPTIONS,
+                help="Select every step where an AI output is produced or used. These are checked "
+                     "against your transparency and autonomy answers.",
+            ),
+            InputField(
+                key="model_source", label="Where does the model come from?", kind="select",
+                group=G_TECH, required=True, options=risk_screen.MODEL_SOURCE_OPTIONS,
+                help="If several models are involved, choose the one that produces the output "
+                     "described above.",
             ),
 
             InputField(
@@ -158,7 +213,10 @@ class RiskClassifierAgent(BaseAgent):
             "Explain and justify the classification the rule engine computed, in language the "
             "product team can act on, under the EU AI Act and PL 2338/2023. Do not re-derive the "
             "tier or the obligation list: they are given to you. Your work is the reasoning, the "
-            "context, the edge cases, and anything the structured answers left ambiguous.\n\n"
+            "context, the edge cases, and anything the structured answers left ambiguous. Treat "
+            "the product answers — what the AI produces, where and by whom it is used, what it "
+            "is not for, and how the AI works — as the facts of the case; where the prose "
+            "contradicts a structured answer, say so in an open issue rather than choosing one.\n\n"
             "In the extension: `prohibited_screen` states the result of the EU AI Act Art. 5 and "
             "PL 2338/2023 excessive-risk screens. `eu_tier_justification` and "
             "`br_tier_justification` name the specific area or article that produces each tier "

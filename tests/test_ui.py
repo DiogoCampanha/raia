@@ -131,6 +131,11 @@ def main() -> None:
               else next(k.split("::")[-1] for k in at.session_state.filtered_state
                         if k.startswith(f"{pid1}::in::{agent}::")))],
               "the demo project's saved answers fill the form")
+        if agent == "risk_classifier":
+            check("How the AI works" in text(at)
+                  and any(t.label.startswith("What does the AI produce or decide?") for t in at.text_area)
+                  and any(m.label.startswith("What kind of AI does it use?") for m in at.multiselect),
+                  "the Risk Classifier asks what the AI produces and how it works")
         button(at, f"{pid1}::run::{agent}").click()
         ok(at.run(), "the run pauses at the gate")
         check("Human review required" in text(at), "the gate is shown")
@@ -141,6 +146,12 @@ def main() -> None:
         ok(at.run(), "the draft is approved")
         check("Approved and committed" in text(at), "approval is confirmed")
     no_emoji(at, "stage page")
+    from raia.storage import open_repository
+
+    brief = open_repository(pid1).read_artifact("product_brief") or ""
+    check("## What does the AI produce or decide?" in brief and "## How the AI works" in brief
+          and "Machine learning" in brief,
+          "the approved product brief carries the new answers for later stages")
     goto(at, "project", id=pid1)
     ok(at.run(), "the project page renders after approvals")
     check(any("Action plan" in t.label for t in at.tabs), "the project has an action plan tab")

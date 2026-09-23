@@ -115,6 +115,7 @@ Recorded so the log stays honest about its own errors.
 | D25 | The output-contract work lands on its own branch, committed locally and not pushed. | The panel evaluates a frozen build. Whether this change enters the evaluated build is a decision for the author, taken knowingly rather than by a redeploy. |
 | D26 | A page run reads each project's current files and pending drafts once (a snapshot per repository object, dropped by any write to the project in the process), and each membership once (a memo scoped to the run). Single statements run without BEGIN/COMMIT, and a pooled connection is probed only after it sat idle. | On a hosted database every statement is a network round trip. Membership is still checked on every run, so removal still takes effect on the next click; the recorded history is never cached. |
 | D27 | *Sign out* is an entry of the Account menu (its own page, `/signout`), not a button inside Settings. It is listed only when there is a sign-in to end. | Ending a session is a navigation action people look for in the account menu; burying it in a settings page made testers hunt for it. |
+| D28 | The Risk Classifier asks how the AI works (techniques, where in the product it acts, where the model comes from) and the risk screen reads it. A rules-only product is flagged against the AI-system definition but still screened as in scope; transparency duties implied by the techniques are applied even when the transparency question missed them, and the disagreement is escalated. The product prose is split into guided questions with an example answer each. | Both regimes define an AI system by its capacity to infer, and the transparency duties follow the technique, so the form was missing the facts the classification rests on. The engine may only flag or add, never conclude that a product is out of scope — the conservative direction, with a person deciding. |
 
 ---
 
@@ -123,6 +124,61 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-23 — The Risk Classifier asks what it needs to know (branch `tester-feedback`)
+
+Decision D28.
+
+#### What was wrong
+
+- **TST-3** The first group of the Risk Classifier form was three free-text
+  boxes — product brief, intended use, target users — each with a one-line
+  tip. Every other group is a structured question the rule engine reads, so
+  this was the one place a tester had to guess what to write and how much.
+- **TST-4** Nothing asked how the AI works. That decides two things the screen
+  was blind to: whether the product is an AI system at all (both regimes
+  define one by its capacity to infer; rules written only by people may fall
+  outside), and whether the transparency duties apply (a generative product
+  whose transparency answer was *None* was screened as minimal risk).
+
+#### What changed
+
+- `raia/agents/risk_classifier.py` — *The product* now asks *What is the
+  product?*, *What does the AI produce or decide?* (new), *Where, how and by
+  whom will it be used?*, *Who uses it, and who is affected by its outputs?* and
+  *What should it not be used for?* (new, optional), each with an example
+  answer. A new group, *How the AI works*, asks the techniques used, where in
+  the product the AI acts, and where the model comes from. Existing keys are
+  kept, so saved answers and approved projects are unaffected.
+- `raia/rationale/risk_screen.py` — reads the new answers: a rules-only product
+  raises an open issue, pins both definitions and adds the `ai_scope` checklist
+  item, while the tiers are computed as if it were in scope; generative output
+  or direct interaction adds the matching transparency triggers when they were
+  not selected, and says so; three inconsistencies are escalated (no trained
+  model but a learning technique; general-purpose model provider but a third
+  party's model used as-is; a deciding AI with a human-review autonomy answer).
+  An intake saved before these questions existed screens exactly as before.
+- `corpus/eu_ai_act.md`, `corpus/pl_2338_2023.md` — the scope sections now
+  state each instrument's definition of an AI system, so the new issue is
+  grounded in a retrievable, pinnable excerpt. The normative index rebuilds
+  itself because the corpus version changed.
+- `raia/pipeline.py` — the approved product brief carries the *How the AI
+  works* answers, so later stages read them.
+- The example scenario, the agent documentation (`raia/ui/agent_docs.py`,
+  regenerated agent cards) and the README describe the new questions.
+
+#### Tests
+
+- `tests/test_engines.py` — rules-only flagged but not taken out of scope;
+  implied triggers applied once and escalated; each inconsistency questioned;
+  a legacy intake screens as before.
+- `tests/test_ui.py` — the form shows the new questions and the approved brief
+  carries the new answers.
+
+#### Still open
+
+- The two definition paragraphs are curated summaries like the rest of the
+  corpus; check them against the official texts before the panel.
+
 ### 2026-09-23 — Sign out from the Account menu (branch `tester-feedback`)
 
 Decision D27.
