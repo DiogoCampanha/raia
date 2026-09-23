@@ -19,6 +19,7 @@
         },
         "action": {
           "description": "Imperative, specific, checkable: what is done.",
+          "maxLength": 400,
           "title": "Action",
           "type": "string"
         },
@@ -83,6 +84,7 @@
         },
         "evidence_artifact": {
           "description": "The artifact that will demonstrate completion.",
+          "maxLength": 200,
           "title": "Evidence Artifact",
           "type": "string"
         },
@@ -146,6 +148,7 @@
         },
         "justification": {
           "description": "One sentence.",
+          "maxLength": 300,
           "title": "Justification",
           "type": "string"
         }
@@ -187,11 +190,13 @@
         },
         "statement": {
           "description": "The requirement, bound to this context of use.",
+          "maxLength": 500,
           "title": "Statement",
           "type": "string"
         },
         "fit_criterion": {
           "description": "The measurable condition that settles whether it is met.",
+          "maxLength": 400,
           "title": "Fit Criterion",
           "type": "string"
         },
@@ -248,6 +253,7 @@
         },
         "statement": {
           "description": "What could go wrong or is missing, for whom, and why it matters here.",
+          "maxLength": 700,
           "title": "Statement",
           "type": "string"
         },
@@ -315,6 +321,7 @@
         },
         "placement_rationale": {
           "description": "Why this magnitude and likelihood, from the inputs and evidence.",
+          "maxLength": 400,
           "title": "Placement Rationale",
           "type": "string"
         },
@@ -417,6 +424,7 @@
         },
         "explanation": {
           "description": "What is missing and why it matters for this product.",
+          "maxLength": 600,
           "title": "Explanation",
           "type": "string"
         },
@@ -443,10 +451,12 @@
           "type": "string"
         },
         "harms": {
+          "maxLength": 400,
           "title": "Harms",
           "type": "string"
         },
         "benefits": {
+          "maxLength": 400,
           "title": "Benefits",
           "type": "string"
         }
@@ -463,6 +473,7 @@
       "properties": {
         "intended_uses": {
           "description": "Intended and out-of-scope uses.",
+          "maxLength": 700,
           "title": "Intended Uses",
           "type": "string"
         },
@@ -475,6 +486,7 @@
           "type": "array"
         },
         "mitigations": {
+          "maxLength": 700,
           "title": "Mitigations",
           "type": "string"
         }
@@ -508,6 +520,7 @@
           "type": "string"
         },
         "description": {
+          "maxLength": 700,
           "title": "Description",
           "type": "string"
         },
@@ -571,6 +584,7 @@
       "properties": {
         "context_of_use": {
           "description": "The operational environment and conditions of use (IEEE 7000 concept of operations).",
+          "maxLength": 900,
           "title": "Context Of Use",
           "type": "string"
         },
@@ -681,11 +695,13 @@
         },
         "threats": {
           "description": "How the design could harm this value.",
+          "maxLength": 500,
           "title": "Threats",
           "type": "string"
         },
         "opportunities": {
           "description": "How the design could advance it.",
+          "maxLength": 500,
           "title": "Opportunities",
           "type": "string"
         }

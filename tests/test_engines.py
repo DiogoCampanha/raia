@@ -279,7 +279,7 @@ def test_temperature_fallback() -> None:
 
     try:
         config.LLM_TEMPERATURE = 0.2
-        llm.get_chat_model = lambda: Fake(config.LLM_TEMPERATURE)
+        llm.get_chat_model = lambda max_tokens=None: Fake(config.LLM_TEMPERATURE)
         reply = llm.invoke_chat([HumanMessage(content="hi")])
         check(reply.text == "ok" and sent == [0.2, None],
               "a temperature rejection is retried once without it")

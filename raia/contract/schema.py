@@ -11,6 +11,11 @@ vary between runs (ids, risk level, priority, blocking flags, carried-forward
 issues), and renders the Markdown a person reads. The JSON is the record; the
 Markdown is a view of it.
 
+Field lengths are capped. A record that does not fit one reply is a record
+nobody reads at the approval gate either, and a reply cut off at the token
+limit cannot be parsed at all — so the caps are part of the contract, not a
+formatting preference.
+
 Fields marked ``computed`` are filled by code. They are removed from the schema
 the model is shown, and anything the model puts in them is overwritten.
 
@@ -86,12 +91,12 @@ Citations = Field(default_factory=list, description=(
 class Finding(_Model):
     id: str = Field(description="Local identifier such as F1. Code assigns the final id.")
     title: str = Field(max_length=160, description="One line naming the risk or gap.")
-    statement: str = Field(description="What could go wrong or is missing, for whom, and why it matters here.")
+    statement: str = Field(max_length=700, description="What could go wrong or is missing, for whom, and why it matters here.")
     principle: Principle = Field(description="The Responsible AI principle at stake.")
     nist_category: NistCategory = Field(description="The NIST AI RMF category this finding belongs to.")
     magnitude: Magnitude = Field(description="Impact magnitude, using the anchored definitions.")
     likelihood: Likelihood = Field(description="Likelihood, using the anchored definitions.")
-    placement_rationale: str = Field(description="Why this magnitude and likelihood, from the inputs and evidence.")
+    placement_rationale: str = Field(max_length=400, description="Why this magnitude and likelihood, from the inputs and evidence.")
     stakeholders: List[str] = Field(default_factory=list, description="Who is affected, direct and indirect.")
     citations: List[str] = Citations
     links: List[str] = Field(default_factory=list, description=(
@@ -106,13 +111,13 @@ class Finding(_Model):
 class Action(_Model):
     id: str = Field(description="Local identifier such as A1. Code assigns the final id.")
     finding_ids: List[str] = Field(description="The finding ids (local) this action responds to.")
-    action: str = Field(description="Imperative, specific, checkable: what is done.")
+    action: str = Field(max_length=400, description="Imperative, specific, checkable: what is done.")
     response: Response = Field(description="Risk response (NIST AI RMF MANAGE 1).")
     owner_role: Owner = Field(description="The accountable role.")
     lifecycle_stage: Lifecycle = Field(description="Lifecycle stage in which it must be done.")
     review_cadence: Cadence = Field(description="How often it is reviewed.")
     verification_method: Verification = Field(description="How completion is verified.")
-    evidence_artifact: str = Field(description="The artifact that will demonstrate completion.")
+    evidence_artifact: str = Field(max_length=200, description="The artifact that will demonstrate completion.")
     citations: List[str] = Citations
     links: List[str] = Field(default_factory=list)
     priority: Optional[str] = computed()
@@ -121,13 +126,13 @@ class Action(_Model):
 class CoverageItem(_Model):
     key: str
     status: CoverageStatus
-    justification: str = Field(description="One sentence.")
+    justification: str = Field(max_length=300, description="One sentence.")
 
 
 class OpenIssue(_Model):
     id: str = Field(default="", description="Local identifier such as I1.")
     type: IssueType
-    description: str
+    description: str = Field(max_length=700)
     options: List[str] = Field(default_factory=list, description="The choices a person could make.")
     decision_owner: Owner = Field(description="The role that must arbitrate.")
     blocking: bool = Field(default=False, description="True if work must not proceed until decided.")
@@ -158,18 +163,18 @@ class RecordCore(_Model):
 
 class ObligationNote(_Model):
     code: str = Field(description="An obligation code from the computed table, exactly.")
-    meaning_for_this_product: str
+    meaning_for_this_product: str = Field(max_length=500, description="One or two sentences for this product.")
     citations: List[str] = Citations
 
 
 class RiskClassificationExt(_Model):
-    prohibited_screen: str = Field(description="Result of the EU AI Act Art. 5 and PL 2338 excessive-risk screen.")
-    eu_tier_justification: str = Field(description="Why the EU tier holds, naming the area or article.")
-    br_tier_justification: str = Field(description="Why the Brazilian tier holds, naming the area.")
+    prohibited_screen: str = Field(max_length=800, description="Result of the EU AI Act Art. 5 and PL 2338 excessive-risk screen.")
+    eu_tier_justification: str = Field(max_length=800, description="Why the EU tier holds, naming the area or article.")
+    br_tier_justification: str = Field(max_length=800, description="Why the Brazilian tier holds, naming the area.")
     obligations: List[ObligationNote] = Field(default_factory=list, description="One note per computed obligation code.")
-    human_oversight_assessment: str = Field(description="Whether the declared oversight design meets the oversight obligations.")
-    affected_persons_rights: str = Field(description="How affected persons' rights are operationalised in the product.")
-    impact_assessments: str = Field(description="Which impact assessments the instruments require (fundamental rights / algorithmic).")
+    human_oversight_assessment: str = Field(max_length=900, description="Whether the declared oversight design meets the oversight obligations.")
+    affected_persons_rights: str = Field(max_length=900, description="How affected persons' rights are operationalised in the product.")
+    impact_assessments: str = Field(max_length=700, description="Which impact assessments the instruments require (fundamental rights / algorithmic).")
 
 
 # ---------------------------------------------------------------------------
@@ -186,13 +191,13 @@ class StakeholderEntry(_Model):
 class ValueEntry(_Model):
     value: Principle = Field(description="The core value.")
     rank: int = Field(ge=1, description="1 = highest priority core value.")
-    threats: str = Field(description="How the design could harm this value.")
-    opportunities: str = Field(description="How the design could advance it.")
+    threats: str = Field(max_length=500, description="How the design could harm this value.")
+    opportunities: str = Field(max_length=500, description="How the design could advance it.")
 
 
 class GapNote(_Model):
     evr_id: str = Field(description="A computed EVR id, exactly.")
-    explanation: str = Field(description="What is missing and why it matters for this product.")
+    explanation: str = Field(max_length=600, description="What is missing and why it matters for this product.")
     citations: List[str] = Citations
 
 
@@ -200,8 +205,8 @@ class EthicalValueRequirement(_Model):
     id: str = Field(description="An assigned EVR id, exactly.")
     value: Principle
     stakeholders: List[str]
-    statement: str = Field(description="The requirement, bound to this context of use.")
-    fit_criterion: str = Field(description="The measurable condition that settles whether it is met.")
+    statement: str = Field(max_length=500, description="The requirement, bound to this context of use.")
+    fit_criterion: str = Field(max_length=400, description="The measurable condition that settles whether it is met.")
     verification_method: Verification
     traces_to: List[str] = Field(default_factory=list, description="Obligation codes or principle refs it derives from.")
     citations: List[str] = Citations
@@ -209,18 +214,18 @@ class EthicalValueRequirement(_Model):
 
 class HarmBenefit(_Model):
     stakeholder: str
-    harms: str
-    benefits: str
+    harms: str = Field(max_length=400)
+    benefits: str = Field(max_length=400)
 
 
 class ImpactAssessment(_Model):
-    intended_uses: str = Field(description="Intended and out-of-scope uses.")
+    intended_uses: str = Field(max_length=700, description="Intended and out-of-scope uses.")
     harms_and_benefits: List[HarmBenefit] = Field(default_factory=list, description="Potential harms and benefits per stakeholder.")
-    mitigations: str
+    mitigations: str = Field(max_length=700)
 
 
 class RequirementsReviewExt(_Model):
-    context_of_use: str = Field(description="The operational environment and conditions of use (IEEE 7000 concept of operations).")
+    context_of_use: str = Field(max_length=900, description="The operational environment and conditions of use (IEEE 7000 concept of operations).")
     stakeholders: List[StakeholderEntry] = Field(default_factory=list, description="Direct and indirect stakeholders and the values at stake for each.")
     value_register: List[ValueEntry] = Field(default_factory=list, description="Prioritised core values with threats and opportunities (IEEE 7000 Value Register).")
     gap_analysis: List[GapNote] = Field(default_factory=list, description="One entry per computed EVR id.")
@@ -237,7 +242,7 @@ class AcceptanceCriterion(_Model):
     id: str = Field(description="AC-<story id>-<n>, e.g. AC-S1-1.")
     ms_goal: MsGoal = Field(description="The Microsoft RAI Standard v2 goal it serves.")
     stakeholder_group: str = Field(description="The affected stakeholder group.")
-    condition: str = Field(description="Measurable condition with its threshold.")
+    condition: str = Field(max_length=400, description="Measurable condition with its threshold.")
     evidence_artifact: str = Field(description="The artifact that demonstrates compliance.")
     owner_role: Owner
     evr_ids: List[str] = Field(default_factory=list, description="Approved EVR ids this criterion implements.")
@@ -246,14 +251,14 @@ class AcceptanceCriterion(_Model):
 class StoryEntry(_Model):
     story_id: str = Field(description="A story id from the register, exactly.")
     eccola_cards: List[Card] = Field(default_factory=list, description="Selected ECCOLA card ids that make the story relevant.")
-    card_discussion: str = Field(default="", description="The card questions, answered for this story.")
+    card_discussion: str = Field(default="", max_length=900, description="The card questions, answered for this story.")
     criteria: List[AcceptanceCriterion] = Field(default_factory=list, description="Verifiable acceptance criteria (Microsoft RAI Standard v2 requirement pattern).")
-    no_impact_reason: str = Field(default="", description="Only for a story with no ethical impact.")
+    no_impact_reason: str = Field(default="", max_length=300, description="Only for a story with no ethical impact.")
 
 
 class RefinedStoriesExt(_Model):
     stories: List[StoryEntry] = Field(default_factory=list, description="Exactly one entry per story id in the register.")
-    sprint_ethics_log: str = Field(description="Decisions and rationales taken this sprint (ECCOLA documentation step).")
+    sprint_ethics_log: str = Field(max_length=1200, description="Decisions and rationales taken this sprint (ECCOLA documentation step).")
 
 
 # ---------------------------------------------------------------------------
@@ -264,22 +269,22 @@ class RefinedStoriesExt(_Model):
 class AuditItem(_Model):
     item_id: str = Field(description="A computed audit item id, exactly.")
     verdict: AuditVerdict
-    evidence: str = Field(description="Quoted from the sprint outcomes or an upstream artifact; empty if none.")
-    evidence_needed: str = Field(default="", description="What would verify it, when not satisfied.")
-    downgrade_reason: str = Field(default="")
+    evidence: str = Field(max_length=700, description="Quoted from the sprint outcomes or an upstream artifact; empty if none.")
+    evidence_needed: str = Field(default="", max_length=500, description="What would verify it, when not satisfied.")
+    downgrade_reason: str = Field(default="", max_length=500)
     citations: List[str] = Citations
     computed_verdict: Optional[str] = computed()
 
 
 class DecisionEntry(_Model):
-    decision: str
+    decision: str = Field(max_length=400)
     decided_by: str
     artifact: str = Field(description="The approved artifact that records it.")
     reference: str = Field(default="", description="Commit, date or approval header it was read from.")
 
 
 class Checkpoint(_Model):
-    checkpoint: str
+    checkpoint: str = Field(max_length=300)
     triggered_by: str = Field(description="The planned epic or event that reaches it.")
     item_ids: List[str] = Field(default_factory=list)
     lifecycle_stage: Lifecycle
@@ -299,21 +304,21 @@ class AuditReportExt(_Model):
 class Alert(_Model):
     window: str = Field(description="A computed breach window label, exactly.")
     severity: Severity = Field(description="Exactly the severity the engine computed.")
-    meaning_for_affected_people: str
+    meaning_for_affected_people: str = Field(max_length=600)
     citations: List[str] = Citations
 
 
 class ResponsePlan(_Model):
-    escalation_path: str = Field(description="Who is alerted, in what order, within what time.")
-    deactivation_criteria: str = Field(description="When the system is rolled back or deactivated (MANAGE 2).")
-    affected_community_feedback: str = Field(description="How input from users and affected communities is captured (MANAGE 4).")
-    recovery_and_communication: str = Field(description="How the system recovers and who is told.")
+    escalation_path: str = Field(max_length=600, description="Who is alerted, in what order, within what time.")
+    deactivation_criteria: str = Field(max_length=600, description="When the system is rolled back or deactivated (MANAGE 2).")
+    affected_community_feedback: str = Field(max_length=600, description="How input from users and affected communities is captured (MANAGE 4).")
+    recovery_and_communication: str = Field(max_length=600, description="How the system recovers and who is told.")
 
 
 class DriftAlertsExt(_Model):
     alerts: List[Alert] = Field(default_factory=list, description="One alert per computed breach window.")
-    trend_interpretation: str = Field(description="The movement across windows (NIST AI RMF MEASURE 3).")
-    representativeness: str = Field(description="Whether the population mix shifted relative to the population affected (MEASURE 2).")
+    trend_interpretation: str = Field(max_length=900, description="The movement across windows (NIST AI RMF MEASURE 3).")
+    representativeness: str = Field(max_length=900, description="Whether the population mix shifted relative to the population affected (MEASURE 2).")
     sample_adequacy: List[str] = Field(default_factory=list, description="Groups whose samples do not support a conclusion.")
     response_plan: ResponsePlan = Field(description="Response, recovery and communication (NIST AI RMF MANAGE).")
 

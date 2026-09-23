@@ -98,6 +98,29 @@ def parse_record(agent_key: str, text: str) -> Tuple[Optional[Dict[str, Any]], L
     return model.model_dump(), []
 
 
+TRUNCATED_REASONS = ("max_tokens", "length")
+
+
+def was_truncated(finish_reason: Optional[str]) -> bool:
+    return (finish_reason or "").lower() in TRUNCATED_REASONS
+
+
+def compact_prompt(budget: int) -> str:
+    """Asked for after a reply was cut off at the token limit.
+
+    The cure is a shorter record, not a longer reply: a record a reviewer can
+    read at the gate is the point, and the budget is finite on any provider.
+    """
+    return (
+        f"Your previous reply was cut off at the token limit ({budget} tokens), so it could not "
+        "be read as a record. Send the whole record again, complete and compact:\n"
+        "- at most three sentences per free-text field, and one or two for each obligation note;\n"
+        "- keep every required identifier and every required field, and drop nothing;\n"
+        "- where several obligations are met by the same work, say so once and refer back to it;\n"
+        "- no text outside the single ```json fence."
+    )
+
+
 def repair_prompt(errors: Sequence[str]) -> str:
     return (
         "Your reply did not validate against the RAIA record schema. Errors:\n"
@@ -359,12 +382,21 @@ def finalize(
 
 
 def fallback_record(agent_key: str, rationale: RationaleResult, errors: Sequence[str],
-                    raw_text: str) -> Dict[str, Any]:
+                    raw_text: str, truncated: bool = False, budget: int = 0) -> Dict[str, Any]:
     """An honest record for a reply that could not be read as one."""
+    if truncated:
+        summary = (
+            f"The model's reply was cut off at the token limit ({budget} tokens) and could not be "
+            "read as a RAIA record, so no analysis is shown. The rule engine's facts and open "
+            "issues are below. Reject this draft to regenerate it; if it keeps happening, raise "
+            "RAIA_LLM_MAX_TOKENS or reduce how much the form asks the agent to cover at once."
+        )
+    else:
+        summary = ("The model's reply could not be read as a RAIA record, so no analysis is "
+                   "shown. The rule engine's facts and open issues are below. Reject this draft "
+                   "to regenerate it.")
     return {
-        "summary": ("The model's reply could not be read as a RAIA record, so no analysis is "
-                    "shown. The rule engine's facts and open issues are below. Reject this draft "
-                    "to regenerate it."),
+        "summary": summary,
         "overall_status": "needs_attention",
         "declared_verdict": {},
         "agrees_with_rule_engine": True,
@@ -373,6 +405,7 @@ def fallback_record(agent_key: str, rationale: RationaleResult, errors: Sequence
         "extension": {},
         "unparsed_response": (raw_text or "")[:20000],
         "schema_errors": list(errors),
+        "truncated": bool(truncated),
     }
 
 

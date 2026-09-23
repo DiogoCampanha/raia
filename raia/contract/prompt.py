@@ -90,6 +90,10 @@ this JSON Schema ({V.SCHEMA_VERSION}); a reply that does not validate is returne
 - `coverage` must contain exactly one entry per checklist key: {", ".join(h["checklist_keys"]) or "(none)"}.
 - Every `citations` entry is a tag copied exactly from the retrieved excerpts.
 - Write for the people who will act on it: specific to this product, short enough to review.
+- Stay inside every `maxLength` in the schema: at most three sentences per free-text field, one
+  or two per obligation note. The whole record must fit in a single reply — a reply cut off at
+  the token limit cannot be read at all. Where several obligations are met by the same work, say
+  so once and refer back to it rather than repeating it.
 
 ### Identifiers from the computed block you must use exactly
 
