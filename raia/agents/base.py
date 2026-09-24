@@ -161,6 +161,11 @@ class AgentSpec:
     verdict_keys: List[str] = field(default_factory=list)
     engine: Optional[Callable[[Dict[str, Any], Dict[str, Any]], RationaleResult]] = None
     intro: str = ""                   # one paragraph shown above the form
+    #: Optional: proposes answers to context questions from approved upstream
+    #: work. Receives the upstream bundle; returns ``{"fields": {key: {"values",
+    #: "reasons"}}, "basis", "control_hints"}``. A suggestion only ever fills an
+    #: empty field and is recorded as one (see ``raia.rationale.coverage``).
+    suggest: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None
 
     def __post_init__(self) -> None:
         # The layout is the contract's, not the agent's to choose.
@@ -425,6 +430,10 @@ class BaseAgent:
             "conforms": not record.get("schema_errors"),
             "max_tokens_used": budget,
         }
+        origin = (rationale.data or {}).get("suggestion_origin") or {}
+        if origin.get("fields") or origin.get("adopted"):
+            # Which answers RAIA proposed and a person adopted travels with the draft.
+            prov["intake_origin"] = origin
         return AgentRun(
             draft=draft,
             record=record,

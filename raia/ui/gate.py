@@ -37,6 +37,7 @@ from raia.contract.schema import record_model
 from raia.deploy import friendly_llm_error
 from raia.examples import EXAMPLES
 from raia.fields import InputField
+from raia.rationale.coverage import ORIGIN_KEY, next_requirement
 from raia.projects import AccessDenied, Project, UsageLimitReached
 
 from .state import current_user, flash, get_service, pkey
@@ -124,7 +125,237 @@ def _snapshot(spec) -> Dict[str, Any]:
         value = st.session_state.get(_state_key(spec.key, f.key))
         if value not in (None, "", []):
             out[f.key] = value
+    origin = st.session_state.get(_origin_key(spec.key))
+    if origin:
+        out[ORIGIN_KEY] = origin
+    recs = st.session_state.get(_recs_key(spec.key))
+    if recs:
+        out[RECS_KEY] = recs
     return out
+
+
+# ---------------------------------------------------------------------------
+# Where answers came from: suggestions and adopted recommendations
+# ---------------------------------------------------------------------------
+#
+# A suggestion fills only an empty field and is remembered as one, so the
+# engine can tell a pre-filled answer from one the team gave, and the form can
+# say so beside the field. A recommended requirement enters the requirements
+# only when a person adopts it, one at a time, and is remembered with the id it
+# was given. Nothing here reaches an artifact without the usual approval.
+
+RECS_KEY = "_recommendations"
+
+
+def _origin_key(agent_key: str) -> str:
+    return pkey("origin", agent_key)
+
+
+def _recs_key(agent_key: str) -> str:
+    return pkey("recs", agent_key)
+
+
+def _origin(agent_key: str) -> Dict[str, Any]:
+    return st.session_state.setdefault(_origin_key(agent_key), {"fields": {}, "adopted": []})
+
+
+def pending_suggestions(agent_key: str) -> List[str]:
+    """Labels of pre-filled fields still holding exactly what was suggested."""
+    agent = AGENTS[agent_key]
+    out = []
+    for key, meta in (st.session_state.get(_origin_key(agent_key)) or {}).get("fields", {}).items():
+        current = st.session_state.get(_state_key(agent_key, key)) or []
+        if sorted(current) == sorted(meta.get("values") or []):
+            f = agent.spec.field_by_key(key)
+            out.append(f.label if f else key)
+    return out
+
+
+def origin_for_run(agent_key: str) -> Dict[str, Any]:
+    """What the engine needs to know about where the answers came from."""
+    origin = st.session_state.get(_origin_key(agent_key)) or {}
+    return {"fields": origin.get("fields") or {}, "adopted": origin.get("adopted") or []}
+
+
+def _apply_suggestions(project: Project, agent) -> Tuple[List[str], List[str]]:
+    """Fill empty context fields from the approved classification. Returns (filled, kept)."""
+    spec = agent.spec
+    result = get_service().suggest_intake(current_user(), project.id, spec.key)
+    origin = _origin(spec.key)
+    origin["control_hints"] = result.get("control_hints") or []
+    origin["basis"] = result.get("basis", "")
+    filled, kept = [], []
+    for key, meta in (result.get("fields") or {}).items():
+        f = spec.field_by_key(key)
+        if f is None:
+            continue
+        current = st.session_state.get(_state_key(spec.key, key))
+        if current not in (None, "", []):
+            kept.append(f.label)
+            continue
+        allowed = {o.value for o in f.options}
+        values = [v for v in meta.get("values") or [] if v in allowed]
+        if not values:
+            continue
+        st.session_state[_state_key(spec.key, key)] = values
+        origin["fields"][key] = {"values": values, "reasons": meta.get("reasons") or {}}
+        filled.append(f.label)
+    return filled, kept
+
+
+def _recommend(project: Project, agent) -> None:
+    """The one button: suggest context answers, then ask for candidate requirements."""
+    spec = agent.spec
+    filled, kept = _apply_suggestions(project, agent)
+    msgs = []
+    if filled:
+        msgs.append("Pre-filled from the approved risk classification: **" + "**, **".join(filled)
+                    + "**. Review them before running.")
+    if kept:
+        msgs.append("Your answers to **" + "**, **".join(kept) + "** were left as they were.")
+    if hasattr(agent, "recommend"):
+        inputs = _current_inputs(spec.key, spec.input_fields)
+        with st.spinner("Reading the approved classification and the norms for candidate requirements"):
+            try:
+                result = get_service().recommend_requirements(current_user(), project.id, spec.key, inputs)
+            except (AccessDenied, UsageLimitReached) as exc:
+                flash(" ".join(msgs + [str(exc)]))
+                return
+            except Exception as exc:  # noqa: BLE001 - surfaced to the person
+                flash(" ".join(msgs + [friendly_llm_error(exc)]))
+                return
+        st.session_state[_recs_key(spec.key)] = {
+            "candidates": result.get("candidates") or [],
+            "dropped": result.get("dropped") or [],
+            "note": result.get("note", ""),
+            "evidence": {e["citation"]: e for e in result.get("evidence") or []},
+        }
+        n = len(result.get("candidates") or [])
+        msgs.append(f"{n} candidate requirement(s) to review below." if n
+                    else (result.get("note") or "No candidate passed the checks."))
+    flash(" ".join(msgs) or "Nothing to suggest: the risk classification has no structured data.")
+
+
+def _adopt(project_id: str, agent_key: str, cid: str) -> None:
+    """Callback: add one candidate to the requirements, in the team's format, and remember it."""
+    recs = st.session_state.get(_recs_key(agent_key)) or {}
+    cand = next((c for c in recs.get("candidates") or [] if c["id"] == cid), None)
+    if not cand or cand.get("status") != "open":
+        return
+    statement = " ".join((st.session_state.get(pkey("cand", agent_key, cid, "statement")) or "").split())
+    fit = " ".join((st.session_state.get(pkey("cand", agent_key, cid, "fit")) or "").split())
+    if not statement or not fit:
+        st.session_state[pkey("cand_err", agent_key, cid)] = "A requirement needs a statement and a fit criterion."
+        return
+    edited = statement != cand["statement"] or fit != cand["fit_criterion"]
+    req_key = _state_key(agent_key, "requirements")
+    fmt = st.session_state.get(_state_key(agent_key, "requirement_format")) or "numbered"
+    line = f"{statement.rstrip('.')}. Fit criterion: {fit}"
+    added = next_requirement(st.session_state.get(req_key) or "", fmt, line)
+    st.session_state[req_key] = added["text"]
+    origin = _origin(agent_key)
+    origin["adopted"] = [a for a in origin.get("adopted") or [] if a.get("id") != added["id"]] + [{
+        "id": added["id"], "text": added["line"], "candidate_id": cid,
+        "addresses": cand["addresses"], "edited": edited,
+    }]
+    cand["status"], cand["requirement_id"] = "adopted", added["id"]
+    get_service().record_recommendation_decision(current_user(), project_id, agent_key, cand,
+                                                 "adopted", added["id"], edited)
+
+
+def _reject(project_id: str, agent_key: str, cid: str) -> None:
+    recs = st.session_state.get(_recs_key(agent_key)) or {}
+    cand = next((c for c in recs.get("candidates") or [] if c["id"] == cid), None)
+    if not cand or cand.get("status") != "open":
+        return
+    cand["status"] = "rejected"
+    get_service().record_recommendation_decision(current_user(), project_id, agent_key, cand, "rejected")
+
+
+def _clear_recs(agent_key: str) -> None:
+    st.session_state.pop(_recs_key(agent_key), None)
+
+
+def _candidate_panel(project: Project, agent, can_run: bool) -> None:
+    spec = agent.spec
+    recs = st.session_state.get(_recs_key(spec.key)) or {}
+    cands = recs.get("candidates") or []
+    dropped = recs.get("dropped") or []
+    if not cands and not dropped:
+        return
+    with st.container(border=True):
+        st.markdown(f"{I.SUGGEST} **Recommended requirements — adopt, edit or reject each one**")
+        st.caption("RAIA proposed these for gaps your current answers leave. None of them counts "
+                   "until you adopt it; an adopted one is added to your requirements and is marked in "
+                   "the record as a recommendation you adopted, not one the team wrote.")
+        evidence = recs.get("evidence") or {}
+        for c in cands:
+            cid = c["id"]
+            if c.get("status") == "adopted":
+                st.markdown(f"{I.OK} `{c['addresses']}` — adopted as **{c.get('requirement_id', '')}**.")
+                continue
+            if c.get("status") == "rejected":
+                st.markdown(f"{I.DISCARD} {c['addresses']} — rejected.")
+                continue
+            with st.container(border=True):
+                st.markdown(f"**{cid}** · addresses `{c['addresses']}` — {c.get('gap_subject', '')}")
+                sk, fk = pkey("cand", spec.key, cid, "statement"), pkey("cand", spec.key, cid, "fit")
+                if sk not in st.session_state:
+                    st.session_state[sk] = c["statement"]
+                if fk not in st.session_state:
+                    st.session_state[fk] = c["fit_criterion"]
+                st.text_area("Requirement", key=sk, height=80, disabled=not can_run)
+                st.text_input("Fit criterion (how it is verified)", key=fk, disabled=not can_run)
+                meta = [f"Verified by {c.get('verification_method', 'inspection')}"]
+                if c.get("value"):
+                    meta.append(f"protects {c['value'].replace('_', ' ')}")
+                st.caption(" · ".join(meta))
+                with st.expander("Grounds", icon=I.EVIDENCE):
+                    for tag in c.get("citations") or []:
+                        st.markdown(f"`{tag}`")
+                        ex = evidence.get(tag)
+                        if ex:
+                            st.caption(ex.get("text", "")[:600])
+                err = st.session_state.pop(pkey("cand_err", spec.key, cid), None)
+                if err:
+                    st.error(err)
+                if can_run:
+                    row = st.container(horizontal=True)
+                    row.button("Adopt", key=pkey("cand_adopt", spec.key, cid), type="primary",
+                               icon=I.APPROVE, on_click=_adopt, args=(project.id, spec.key, cid))
+                    row.button("Reject", key=pkey("cand_reject", spec.key, cid), icon=I.DISCARD,
+                               on_click=_reject, args=(project.id, spec.key, cid))
+        if dropped:
+            with st.expander(f"{len(dropped)} candidate(s) failed the checks and were not shown",
+                             icon=I.WARN):
+                for d in dropped:
+                    st.markdown(f"- `{d.get('addresses') or '?'}` — {d.get('reason', '')}")
+        if can_run:
+            st.button("Dismiss recommendations", key=pkey("recs_clear", spec.key),
+                      on_click=_clear_recs, args=(spec.key,))
+
+
+def _field_origin_note(agent_key: str, f: InputField) -> None:
+    """Say, under a field, that its answer was suggested — and why — until a person changes it."""
+    origin = st.session_state.get(_origin_key(agent_key)) or {}
+    if f.key == "existing_controls" and origin.get("control_hints"):
+        hints = origin["control_hints"]
+        st.caption(f"{I.INFO} The approved classification assigns obligations these controls would "
+                   "discharge: " + "; ".join(f"{h['label'].split(',')[0]} ({', '.join(h['obligations'])})"
+                                             for h in hints)
+                   + ". Tick only those actually in place — this field is never pre-filled.")
+        return
+    meta = (origin.get("fields") or {}).get(f.key)
+    if not meta:
+        return
+    current = st.session_state.get(_state_key(agent_key, f.key)) or []
+    if sorted(current) != sorted(meta.get("values") or []):
+        st.caption(f"{I.REVISE} Adjusted from a suggestion.")
+        return
+    st.caption(f"{I.SUGGEST} Suggested from the approved risk classification — review it.")
+    with st.expander("Why each value was suggested"):
+        for value, why in (meta.get("reasons") or {}).items():
+            st.markdown(f"- **{f.label_for(value)}** — {why}")
 
 
 def _load_saved_intake(project: Project, spec) -> None:
@@ -140,6 +371,10 @@ def _load_saved_intake(project: Project, spec) -> None:
     if not missing:
         return
     saved = get_service().load_intake(current_user(), project.id, spec.key)
+    if isinstance(saved.get(ORIGIN_KEY), dict) and _origin_key(spec.key) not in st.session_state:
+        st.session_state[_origin_key(spec.key)] = saved[ORIGIN_KEY]
+    if isinstance(saved.get(RECS_KEY), dict) and _recs_key(spec.key) not in st.session_state:
+        st.session_state[_recs_key(spec.key)] = saved[RECS_KEY]
     for f in missing:
         value = saved.get(f.key)
         if value in (None, "", []):
@@ -168,7 +403,11 @@ def intake_form(project: Project, agent, can_run: bool) -> Dict[str, Any]:
                    "owners and editors change them and run agents.")
     _intake_fields(project, agent, can_run)
     current = _current_inputs(spec.key, spec.input_fields)
-    return {f.key: current[f.key] for f in spec.input_fields if f.visible(current)}
+    out = {f.key: current[f.key] for f in spec.input_fields if f.visible(current)}
+    origin = origin_for_run(spec.key)
+    if origin["fields"] or origin["adopted"]:
+        out[ORIGIN_KEY] = origin
+    return out
 
 
 @st.fragment
@@ -188,7 +427,29 @@ def _intake_fields(project: Project, agent, can_run: bool) -> None:
             value = EXAMPLES.get(spec.key, {}).get(f.key)
             if value is not None:
                 st.session_state[_state_key(spec.key, f.key)] = value
+        st.session_state.pop(_origin_key(spec.key), None)
+        st.session_state.pop(_recs_key(spec.key), None)
         st.rerun()
+
+    recommends = hasattr(agent, "recommend")
+    if can_run and (spec.suggest is not None or recommends):
+        with st.container(border=True):
+            st.markdown(f"{I.SUGGEST} **{'Recommend ethical requirements' if recommends else 'Suggest answers'}**")
+            st.caption(
+                "RAIA reads the approved risk classification, pre-fills the stakeholder and principle "
+                "questions you have left empty, and proposes a few candidate requirements for the gaps "
+                "your answers leave, each grounded in the norms and checked before you see it. You adopt, "
+                "edit or reject every one; the controls you have in place are never guessed. "
+                "Answer that question first, so no candidate proposes work you have already done."
+                + (" Proposing requirements uses one agent run from today's allowance." if recommends else "")
+            )
+            if st.button("Recommend ethical requirements" if recommends else "Suggest answers",
+                         key=pkey("recommend", spec.key), icon=I.SUGGEST):
+                _recommend(project, agent)
+                st.rerun()
+
+    target = getattr(agent, "RECOMMEND_TARGET", None)
+    target_group = spec.field_by_key(target).group if target and spec.field_by_key(target) else None
 
     for group in spec.field_groups():
         fields = [f for f in spec.input_fields if f.group == group]
@@ -200,6 +461,9 @@ def _intake_fields(project: Project, agent, can_run: bool) -> None:
             st.markdown(f"**{group}**")
             for f in visible:
                 _render_field(spec.key, f, disabled=not can_run)
+                _field_origin_note(spec.key, f)
+        if group == target_group:
+            _candidate_panel(project, agent, can_run)
 
     if can_run:
         _autosave_intake(project, spec)

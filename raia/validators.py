@@ -22,7 +22,7 @@ reason for the software to overrule a person.
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .rationale.types import VALID_STATUSES
 
@@ -418,6 +418,36 @@ _MEASURABLE = (
 )
 
 
+def is_verifiable(text: str) -> bool:
+    """True when a requirement carries something a test, audit or measurement can settle.
+
+    Lexical and deliberately simple: a number, or one of the measurable markers.
+    Strip any identifier first — ``EVR-1`` or ``R7`` is not a threshold.
+    """
+    low = (text or "").lower()
+    return bool(re.search(r"\d", text or "")) or any(t in low for t in _MEASURABLE)
+
+
+def resolve_citations(tags: Sequence[str], allowed: Sequence[str]) -> Tuple[List[str], List[str]]:
+    """Split citation tags into those that match a retrieved excerpt and those that do not.
+
+    Resolved tags are returned in the retriever's own spelling, so what is
+    stored is exactly what was retrieved.
+    """
+    index = {_norm(x.strip("[]").replace("Source:", "", 1)): x for x in allowed}
+    resolved: List[str] = []
+    unresolved: List[str] = []
+    for tag in tags or []:
+        m = CITATION_RE.search(str(tag))
+        body = m.group("body").strip() if m else str(tag).strip("[] ").replace("Source:", "", 1)
+        hit = index.get(_norm(body))
+        if hit and hit not in resolved:
+            resolved.append(hit)
+        elif not hit:
+            unresolved.append(str(tag))
+    return resolved, unresolved
+
+
 def check_requirement_quality(draft: str, ids: Sequence[str]) -> ValidationItem:
     """Every assigned requirement must be phrased so something can check it.
 
@@ -436,9 +466,7 @@ def check_requirement_quality(draft: str, ids: Sequence[str]) -> ValidationItem:
         # The identifier itself contains a digit; it is not evidence that the
         # requirement is measurable.
         without_id = re.sub(rf"(?<![\w-]){re.escape(rid)}(?![\w-])", "", body)
-        low = without_id.lower()
-        has_digit = bool(re.search(r"\d", without_id))
-        if not has_digit and not any(t in low for t in _MEASURABLE):
+        if not is_verifiable(without_id):
             weak.append(f"{rid}: {body[:100].strip()}")
     if weak:
         return ValidationItem(

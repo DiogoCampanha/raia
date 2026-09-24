@@ -576,6 +576,60 @@ class ProjectService:
     def load_intake(self, user: User, project_id: str, agent_key: str) -> Dict[str, Any]:
         return self.repository(user, project_id, "view").load_intake(agent_key)
 
+    # -- Suggestions and recommendations (nothing counts until a person adopts it) --
+
+    def suggest_intake(self, user: User, project_id: str, agent_key: str) -> Dict[str, Any]:
+        """Answers to an agent's context questions, proposed from approved upstream work.
+
+        Rule-based: no model is called and no usage is counted. The proposal is
+        returned to the form, which fills only empty fields; the event records
+        what was offered.
+        """
+        from .agents import AGENTS
+
+        agent = AGENTS[agent_key]
+        repo = self.repository(user, project_id, "run")
+        if agent.spec.suggest is None:
+            return {"fields": {}, "basis": "", "control_hints": []}
+        result = agent.spec.suggest(repo.upstream_bundle(agent.spec.upstream_keys))
+        repo.record_event("intake_suggested", {
+            "agent": agent_key, "user": user.id,
+            "fields": {k: v.get("values", []) for k, v in (result.get("fields") or {}).items()},
+        })
+        return result
+
+    def recommend_requirements(self, user: User, project_id: str, agent_key: str,
+                               inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """Candidate requirements from the model, checked in code, for a person to adopt or reject."""
+        from .agents import AGENTS
+
+        agent = AGENTS[agent_key]
+        if not hasattr(agent, "recommend"):
+            raise ValueError("This agent does not recommend requirements.")
+        repo = self.repository(user, project_id, "run")
+        self._count_model_call(user)
+        result = agent.recommend(repo, inputs)
+        repo.record_event("requirements_recommended", {
+            "agent": agent_key, "user": user.id,
+            "offered": [c["addresses"] for c in result.get("candidates") or []],
+            "dropped": [d.get("reason", "") for d in result.get("dropped") or []],
+            "prompt_sha256_16": (result.get("provenance") or {}).get("prompt_sha256_16", ""),
+        })
+        return result
+
+    def record_recommendation_decision(self, user: User, project_id: str, agent_key: str,
+                                       candidate: Dict[str, Any], decision: str,
+                                       requirement_id: str = "", edited: bool = False) -> None:
+        """Log one person's decision on one candidate: adopted, or rejected."""
+        if decision not in ("adopted", "rejected"):
+            raise ValueError("A recommendation is adopted or rejected.")
+        repo = self.repository(user, project_id, "run")
+        repo.record_event(f"recommendation_{decision}", {
+            "agent": agent_key, "user": user.id, "candidate": candidate.get("id", ""),
+            "addresses": candidate.get("addresses", ""), "requirement_id": requirement_id,
+            "edited": bool(edited),
+        })
+
     def start_run(self, user: User, project_id: str, agent_key: str, inputs: Dict[str, Any]) -> dict:
         repo = self.repository(user, project_id, "run")
         repo.save_intake(agent_key, inputs, by=user.id)
@@ -775,7 +829,10 @@ Created: {created}
 
 evaluation_events.jsonl   One line per event in any project: runs rejected with
                           a reason code, approvals (attempt, edited or not,
-                          checks), restores, arbitrations, membership changes.
+                          checks), restores, arbitrations, membership changes,
+                          and Requirements Reviewer recommendations: what was
+                          suggested or recommended, and each candidate adopted
+                          (edited or not) or rejected.
 experience_ratings.jsonl  Each submitted tester assessment (instrument id in
                           "instrument"): optional broad profile, the five Likert
                           dimensions, optional per-stage items and open answers.

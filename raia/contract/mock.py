@@ -131,5 +131,22 @@ def build(prompt: str) -> Dict[str, Any]:
     }
 
 
+def recommend(h: Dict[str, Any]) -> Dict[str, Any]:
+    """Candidate requirements for the Requirements Reviewer's recommendation, in mock mode."""
+    cite = (h.get("citations") or [])[:1]
+    refs = (h.get("gap_refs") or [])[: int(h.get("max") or 5)]
+    return {"candidates": [{
+        "addresses": ref,
+        "value": "accountability",
+        "statement": f"[MOCK MODE] The team shall record how {ref} is met for each release.",
+        "fit_criterion": f"A signed-off record for {ref} exists for every release.",
+        "verification_method": "audit",
+        "citations": cite,
+    } for ref in refs]}
+
+
 def reply(prompt: str) -> str:
+    h = read_hints(prompt)
+    if h.get("agent_key") == "requirements_reviewer:recommend":
+        return "```json\n" + json.dumps(recommend(h), ensure_ascii=False, indent=1) + "\n```"
     return "```json\n" + json.dumps(build(prompt), ensure_ascii=False, indent=1) + "\n```"

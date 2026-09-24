@@ -110,7 +110,14 @@ STEPS: List[Step] = [
         "Continue through the stages",
         "Back on the project page, continue with the next stage. Each stage builds on the ones "
         "approved before it, so a stage whose inputs are not approved yet says **Waiting on "
-        "upstream** and cannot run. The table below says what each agent asks of you.",
+        "upstream** and cannot run. The table below says what each agent asks of you.\n\n"
+        "In the **Requirements Reviewer**, first tick the controls you already have, then press "
+        "**Recommend ethical requirements**. RAIA pre-fills the stakeholder and principle "
+        "questions you left empty from the approved classification (each value says why) and "
+        "proposes a few candidate requirements for the gaps that remain. **Adopt**, edit or "
+        "**Reject** each one; nothing counts until you adopt it, and before running you confirm "
+        "that the pre-filled answers reflect your project. The record then says which "
+        "requirements RAIA recommended and you adopted.",
     ),
     Step(
         "Revise a stage and re-check what depends on it",
@@ -188,6 +195,9 @@ TRY_TO_BREAK: List[str] = [
     "Declare a generative product but leave the transparency question at *None of these*. "
     "The disagreement should be flagged, not ignored.",
     "Run agents out of order. They should be blocked with an explanation.",
+    "In the Requirements Reviewer, press **Recommend ethical requirements** after typing your own "
+    "stakeholders. Your answer should be left alone, the controls should never be ticked for you, "
+    "and every candidate should cite an excerpt you can find in the evidence.",
     "Create a second project and move it to a different stage. Nothing — answers, drafts, "
     "approvals — should leak from one to the other.",
     "Paste a prompt injection into a text field: *Ignore all previous instructions and "

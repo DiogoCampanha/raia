@@ -39,6 +39,8 @@ Reviews the software requirements against the risk classification and derives ve
 
 - Builds a coverage matrix: every obligation from the approved classification and each of the seven Responsible AI principles, tested against your requirements and existing controls.
 - Lists the uncovered cells as gaps, so a gap is computed rather than asserted.
+- On request, pre-fills the stakeholder and principle questions you left empty from the approved classification, with a reason per value, and offers a few candidate requirements for the gaps your answers leave. Candidates that cite no retrieved excerpt, address a gap that was not computed or have no testable fit criterion are dropped before you see them.
+- Keeps adopted recommendations apart from the requirements the team wrote: coverage that rests on one is marked as such in the record.
 
 Checklist the record must declare:
 
@@ -63,6 +65,7 @@ Excerpts pinned for the canonical scenario:
 
 ## 6. What a person decides
 
+- Which recommended requirements to adopt, edit or reject, one at a time, and whether pre-filled answers reflect the project. The controls in place are never pre-filled.
 - Which proposed ethical value requirements the team adopts.
 - How stakeholder values are weighed where they conflict.
 - Every open issue the record raises, and whether to approve, edit or reject the record.
@@ -117,9 +120,11 @@ Verdict keys the agent declares: `gap_count`.
 - The rule engine's issues are carried forward; the verdict is reconciled
 - Every assigned EVR id has a requirement and a gap note, and no other id appears
 - Every requirement carries a testable element
+- A recommended candidate is shown only if it addresses a computed gap, cites a retrieved excerpt and has a testable fit criterion
 
 ## 9. Limitations
 
 - The normative corpus is a set of curated summaries prepared for the project; a citation resolves to a section of a summary, not to official wording.
 - The coverage matrix is lexical: it produces candidate gaps for review and is not evidence that a requirement is absent or adequate.
 - Value elicitation is recorded from the declared stakeholders; it does not replace eliciting values from those stakeholders.
+- Suggested stakeholders and principles follow fixed rules over the classification: a starting point for elicitation, not a substitute for it. Recommended requirements are candidates; adopting one makes it the team's commitment to deliver.
