@@ -61,6 +61,7 @@ class I:  # noqa: E742 - short on purpose: I.HOME reads well at call sites
     COMPUTE = ":material/calculate:"
     READ = ":material/visibility:"
     MOCK = ":material/science:"
+    SUGGEST = ":material/lightbulb:"
 
 
 #: status -> (label, badge colour, icon)

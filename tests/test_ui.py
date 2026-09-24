@@ -240,6 +240,71 @@ def main() -> None:
     ok(at.run(), "its second stage opens")
     check("Waiting on upstream work" in text(at), "…and is gated by its own progress")
 
+    print("== 5b. Recommend ethical requirements: proposed, never assumed ==")
+    goto(at, "stage", project=pid2, agent="risk_classifier")
+    ok(at.run(), "the second project's Risk Classifier opens")
+    button(at, f"{pid2}::ex::risk_classifier").click()
+    ok(at.run(), "its answers are filled")
+    button(at, f"{pid2}::run::risk_classifier").click()
+    ok(at.run(), "it runs")
+    button(at, f"{pid2}::approve::risk_classifier").click()
+    ok(at.run(), "and is approved")
+
+    rr = "requirements_reviewer"
+    goto(at, "stage", project=pid2, agent=rr)
+    ok(at.run(), "the Requirements Reviewer opens")
+    check(has_button(at, f"{pid2}::recommend::{rr}"), "it offers to recommend ethical requirements")
+    at.text_area(key=f"{pid2}::in::{rr}::requirements").input(
+        "R1. Score each credit application.\nR2. Respond within 2 seconds.")
+    at.multiselect(key=f"{pid2}::in::{rr}::existing_controls").set_value(["logging"])
+    at.multiselect(key=f"{pid2}::in::{rr}::stakeholders").set_value(["users"])
+    ok(at.run(), "the team answers what only it knows")
+    button(at, f"{pid2}::recommend::{rr}").click()
+    ok(at.run(), "the recommendation runs")
+    state = at.session_state
+    check(state[f"{pid2}::in::{rr}::stakeholders"] == ["users"], "an answer the team gave is left alone")
+    check(bool(state[f"{pid2}::in::{rr}::values_at_stake"]), "an empty context question is pre-filled")
+    check(state[f"{pid2}::in::{rr}::existing_controls"] == ["logging"], "the controls in place are never guessed")
+    body = text(at)
+    check("Suggested from the approved risk classification" in body, "the pre-filled field says so")
+    check("this field is never pre-filled" in body, "the controls question is annotated, not answered")
+    check("Recommended requirements" in body and has_button(at, f"{pid2}::cand_adopt::{rr}::C1"),
+          "candidate requirements are offered one by one")
+    check("R3" not in state[f"{pid2}::in::{rr}::requirements"], "nothing is added before a person adopts it")
+
+    button(at, f"{pid2}::cand_adopt::{rr}::C1").click()
+    ok(at.run(), "a candidate is adopted")
+    reqs = state[f"{pid2}::in::{rr}::requirements"]
+    check("R3." in reqs and "Fit criterion:" in reqs, "…and added to the requirements with the next id")
+    check("adopted as **R3**" in text(at), "…and marked as adopted")
+    if has_button(at, f"{pid2}::cand_reject::{rr}::C2"):
+        button(at, f"{pid2}::cand_reject::{rr}::C2").click()
+        ok(at.run(), "another is rejected")
+        check("rejected" in text(at), "…and marked as rejected")
+
+    ack = f"{pid2}::suggest_ack::{rr}"
+    check(any(c.key == ack for c in at.checkbox), "running asks the person to confirm the pre-filled answers")
+    button(at, f"{pid2}::run::{rr}").click()
+    ok(at.run(), "running without that confirmation")
+    check("have not been reviewed" in text(at), "…is refused")
+    at.checkbox(key=ack).check()
+    button(at, f"{pid2}::run::{rr}").click()
+    ok(at.run(), "running after the confirmation")
+    check("Human review required" in text(at), "…reaches the gate")
+    check("Where the inputs came from" in text(at), "the draft says which inputs RAIA proposed")
+    button(at, f"{pid2}::approve::{rr}").click()
+    ok(at.run(), "the draft is approved")
+    from raia.storage import open_repository as _open_repo
+
+    repo2 = _open_repo(pid2)
+    check("R3 were recommended by RAIA and adopted by the team" in (repo2.read_artifact("requirements_review") or ""),
+          "the approved record keeps the adopted requirement apart from the team's own")
+    kinds = [e.get("kind") for e in repo2.events()]
+    check({"intake_suggested", "requirements_recommended", "recommendation_adopted"} <= set(kinds),
+          "each suggestion, recommendation and adoption is in the activity log")
+    prov = (repo2.read_data("requirements_review").get("provenance") or {})
+    check(bool((prov.get("intake_origin") or {}).get("adopted")), "…and in the draft's provenance")
+
     print("== 6. Invite a reviewer ==")
     goto(at, "project", id=pid1)
     ok(at.run(), "the first project opens")

@@ -117,6 +117,9 @@ Recorded so the log stays honest about its own errors.
 | D27 | *Sign out* is an entry of the Account menu (its own page, `/signout`), not a button inside Settings. It is listed only when there is a sign-in to end. | Ending a session is a navigation action people look for in the account menu; burying it in a settings page made testers hunt for it. |
 | D28 | The Risk Classifier asks how the AI works (techniques, where in the product it acts, where the model comes from) and the risk screen reads it. A rules-only product is flagged against the AI-system definition but still screened as in scope; transparency duties implied by the techniques are applied even when the transparency question missed them, and the disagreement is escalated. The product prose is split into guided questions with an example answer each. | Both regimes define an AI system by its capacity to infer, and the transparency duties follow the technique, so the form was missing the facts the classification rests on. The engine may only flag or add, never conclude that a product is out of scope — the conservative direction, with a person deciding. |
 | D29 | A **Guide** page in the top menu walks testers through RAIA step by step. Its content lives in `raia/ui/guide.py`, which also generates `docs/TESTERS.md`; the table of what each agent asks is built from the agent specifications. | The tester guide lived only in the repository, which testers never see. One source for the page and the document means they cannot drift, and a form change updates the guide by itself. |
+| D30 | The Requirements Reviewer can **recommend ethical requirements** from the approved risk classification, but only as proposals: context questions (stakeholders, principles at stake) are pre-filled only when empty, and candidate requirements enter the requirements one at a time, when a person adopts them. | A blank form stalled testers, and the classification already holds most of the context. Writing requirements into the field directly would let the model close the gaps the engine computes from that same field, so the coverage matrix would be marking the model's own work. |
+| D31 | The controls already in place, the requirements the team wrote, its delivery constraints and the requirement format are **never** pre-filled; the controls question is only annotated with the controls the assigned obligations make relevant. | A ticked control discharges obligations. Proposing one would be inventing evidence, not recommending. |
+| D32 | Adopted recommendations stay distinguishable: the engine marks coverage that rests only on them as *addressed by an adopted suggestion*, the record says which requirements RAIA recommended and whether they were edited, pre-filled answers must be confirmed before running, and every suggestion, adoption and rejection is an evaluation event. | Accepting a proposal is a weaker claim than writing a requirement. Keeping the two apart lets a reviewer weigh them, and the adoption rate is evidence about automation bias for the evaluation. Candidates use only project data and the normative corpus, never other users' projects. |
 
 ---
 
@@ -125,6 +128,75 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-24 — Recommend ethical requirements (branch `recommend-requirements`)
+
+Decisions D30–D32.
+
+#### What was wrong
+
+- **TST-6** The Requirements Reviewer opened on a blank form with required
+  questions the approved risk classification could already inform (who is
+  affected, which principles are at stake). Testers without a written
+  requirements list had nowhere to start.
+
+#### What changed
+
+- `raia/rationale/coverage.py` — `suggest_intake` proposes stakeholder groups
+  and principles at stake from the approved classification's structured data
+  (areas, data categories, autonomy, oversight, transparency triggers,
+  obligations), with a reason per value; principles are proposed on specific
+  facts, not all seven for any high-risk system. `relevant_controls` lists the
+  controls the assigned obligations make relevant. `next_requirement` appends
+  an adopted requirement in the team's own format with the id the parser will
+  give it. `read_origin` compares what was suggested or adopted with the
+  answers at run time; `run` now marks cells covered only by an adopted
+  recommendation as *addressed by an adopted suggestion* and reports adopted
+  requirements and pre-filled answers as findings.
+- `raia/agents/requirements_reviewer.py` — `recommend()` computes the gaps the
+  current answers leave (as a run would), retrieves from the agent's grounding
+  sources, asks the model for at most five candidates and checks each in code:
+  it must address a computed gap once, cite an excerpt retrieved for it and
+  have a testable fit criterion, or it is dropped with the reason shown.
+- `raia/agents/base.py` — `AgentSpec.suggest` hook; a draft's provenance
+  carries `intake_origin`.
+- `raia/validators.py` — `is_verifiable` and `resolve_citations`, shared by
+  the requirement-quality check and the candidate check.
+- `raia/projects.py` — `suggest_intake`, `recommend_requirements` (counts one
+  run against the daily allowance) and `record_recommendation_decision`; events
+  `intake_suggested`, `requirements_recommended`, `recommendation_adopted`,
+  `recommendation_rejected`, pseudonymized on export like every event.
+- `raia/ui/gate.py`, `views/stage.py` — a **Recommend ethical requirements**
+  button; captions under pre-filled fields with the reason per value; the
+  controls question annotated, never answered; a candidate panel with Adopt /
+  Reject and editable text; a confirmation before running when pre-filled
+  answers are unchanged.
+- `raia/contract/render.py` — the Gap Analysis section states, computed, which
+  inputs RAIA proposed and a person adopted.
+- `raia/contract/mock.py` — mock candidates, so the flow runs offline.
+- Guide, `docs/TESTERS.md` and the Requirements Reviewer agent card
+  regenerated.
+
+#### Tests
+
+- `tests/test_engines.py` — only context questions are ever suggested, every
+  value has a reason, a low-stakes tool gets no principle suggestion, adopted
+  requirements get the next id and parse back, an adopted requirement closes a
+  gap but is marked as such, edited and deleted adoptions are reported
+  correctly, an origin record cannot mark controls as suggested, and the
+  candidate check drops invented gaps, duplicates, unresolved citations and
+  untestable fit criteria.
+- `tests/test_ui.py` — section 5b: an answer the team gave is left alone, the
+  controls are never ticked, nothing is added before adoption, adoption adds
+  the next id, running is refused until pre-filled answers are confirmed, and
+  the approved record, provenance and activity log all show what RAIA proposed.
+
+#### Still open, by decision
+
+- The suggestion rules and the candidate check are lexical and transparent, by
+  design; whether candidates are *good* is for the panel to judge.
+- Only the Requirements Reviewer recommends. The hook is generic; other agents
+  can adopt it after the panel.
+
 ### 2026-09-23 — A Guide page for testers (branch `tester-feedback`)
 
 Decision D29.

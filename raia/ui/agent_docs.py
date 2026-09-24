@@ -43,8 +43,16 @@ DOCS: Dict[str, Dict[str, object]] = {
             "each of the seven Responsible AI principles, tested against your requirements and "
             "existing controls.",
             "Lists the uncovered cells as gaps, so a gap is computed rather than asserted.",
+            "On request, pre-fills the stakeholder and principle questions you left empty from the "
+            "approved classification, with a reason per value, and offers a few candidate requirements "
+            "for the gaps your answers leave. Candidates that cite no retrieved excerpt, address a gap "
+            "that was not computed or have no testable fit criterion are dropped before you see them.",
+            "Keeps adopted recommendations apart from the requirements the team wrote: coverage that "
+            "rests on one is marked as such in the record.",
         ],
         "you": [
+            "Which recommended requirements to adopt, edit or reject, one at a time, and whether "
+            "pre-filled answers reflect the project. The controls in place are never pre-filled.",
             "Which proposed ethical value requirements the team adopts.",
             "How stakeholder values are weighed where they conflict.",
         ],

@@ -36,6 +36,9 @@ LIMITATIONS: Dict[str, List[str]] = {
         "that a requirement is absent or adequate.",
         "Value elicitation is recorded from the declared stakeholders; it does not replace eliciting "
         "values from those stakeholders.",
+        "Suggested stakeholders and principles follow fixed rules over the classification: a starting "
+        "point for elicitation, not a substitute for it. Recommended requirements are candidates; "
+        "adopting one makes it the team's commitment to deliver.",
     ],
     "story_refiner": [
         "Card selection follows the declared capabilities and upstream answers; a capability not "
@@ -55,7 +58,9 @@ LIMITATIONS: Dict[str, List[str]] = {
 CHECKS: Dict[str, List[str]] = {
     "risk_classifier": ["Every computed obligation code has a note, and no other code appears"],
     "requirements_reviewer": ["Every assigned EVR id has a requirement and a gap note, and no other id appears",
-                              "Every requirement carries a testable element"],
+                              "Every requirement carries a testable element",
+                              "A recommended candidate is shown only if it addresses a computed gap, cites "
+                              "a retrieved excerpt and has a testable fit criterion"],
     "story_refiner": ["Every story id has an entry", "Only selected ECCOLA cards and approved EVR ids are used",
                       "Criteria are labelled AC-<story>-<n>"],
     "auditor": ["Every computed item has a verdict", "An unevidenced item is never upgraded (restored by code)"],

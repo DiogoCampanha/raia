@@ -9,6 +9,7 @@ network and no vector store, so a failure here is always a real regression.
     python tests/test_engines.py
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -146,6 +147,116 @@ def test_coverage() -> None:
     covered = coverage.run({**inputs, "existing_controls": list(coverage.CONTROLS)}, upstream)
     check(covered.verdict["obligation_gaps"] < r.verdict["obligation_gaps"],
           "declaring controls closes obligation gaps")
+
+
+def test_suggestions() -> None:
+    print("== suggestions from the approved classification ==")
+    upstream = {"risk_classification": {"data": risk_screen.run(RESUME_INTAKE).data}}
+    s = coverage.suggest_intake(upstream)
+    check(set(s["fields"]) <= set(coverage.SUGGESTIBLE_FIELDS),
+          "only the context questions are ever suggested")
+    check(not set(s["fields"]) & set(coverage.NEVER_SUGGESTED),
+          "controls, requirements, constraints and format are never suggested")
+    for key, meta in s["fields"].items():
+        check(meta["values"] and set(meta["values"]) == set(meta["reasons"]),
+              f"every suggested {key} value carries a reason")
+    stakeholders = s["fields"]["stakeholders"]["values"]
+    check({"subjects", "vulnerable", "workers"} <= set(stakeholders),
+          "a high-risk hiring system suggests the people decided about, the vulnerable and workers")
+    values = s["fields"]["values_at_stake"]["values"]
+    check("fairness" in values and "human_oversight" in values,
+          "protected attributes and full automation put fairness and oversight at stake")
+    check(len(values) < len(principles.PRINCIPLES),
+          "principles are proposed on specific facts, not all seven for any high-risk system")
+    check(any(h["key"] == "human_review" for h in s["control_hints"]),
+          "controls are hinted from the assigned obligations")
+    check(coverage.suggest_intake({}) == {"fields": {}, "basis": "", "control_hints": []},
+          "no approved classification, no suggestion")
+    minimal = coverage.suggest_intake({"risk_classification": {"data": risk_screen.run({
+        **RESUME_INTAKE, "purpose_areas": ["none"], "data_categories": ["none"],
+        "decision_autonomy": "informational", "human_oversight": "human_decides",
+        "significant_effects": "no"}).data}})
+    check("values_at_stake" not in minimal["fields"] and "vulnerable" not in
+          minimal["fields"].get("stakeholders", {}).get("values", []),
+          "a low-stakes informational tool gets no principle and no vulnerable-group suggestion")
+
+    print("== adopted recommendations stay distinguishable ==")
+    base_reqs = "R1. Rank applications by fit.\nR2. Process 10000 resumes per hour."
+    added = coverage.next_requirement(base_reqs, "numbered",
+                                      "A person shall be able to override an individual ranking "
+                                      "decision and escalate it. Fit criterion: override tested each release.")
+    check(added["id"] == "R3" and added["text"].endswith(added["line"]),
+          "an adopted requirement takes the next id in the team's format")
+    parsed = coverage.parse_requirements(added["text"], "numbered")
+    check(parsed[-1]["id"] == "R3", "…and parses back to the same id")
+    prose = coverage.next_requirement("First paragraph.\n\nSecond one.", "prose", "Third.")
+    check(prose["id"] == "R3" and coverage.parse_requirements(prose["text"], "prose")[-1]["id"] == "R3",
+          "prose requirements get a positional id that parses back")
+
+    inputs = {"requirements": added["text"], "requirement_format": "numbered",
+              "existing_controls": ["logging"], "values_at_stake": values,
+              "stakeholders": stakeholders, "constraints": ""}
+    team_only = coverage.run({**inputs, "requirements": base_reqs}, upstream)
+    with_plain = coverage.run(inputs, upstream)
+    origin = {"fields": {"stakeholders": {"values": stakeholders, "reasons": {}},
+                         "values_at_stake": {"values": values, "reasons": {}}},
+              "adopted": [{"id": "R3", "text": added["line"], "candidate_id": "C1",
+                           "addresses": "eu.art14", "edited": False}],
+              "reviewed_by": "Tester"}
+    with_origin = coverage.run({**inputs, coverage.ORIGIN_KEY: origin}, upstream)
+    check(with_origin.verdict["gap_count"] == with_plain.verdict["gap_count"] < team_only.verdict["gap_count"],
+          "an adopted requirement closes gaps the same way a written one does")
+    statuses = list(with_origin.data["principle_coverage"].values())
+    check(coverage.ADOPTED_STATUS in statuses and coverage.ADOPTED_STATUS not in
+          with_plain.data["principle_coverage"].values(),
+          "…but the cells it closes are marked as resting on an adopted suggestion")
+    codes = [f.code for f in with_origin.findings]
+    check("requirements.adopted_suggestions" in codes and "intake.suggested.stakeholders" in codes,
+          "the rationale reports adopted requirements and pre-filled answers")
+    check(with_origin.data["suggestion_origin"]["fields"]["stakeholders"]["status"] == "unchanged",
+          "a pre-filled answer kept as proposed is reported as such")
+    edited = coverage.run({**inputs, "stakeholders": stakeholders[:2], coverage.ORIGIN_KEY: origin}, upstream)
+    meta = edited.data["suggestion_origin"]["fields"]["stakeholders"]
+    check(meta["status"] == "edited" and meta["removed"], "a pre-filled answer the team changed is reported as edited")
+    gone = coverage.run({**inputs, "requirements": base_reqs, coverage.ORIGIN_KEY: origin}, upstream)
+    check(not gone.data["suggestion_origin"]["adopted"], "an adopted requirement the team deleted no longer counts")
+    rewritten = coverage.run({**inputs, "requirements": base_reqs + "\nR3. Something else entirely.",
+                              coverage.ORIGIN_KEY: origin}, upstream)
+    check(rewritten.data["suggestion_origin"]["adopted"][0]["edited"], "one the team rewrote is reported as edited")
+    forged = coverage.run({**inputs, coverage.ORIGIN_KEY: {"fields": {"existing_controls": {
+        "values": list(coverage.CONTROLS)}}}}, upstream)
+    check("existing_controls" not in forged.data["suggestion_origin"]["fields"],
+          "an origin record can never mark controls as suggested")
+
+
+def test_recommendation_checks() -> None:
+    print("== candidate requirements are checked before anyone sees them ==")
+    from raia.agents.requirements_reviewer import RequirementsReviewerAgent as RR
+    allowed = ["[Source: IEEE 7000-2021 (Value-Based Engineering) — Writing Good EVRs | authority: standard]"]
+    gaps = [{"ref": "eu.art14", "kind": "obligation", "subject": "Human oversight"},
+            {"ref": "fairness", "kind": "principle", "subject": "Could outputs disadvantage a group?"}]
+    good = {"addresses": "eu.art14", "value": "human_oversight", "statement": "A recruiter shall be able to "
+            "override any ranking.", "fit_criterion": "Override path tested in every release.",
+            "verification_method": "test",
+            "citations": ["[Source: IEEE 7000-2021 (Value-Based Engineering) - Writing Good EVRs | authority: standard]"]}
+    reply = json.dumps({"candidates": [
+        good,
+        {**good},                                                        # duplicate gap
+        {**good, "addresses": "eu.art99"},                               # invented gap
+        {**good, "addresses": "fairness", "citations": ["[Source: Made up | authority: legal]"]},
+        {**good, "addresses": "fairness", "fit_criterion": "The system shall be fair."},
+    ]})
+    kept, dropped = RR._check_candidates(reply, ["eu.art14", "fairness"], allowed, gaps)
+    check(len(kept) == 1 and kept[0]["id"] == "C1" and kept[0]["citations"] == allowed,
+          "a grounded, verifiable candidate is kept, with the retriever's own citation spelling")
+    reasons = " ".join(d["reason"] for d in dropped)
+    check(len(dropped) == 4, "four bad candidates are dropped")
+    check("did not compute" in reasons and "same gap" in reasons and "No citation" in reasons
+          and "testable" in reasons, "…each with its reason")
+    _, bad = RR._check_candidates("not json", ["eu.art14"], allowed, gaps)
+    check(bad and "JSON" in bad[0]["reason"], "an unreadable reply offers nothing, and says so")
+    check(V.is_verifiable("Selection rates within 0.8 ratio") and not V.is_verifiable("be fair and nice"),
+          "verifiability is lexical and transparent")
 
 
 def test_story_map() -> None:
@@ -345,7 +456,8 @@ def test_temperature_fallback() -> None:
 
 
 def main() -> None:
-    for fn in (test_risk_screen, test_risk_screen_how_the_ai_works, test_coverage, test_story_map, test_traceability,
+    for fn in (test_risk_screen, test_risk_screen_how_the_ai_works, test_coverage, test_suggestions,
+               test_recommendation_checks, test_story_map, test_traceability,
                test_drift, test_validators, test_sanitize, test_principles,
                test_temperature_fallback):
         fn()

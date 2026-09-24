@@ -107,6 +107,26 @@ def _risk(ext: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
+def _origin_note(origin: Dict[str, Any]) -> str:
+    """Computed statement of which inputs RAIA proposed and a person adopted."""
+    adopted = origin.get("adopted") or []
+    fields = origin.get("fields") or {}
+    if not adopted and not fields:
+        return ""
+    parts = []
+    if adopted:
+        edited = [a["id"] for a in adopted if a.get("edited")]
+        parts.append(", ".join(a["id"] for a in adopted) + " were recommended by RAIA and adopted by the team"
+                     + (f" ({', '.join(edited)} edited)" if edited else "") + "; coverage marked "
+                     "'addressed by an adopted suggestion' rests on them.")
+    names = {"stakeholders": "stakeholder groups", "values_at_stake": "principles at stake"}
+    for key, meta in fields.items():
+        parts.append(f"The {names.get(key, key)} were pre-filled from the approved risk classification and "
+                     + ("kept as proposed" if meta.get("status") == "unchanged" else "adjusted by the team")
+                     + (f", reviewed by {origin['reviewed_by']}" if origin.get("reviewed_by") else "") + ".")
+    return "\n\n**Where the inputs came from (computed).** " + " ".join(parts)
+
+
 def _requirements(ext: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, str]:
     ia = ext.get("impact_assessment") or {}
     gaps = {g.get("evr_id"): g for g in data.get("gaps") or []}
@@ -122,7 +142,7 @@ def _requirements(ext: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, str]:
         "Gap Analysis": table(
             ["EVR id", "Derived from (computed)", "Why it matters here", "Grounding"],
             [[g.get("evr_id"), f"{gaps.get(g.get('evr_id'), {}).get('kind', '—')} {gaps.get(g.get('evr_id'), {}).get('ref', '')}",
-              g.get("explanation"), cites(g.get("citations"))] for g in ext.get("gap_analysis") or []]),
+              g.get("explanation"), cites(g.get("citations"))] for g in ext.get("gap_analysis") or []]) + _origin_note(data.get("suggestion_origin") or {}),
         "Ethical Value Requirements": table(
             ["EVR id", "Value", "Stakeholders", "Requirement", "Fit criterion", "Verification", "Traces to", "Grounding"],
             [[e.get("id"), V.PRINCIPLE_NAMES.get(e.get("value"), e.get("value")), e.get("stakeholders"),

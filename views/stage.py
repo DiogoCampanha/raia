@@ -7,7 +7,8 @@ from raia.deploy import friendly_llm_error
 from raia.projects import AccessDenied, UsageLimitReached
 from raia.ui import routes
 from raia.ui.components import artifact_body, page_header, stage_tracker, status_badge
-from raia.ui.gate import intake_form, review_gate
+from raia.rationale.coverage import ORIGIN_KEY
+from raia.ui.gate import intake_form, pending_suggestions, review_gate
 from raia.ui.state import current_user, flash, get_service, open_project, pkey, show_flash
 from raia.ui.theme import I
 
@@ -147,12 +148,25 @@ inputs = intake_form(proj, agent, can_run)
 if not can_run:
     st.stop()
 
+# Answers RAIA pre-filled are the team's only once a person says so.
+ack_key = pkey("suggest_ack", agent_key)
+unreviewed = pending_suggestions(agent_key)
+if unreviewed:
+    st.checkbox("I reviewed the pre-filled answers (" + ", ".join(unreviewed) + ") and they "
+                "reflect this project", key=ack_key)
+
 if st.button(f"Run {spec.name}", type="primary", key=pkey("run", agent_key), icon=I.RUN):
     blanks = agent.missing_inputs(inputs)
     if blanks:
         st.error("These answers decide the outcome, so they are required: **"
                  + "**, **".join(blanks) + "**.")
         st.stop()
+    if pending_suggestions(agent_key) and not st.session_state.get(ack_key):
+        st.error("Some answers were pre-filled by RAIA and have not been reviewed. Check them, "
+                 "then confirm above that they reflect this project.", icon=I.WARN)
+        st.stop()
+    if ORIGIN_KEY in inputs:
+        inputs[ORIGIN_KEY] = {**inputs[ORIGIN_KEY], "reviewed_by": user.label}
     with st.spinner(f"{spec.name} is applying its decision procedure and reading the norms"):
         try:
             result = svc.start_run(user, proj.id, agent_key, inputs)
