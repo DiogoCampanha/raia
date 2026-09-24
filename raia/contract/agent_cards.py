@@ -41,8 +41,10 @@ LIMITATIONS: Dict[str, List[str]] = {
         "adopting one makes it the team's commitment to deliver.",
     ],
     "story_refiner": [
-        "Card selection follows the declared capabilities and upstream answers; a capability not "
-        "declared does not select its cards.",
+        "Card selection follows each story's declared capabilities and the upstream answers; a "
+        "capability not declared does not select its cards.",
+        "A conflict is flagged by the agent and settled by a person; an existing criterion is never "
+        "changed by RAIA.",
         "Acceptance criteria are checked for form, not for whether the threshold is right.",
     ],
     "auditor": [
@@ -61,8 +63,9 @@ CHECKS: Dict[str, List[str]] = {
                               "Every requirement carries a testable element",
                               "A recommended candidate is shown only if it addresses a computed gap, cites "
                               "a retrieved excerpt and has a testable fit criterion"],
-    "story_refiner": ["Every story id has an entry", "Only selected ECCOLA cards and approved EVR ids are used",
-                      "Criteria are labelled AC-<story>-<n>"],
+    "story_refiner": ["Every story id has an entry", "Only cards in scope for each story and approved EVR ids are used",
+                      "Criteria are labelled AC-<story>-<n>",
+                      "A conflict names an existing criterion of its own story, and opens a decision (by code)"],
     "auditor": ["Every computed item has a verdict", "An unevidenced item is never upgraded (restored by code)"],
     "drift_monitor": ["One alert per computed breach, with the computed severity (restored by code)",
                       "Every figure in the prose is in the computed set"],

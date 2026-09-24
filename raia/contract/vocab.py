@@ -33,7 +33,7 @@ from typing import Dict, List, Tuple
 
 from ..rationale.principles import PRINCIPLES
 
-SCHEMA_VERSION = "raia-record/1.0"
+SCHEMA_VERSION = "raia-record/1.1"
 
 # -- The seven principles -----------------------------------------------------
 
@@ -141,6 +141,10 @@ OWNER_LABELS: Dict[str, str] = {
 }
 
 REVIEW_CADENCES: Tuple[str, ...] = ("once", "every_sprint", "every_release", "continuous")
+CADENCE_LABELS: Dict[str, str] = {
+    "once": "once", "every_sprint": "every sprint", "every_release": "every release",
+    "continuous": "continuously",
+}
 
 # -- IEEE 7000: verification of an ethical value requirement ------------------
 
@@ -188,6 +192,10 @@ ECCOLA_CARDS: Dict[str, str] = {
 # list from what code computed, never up.
 
 AUDIT_VERDICTS: Tuple[str, ...] = ("satisfied", "partially_satisfied", "at_risk", "not_verified")
+AUDIT_VERDICT_LABELS: Dict[str, str] = {
+    "satisfied": "Satisfied", "partially_satisfied": "Partially satisfied",
+    "at_risk": "At risk", "not_verified": "Not verified",
+}
 
 # -- Open issues ----------------------------------------------------------------
 
@@ -208,7 +216,18 @@ ISSUE_TYPE_LABELS: Dict[str, str] = {
 # -- Priority and overall status ----------------------------------------------
 
 PRIORITIES: Tuple[str, ...] = ("low", "medium", "high", "critical")
+PRIORITY_LABELS: Dict[str, str] = {"low": "Low", "medium": "Medium", "high": "High", "critical": "Critical"}
 OVERALL_STATUSES: Tuple[str, ...] = ("on_track", "needs_attention", "blocked")
+STATUS_LABELS: Dict[str, str] = {"on_track": "On track", "needs_attention": "Needs attention",
+                                 "blocked": "Blocked"}
+
+#: How the action plan is read at a glance: what to do now, what to plan, what
+#: to keep an eye on. Grouping follows the computed priority only.
+ACTION_GROUPS: Tuple[Tuple[str, str, Tuple[str, ...], str], ...] = (
+    ("now", "Do now", ("critical", "high"), "Critical and high priority"),
+    ("plan", "Plan", ("medium",), "Medium priority: schedule it"),
+    ("track", "Track", ("low",), "Low priority: keep an eye on it"),
+)
 
 AUTHORITY_LEVELS: Tuple[str, ...] = ("legal", "standard", "advisory")
 

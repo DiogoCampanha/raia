@@ -1,5 +1,5 @@
 {
-  "$id": "raia-record/1.0/story_refiner",
+  "$id": "raia-record/1.1/story_refiner",
   "title": "StoryRefinerRecord",
   "$defs": {
     "AcceptanceCriterion": {
@@ -39,8 +39,8 @@
           "type": "string"
         },
         "condition": {
-          "description": "Measurable condition with its threshold.",
-          "maxLength": 400,
+          "description": "Measurable condition with its threshold, written as an acceptance criterion.",
+          "maxLength": 250,
           "title": "Condition",
           "type": "string"
         },
@@ -97,8 +97,8 @@
           "type": "array"
         },
         "action": {
-          "description": "Imperative, specific, checkable: what is done.",
-          "maxLength": 400,
+          "description": "One sentence starting with a verb: what is done, specific and checkable.",
+          "maxLength": 250,
           "title": "Action",
           "type": "string"
         },
@@ -162,8 +162,8 @@
           "type": "string"
         },
         "evidence_artifact": {
-          "description": "The artifact that will demonstrate completion.",
-          "maxLength": 200,
+          "description": "The artifact that will demonstrate completion, named concretely.",
+          "maxLength": 150,
           "title": "Evidence Artifact",
           "type": "string"
         },
@@ -226,8 +226,8 @@
           "type": "string"
         },
         "justification": {
-          "description": "One sentence.",
-          "maxLength": 300,
+          "description": "One short sentence.",
+          "maxLength": 200,
           "title": "Justification",
           "type": "string"
         }
@@ -240,6 +240,42 @@
       "title": "CoverageItem",
       "type": "object"
     },
+    "CriterionConflict": {
+      "properties": {
+        "criterion_id": {
+          "description": "The id of one of the story's EXISTING acceptance criteria (e.g. S1-E2), exactly.",
+          "title": "Criterion Id",
+          "type": "string"
+        },
+        "conflicts_with": {
+          "description": "What it conflicts with: approved EVR ids, selected ECCOLA card ids or principle keys.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Conflicts With",
+          "type": "array"
+        },
+        "problem": {
+          "description": "One sentence: why the existing criterion conflicts.",
+          "maxLength": 250,
+          "title": "Problem",
+          "type": "string"
+        },
+        "suggested_rewrite": {
+          "default": "",
+          "description": "The criterion rewritten so the conflict is gone.",
+          "maxLength": 250,
+          "title": "Suggested Rewrite",
+          "type": "string"
+        }
+      },
+      "required": [
+        "criterion_id",
+        "problem"
+      ],
+      "title": "CriterionConflict",
+      "type": "object"
+    },
     "Finding": {
       "properties": {
         "id": {
@@ -248,14 +284,14 @@
           "type": "string"
         },
         "title": {
-          "description": "One line naming the risk or gap.",
-          "maxLength": 160,
+          "description": "The risk or gap in a few words (at most 12).",
+          "maxLength": 120,
           "title": "Title",
           "type": "string"
         },
         "statement": {
-          "description": "What could go wrong or is missing, for whom, and why it matters here.",
-          "maxLength": 700,
+          "description": "One or two sentences: what could go wrong or is missing, for whom, here.",
+          "maxLength": 400,
           "title": "Statement",
           "type": "string"
         },
@@ -322,8 +358,8 @@
           "type": "string"
         },
         "placement_rationale": {
-          "description": "Why this magnitude and likelihood, from the inputs and evidence.",
-          "maxLength": 400,
+          "description": "One sentence: why this magnitude and likelihood.",
+          "maxLength": 250,
           "title": "Placement Rationale",
           "type": "string"
         },
@@ -439,12 +475,13 @@
           "type": "string"
         },
         "description": {
-          "maxLength": 700,
+          "description": "The decision a person must take, in one or two sentences.",
+          "maxLength": 400,
           "title": "Description",
           "type": "string"
         },
         "options": {
-          "description": "The choices a person could make.",
+          "description": "The choices a person could make, a few words each.",
           "items": {
             "type": "string"
           },
@@ -510,15 +547,15 @@
           "type": "array"
         },
         "sprint_ethics_log": {
-          "description": "Decisions and rationales taken this sprint (ECCOLA documentation step).",
-          "maxLength": 1200,
+          "description": "Up to five decisions taken this sprint, one sentence each with its reason (ECCOLA documentation step).",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
           "title": "Sprint Ethics Log",
-          "type": "string"
+          "type": "array"
         }
       },
-      "required": [
-        "sprint_ethics_log"
-      ],
       "title": "RefinedStoriesExt",
       "type": "object"
     },
@@ -530,7 +567,7 @@
           "type": "string"
         },
         "eccola_cards": {
-          "description": "Selected ECCOLA card ids that make the story relevant.",
+          "description": "ECCOLA card ids in scope for THIS story that make it relevant.",
           "items": {
             "enum": [
               "#0",
@@ -562,23 +599,31 @@
         },
         "card_discussion": {
           "default": "",
-          "description": "The card questions, answered for this story.",
-          "maxLength": 900,
+          "description": "The cards' questions, answered for this story in two or three sentences.",
+          "maxLength": 400,
           "title": "Card Discussion",
           "type": "string"
         },
         "criteria": {
-          "description": "Verifiable acceptance criteria (Microsoft RAI Standard v2 requirement pattern).",
+          "description": "New verifiable ethical acceptance criteria (Microsoft RAI Standard v2 requirement pattern). Do not repeat the story's existing criteria.",
           "items": {
             "$ref": "#/$defs/AcceptanceCriterion"
           },
           "title": "Criteria",
           "type": "array"
         },
+        "conflicts": {
+          "description": "Existing acceptance criteria of this story that conflict with an approved requirement or a selected card. Only real conflicts; leave empty otherwise.",
+          "items": {
+            "$ref": "#/$defs/CriterionConflict"
+          },
+          "title": "Conflicts",
+          "type": "array"
+        },
         "no_impact_reason": {
           "default": "",
-          "description": "Only for a story with no ethical impact.",
-          "maxLength": 300,
+          "description": "Only for a story with no ethical impact: one line.",
+          "maxLength": 200,
           "title": "No Impact Reason",
           "type": "string"
         }
@@ -591,9 +636,17 @@
     }
   },
   "properties": {
+    "headline": {
+      "default": "",
+      "description": "The bottom line in one sentence a busy reader can act on: the verdict and what it means for the team.",
+      "maxLength": 160,
+      "model_required": true,
+      "title": "Headline",
+      "type": "string"
+    },
     "summary": {
-      "description": "The bottom line a reviewer reads first; at most five sentences.",
-      "maxLength": 1200,
+      "description": "At most three sentences that add to the headline: the main risks and what must happen next. No framework explanations.",
+      "maxLength": 600,
       "title": "Summary",
       "type": "string"
     },

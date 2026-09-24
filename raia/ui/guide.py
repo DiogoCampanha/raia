@@ -88,10 +88,13 @@ STEPS: List[Step] = [
         "Run the agent and read the draft",
         "Press **Run Risk Classifier**. After a short wait the draft appears under **Human "
         "review required**, with four tabs:\n\n"
-        "- **Draft** — the result, in the standard record every stage uses: Summary, Findings, "
-        "the stage's own sections, Action Plan, Open Issues, Not Grounded, Declared Coverage.\n"
-        "- **Edit the record** — change the record's fields (a summary, a finding's placement, an "
-        "action's owner). The software recomputes priorities and re-renders the draft.\n"
+        "- **Draft** — the result, read the same way at every stage: a **summary** (status, "
+        "headline, the risks found, actions to take, decisions needed, the main issues), then "
+        "**What to do** (action cards grouped *Do now*, *Plan* and *Track*, and the decisions only "
+        "a person can take; filter them by owner), then a **Deep dive** you open only when you "
+        "want the analysis behind each point.\n"
+        "- **Edit the record** — change the record's fields (the headline, a finding's placement, "
+        "an action's owner). The software recomputes priorities and redraws the draft.\n"
         "- **Evidence** — the norm excerpts that were actually retrieved. Pick a citation in "
         "the draft and check that you can find it here.\n"
         "- **What the code computed** — what the rules decided before the model was called. "
@@ -117,7 +120,12 @@ STEPS: List[Step] = [
         "proposes a few candidate requirements for the gaps that remain. **Adopt**, edit or "
         "**Reject** each one; nothing counts until you adopt it, and before running you confirm "
         "that the pre-filled answers reflect your project. The record then says which "
-        "requirements RAIA recommended and you adopted.",
+        "requirements RAIA recommended and you adopted.\n\n"
+        "In the **User Story Refiner**, add each story on its own card with its acceptance "
+        "criteria and what it touches (or paste several at once and check the cards). RAIA adds "
+        "ethical criteria per story and flags any existing criterion that conflicts; each "
+        "conflict becomes a decision for you. **Updated stories, ready to paste** gives the "
+        "result in a form you can copy back to your tracker.",
     ),
     Step(
         "Revise a stage and re-check what depends on it",
@@ -182,8 +190,9 @@ LOOK_FOR: List[Tuple[str, str]] = [
      "are there, whether the agent covered its checklist, and whether it agrees with the rules."),
     ("Every stage answers in the same standard record.",
      "Findings are placed on likelihood and magnitude, and the software, not the model, computes "
-     "their priority. Every action names a response, an owner, a lifecycle stage and how it will "
-     "be verified. You edit fields, not prose."),
+     "their priority. Every action names an owner, when it happens and what shows it is done. "
+     "Every stage reads summary first, then what to do, then the deep dive. You edit fields, "
+     "not prose."),
     ("Disagreement is escalated, not resolved.",
      "When a rule and an agent disagree, two norms of equal authority conflict, or your answers "
      "contradict each other, it goes to **Open issues** instead of being smoothed over."),

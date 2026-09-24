@@ -287,6 +287,32 @@ def test_story_map() -> None:
     check(len(quiet.verdict["card_ids"]) < len(cards),
           "no declared capability and no risk context -> fewer cards, not all of them")
 
+    pasted = story_map.normalize_stories(
+        "US-12: Ranked shortlist\nAs a recruiter, I want a shortlist.\nAcceptance criteria:\n"
+        "- Shows 20 candidates\n- Loads in under 2 seconds\n\nPROJ-7 As an HR manager I want a report.\n"
+        "Given a month, when I open it, then I see throughput\nAC2: exports to CSV")
+    check([x["id"] for x in pasted] == ["S12", "PROJ-7"], "pasted stories keep the team's ids")
+    check(pasted[0]["title"] == "Ranked shortlist" and [c["id"] for c in pasted[0]["criteria"]] == ["S12-E1", "S12-E2"],
+          "acceptance criteria stay with their story, each with its own id")
+    check(len(pasted[1]["criteria"]) == 2 and pasted[1]["criteria"][1]["text"] == "exports to CSV",
+          "…including Given/When/Then lines and AC-numbered lines, which are not stories")
+
+    per_story = story_map.run(
+        {"user_stories": [
+            {"id": "S1", "title": "Rank", "description": "As a recruiter, I want a ranking.",
+             "acceptance_criteria": "Top 20 shown\nUnder 2 seconds", "capabilities": ["scoring"]},
+            {"id": "S1", "description": "As an admin, I want a report.", "capabilities": ["analytics"]},
+            {"description": "", "title": "", "acceptance_criteria": ""}]},
+        {"risk_classification": {"data": {}}, "requirements_review": {"data": {}}},
+    )
+    v = per_story.verdict
+    check(v["story_ids"] == ["S1", "S2"], "a duplicate id is replaced and an empty card is ignored")
+    check("#16" in v["story_cards"]["S1"] and "#16" not in v["story_cards"]["S2"],
+          "cards are selected per story, from that story's capabilities")
+    check(v["existing_criteria"] == {"S1": ["S1-E1", "S1-E2"]}, "existing criteria are registered per story")
+    check(story_map.stories_missing([{"description": "x", "capabilities": []}]) == ["S1: what it touches"],
+          "a story without its capabilities is reported as missing an answer")
+
 
 def test_traceability() -> None:
     print("== audit traceability ==")

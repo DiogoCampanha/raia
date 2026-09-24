@@ -113,7 +113,8 @@ summary, findings placed on likelihood and magnitude, actions, typed open
 issues, declared coverage — and an extension shaped by the agent's normative
 source. Code assigns the identifiers, computes risk level and priority,
 carries the engine's issues forward, and renders the one layout every artifact
-follows. A reviewer edits the record's fields at the gate, never its prose.
+follows — summary, then what to do, then the deep dive, on screen and in the
+document alike (`raia/contract/digest.py`). A reviewer edits the record's fields at the gate, never its prose.
 The standard is specified in `docs/output-contract.md`.
 
 ```mermaid

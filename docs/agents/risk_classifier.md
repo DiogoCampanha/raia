@@ -90,22 +90,22 @@ Excerpts pinned for the canonical scenario:
 
 ## 7. The record it produces
 
-Schema `raia-record/1.0` — `docs/schema/risk_classifier.schema.json`. Identifier prefix `RC`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.1` — `docs/schema/risk_classifier.schema.json`. Identifier prefix `RC`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
-| `prohibited_screen` | Result of the EU AI Act Art. 5 and PL 2338 excessive-risk screen. |
-| `eu_tier_justification` | Why the EU tier holds, naming the area or article. |
-| `br_tier_justification` | Why the Brazilian tier holds, naming the area. |
+| `prohibited_screen` | Result of the EU AI Act Art. 5 and PL 2338 excessive-risk screen, conclusion first. |
+| `eu_tier_justification` | Why the EU tier holds, naming the area or article; at most two sentences. |
+| `br_tier_justification` | Why the Brazilian tier holds, naming the area; at most two sentences. |
 | `obligations` | One note per computed obligation code. |
 | `obligations[].code` | An obligation code from the computed table, exactly. |
-| `obligations[].meaning_for_this_product` | One or two sentences for this product. |
+| `obligations[].meaning_for_this_product` | One sentence: what the team must do or show for this product. |
 | `obligations[].citations` | Citation tags copied exactly from the retrieved excerpts, e.g. "[Source: ... / authority: legal]". Never invent one. |
-| `human_oversight_assessment` | Whether the declared oversight design meets the oversight obligations. |
-| `affected_persons_rights` | How affected persons' rights are operationalised in the product. |
+| `human_oversight_assessment` | Whether the declared oversight design meets the oversight obligations, conclusion first. |
+| `affected_persons_rights` | How affected persons' rights are operationalised in the product, conclusion first. |
 | `impact_assessments` | Which impact assessments the instruments require (fundamental rights / algorithmic). |
 
-Rendered sections: Summary → Findings → Risk Classification → Applicable Legal Obligations → Human Oversight and Affected Persons → Action Plan → Open Issues → Not Grounded in Retrieved Excerpts → Declared Coverage.
+Rendered sections: Summary → Action Plan → Open Issues → Findings → Risk Classification → Applicable Legal Obligations → Human Oversight and Affected Persons → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
 
 Verdict keys the agent declares: `eu_tier`, `br_tier`.
 

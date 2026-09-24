@@ -2,20 +2,24 @@
 User Story Refiner agent (Dev layer — Iterative development / sprints).
 
 RAIA agent specification:
-  Inputs   : backlog user stories, the capabilities they touch, and the
+  Inputs   : the sprint's user stories — each with its description, existing
+             acceptance criteria and the capabilities it touches — and the
              approved risk classification and ethical requirements
   Outputs  : refined stories with verifiable ethical acceptance criteria
   Grounding: ECCOLA cards; Microsoft RAI Standard v2 verifiable requirements
 
 ECCOLA's own method is that relevant cards are selected per sprint. That
-selection is computed here from the approved risk tier, the declared data
-categories and the capabilities this sprint touches, so every card in scope
-carries the reason it is in scope. The story register is a counted invariant:
+selection is computed here, story by story, from the approved risk tier, the
+declared data categories and the capabilities each story touches, so every
+card in scope carries the reason — and the stories — it is in scope for.
+Existing acceptance criteria stay the team's: the agent adds new ethical
+criteria and flags an existing one only when it conflicts, and code turns
+each conflict into a decision for a person. The story register is a counted invariant:
 every story that goes in comes back out, refined or explicitly justified as
 having no ethical impact — absence of action has to be auditable too.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from ..contract import checks as contract_checks
 from ..fields import InputField
@@ -23,8 +27,8 @@ from ..rationale import story_map
 from ..rationale.types import RationaleResult
 from .base import AgentSpec, BaseAgent
 
-G_BACKLOG = "1 · The sprint's backlog"
-G_SCOPE = "2 · What these stories touch"
+G_STORIES = "1 · The stories"
+G_SPRINT = "2 · The sprint"
 
 
 class UserStoryRefinerAgent(BaseAgent):
@@ -34,14 +38,15 @@ class UserStoryRefinerAgent(BaseAgent):
         layer="Dev",
         sdlc_phase="Iterative development (sprints)",
         description=(
-            "Selects the ethical themes that actually apply to this sprint and adds "
-            "verifiable acceptance criteria to the backlog stories."
+            "Selects the ethical themes that actually apply to each story and adds "
+            "verifiable acceptance criteria, flagging existing criteria that conflict."
         ),
         intro=(
-            "Which ethical themes apply is computed from the approved classification and the "
-            "capabilities you declare below — so the selection is traceable rather than a "
-            "judgement call the agent made silently. Every story you paste comes back either "
-            "refined or explicitly justified as having no ethical impact."
+            "Add each story on its own, with its acceptance criteria and what it touches. Which "
+            "ethical themes apply is computed per story from those answers and the approved "
+            "classification. Every story comes back either with new ethical criteria or with a "
+            "one-line reason it needs none; existing criteria that conflict are flagged for you "
+            "to decide."
         ),
         grounding_sources=["eccola", "ms_rai_v2"],
         upstream_keys=["risk_classification", "requirements_review"],
@@ -51,63 +56,74 @@ class UserStoryRefinerAgent(BaseAgent):
         verdict_keys=["story_count"],
         input_fields=[
             InputField(
-                key="user_stories", label="Backlog user stories", group=G_BACKLOG, required=True,
-                height=220,
-                help="One story per line or per paragraph. Existing ids (S1, US-12) are preserved; "
-                     "unlabelled stories are numbered for you.",
+                key="user_stories", label="User stories", kind="stories", group=G_STORIES,
+                required=True, options=story_map.CAPABILITY_OPTIONS,
+                renderer=story_map.render_stories, missing=story_map.stories_missing,
+                parse=story_map.parse_backlog,
+                help="One card per story. Its answer to \"What does it touch?\" selects the ethical "
+                     "themes for that story.",
             ),
             InputField(
-                key="sprint_goal", label="Sprint goal", kind="text", group=G_BACKLOG,
+                key="sprint_goal", label="Sprint goal", kind="text", group=G_SPRINT,
                 help="One line. Used to focus retrieval and to judge whether a criterion is "
                      "realistic inside this sprint.",
             ),
             InputField(
-                key="touched_capabilities", label="What do these stories touch?",
-                kind="multiselect", group=G_SCOPE, required=True,
-                options=story_map.CAPABILITY_OPTIONS,
-                help="This answer selects the ethical themes. Leaving it empty means only the "
-                     "always-relevant themes apply.",
-            ),
-            InputField(
                 key="definition_of_done", label="Your definition of done", kind="textarea",
-                group=G_SCOPE, height=100,
+                group=G_SPRINT, height=100,
                 help="If you have one, criteria will be written in its terms so they fit the "
                      "team's existing process rather than sitting beside it.",
             ),
         ],
         task_prompt=(
             "Refine this sprint's stories with the ECCOLA method and the Microsoft RAI Standard v2 "
-            "verifiable-requirement pattern. The selected cards and the story ids are given to "
-            "you: do not invent card ids, do not invent story ids, and do not leave a story "
-            "out.\n\n"
+            "verifiable-requirement pattern. The story ids, each story's existing acceptance "
+            "criteria and the cards in scope for each story are given to you: do not invent ids, "
+            "and do not leave a story out.\n\n"
             "In the extension, `stories` has exactly one entry per story id. For a story that "
-            "needs criteria: `eccola_cards` lists only selected card ids that make it relevant; "
-            "`card_discussion` answers those cards' questions for this story; `criteria` follow "
-            "the verifiable-requirement pattern — the Standard's goal, the affected stakeholder "
-            "group, a measurable `condition` with its threshold, the `evidence_artifact` that "
-            "demonstrates it and an owner — each labelled `AC-<story id>-<n>` (for example "
-            "`AC-S1-1`) and traced to an approved EVR id where one covers it. A story with no "
-            "ethical impact has no criteria and a one-line `no_impact_reason`. "
-            "`sprint_ethics_log` records the decisions taken and why, as ECCOLA's documentation "
-            "step asks.\n\n"
+            "needs ethical criteria: `eccola_cards` lists only cards in scope for THAT story that "
+            "make it relevant; `card_discussion` answers those cards' questions for this story in "
+            "two or three sentences; `criteria` are NEW criteria only — never restate an existing "
+            "one — following the verifiable-requirement pattern: the Standard's goal, the affected "
+            "stakeholder group, a measurable `condition` with its threshold, the "
+            "`evidence_artifact` that demonstrates it and an owner, each labelled "
+            "`AC-<story id>-<n>` (for example `AC-S1-1`) and traced to an approved EVR id where one "
+            "covers it. In `conflicts`, flag an existing criterion (by its id, e.g. `S1-E2`) only "
+            "when it conflicts with an approved requirement or a card in scope — say why in one "
+            "sentence and suggest a rewrite; the team decides. A story with no ethical impact has "
+            "no criteria and a one-line `no_impact_reason`. `sprint_ethics_log` lists up to five "
+            "decisions taken and why, one sentence each.\n\n"
             "Findings are the ethical risks this sprint introduces, linked to story and card ids. "
             "Actions are what the team does about them in this sprint or later."
         ),
     )
 
     def extra_checks(self, report, draft, rationale, record) -> None:
-        story_ids = rationale.verdict.get("story_ids") or []
-        card_ids = rationale.verdict.get("card_ids") or []
-        evr_ids = rationale.verdict.get("evr_ids") or []
+        verdict = rationale.verdict or {}
+        story_ids = verdict.get("story_ids") or []
+        card_ids = verdict.get("card_ids") or []
+        story_cards: Dict[str, List[str]] = verdict.get("story_cards") or {}
+        existing: Dict[str, List[str]] = verdict.get("existing_criteria") or {}
+        evr_ids = verdict.get("evr_ids") or []
         stories = (record.get("extension") or {}).get("stories") or []
         report.add(contract_checks.check_registered_ids(
             "Story register", "stories", story_ids, [s.get("story_id") for s in stories]))
+        if story_cards:
+            # Cards are selected per story: a card is in scope for the story whose capabilities chose it.
+            allowed = [f"{sid}:{c}" for sid, cards in story_cards.items() for c in cards]
+            used = [f"{s.get('story_id')}:{c}" for s in stories for c in s.get("eccola_cards") or []]
+        else:
+            allowed, used = card_ids, [c for s in stories for c in s.get("eccola_cards") or []]
         report.add(contract_checks.check_registered_ids(
-            "Card selection", "cards", card_ids,
-            [c for s in stories for c in s.get("eccola_cards") or []], require_all=False))
+            "Card selection", "cards", allowed, used, require_all=False))
         report.add(contract_checks.check_registered_ids(
             "Requirement references", "references", evr_ids,
             [e for s in stories for c in s.get("criteria") or [] for e in c.get("evr_ids") or []],
+            require_all=False))
+        report.add(contract_checks.check_registered_ids(
+            "Conflicting criteria", "conflicts",
+            [f"{sid}:{cid}" for sid, ids in existing.items() for cid in ids],
+            [f"{s.get('story_id')}:{c.get('criterion_id')}" for s in stories for c in s.get("conflicts") or []],
             require_all=False))
         report.add(contract_checks.check_criteria_ids(record))
 

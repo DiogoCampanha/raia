@@ -146,7 +146,10 @@ def main() -> None:
         check("Human review required" in text(at), "the gate is shown")
         check("Recorded in the audit trail as" in text(at), "…naming the signed-in approver")
         check(any("Edit the record" in t.label for t in at.tabs), "…with the record editor, not a text box")
-        check("Status:" in text(at) and "Action Plan" in text(at), "…and the draft in the standard layout")
+        check("Risks identified" in text(at) and "What to do" in text(at) and "Do now" in text(at),
+              "…and the draft reads summary first, then what to do")
+        check(any(t.label == "Traceability" for t in at.tabs) and "Deep dive" in str(at._tree),
+              "…with the deep dive, section by section, behind a dropdown")
         button(at, f"{pid1}::approve::{agent}").click()
         ok(at.run(), "the draft is approved")
         check("Approved and committed" in text(at), "approval is confirmed")
@@ -176,6 +179,18 @@ def main() -> None:
         else {"stage": 6, "project": 6, "home": 6}
     goto(at, "stage", project=pid1, agent="story_refiner")
     ok(at.run(), "the next stage opens")
+    check(any(t.value == "Ranked shortlist" for t in at.text_input if t.key and "::story::story_refiner::" in t.key),
+          "the demo project's stories open as one card each")
+    check(any(m.label.startswith("What does this story touch?") for m in at.multiselect),
+          "…each asking what that story touches")
+    cards = len([t for t in at.text_input if t.label == "Title"])
+    button(at, f"{pid1}::story_add::story_refiner").click()
+    ok(at.run(), "a story card can be added")
+    check(len([t for t in at.text_input if t.label == "Title"]) == cards + 1, "…and appears as a new card")
+    last_delete = [b for b in at.button if b.key and b.key.endswith("::del")][-1]
+    last_delete.click()
+    ok(at.run(), "a story card can be removed")
+    check(len([t for t in at.text_input if t.label == "Title"]) == cards, "…and disappears")
     field = next(t for t in at.text_area if t.key and "::in::story_refiner::" in t.key)
     field.input("A changed answer")
     stats.reset()

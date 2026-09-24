@@ -1,5 +1,5 @@
 {
-  "$id": "raia-record/1.0/drift_monitor",
+  "$id": "raia-record/1.1/drift_monitor",
   "title": "DriftMonitorRecord",
   "$defs": {
     "Action": {
@@ -18,8 +18,8 @@
           "type": "array"
         },
         "action": {
-          "description": "Imperative, specific, checkable: what is done.",
-          "maxLength": 400,
+          "description": "One sentence starting with a verb: what is done, specific and checkable.",
+          "maxLength": 250,
           "title": "Action",
           "type": "string"
         },
@@ -83,8 +83,8 @@
           "type": "string"
         },
         "evidence_artifact": {
-          "description": "The artifact that will demonstrate completion.",
-          "maxLength": 200,
+          "description": "The artifact that will demonstrate completion, named concretely.",
+          "maxLength": 150,
           "title": "Evidence Artifact",
           "type": "string"
         },
@@ -149,7 +149,8 @@
           "type": "string"
         },
         "meaning_for_affected_people": {
-          "maxLength": 600,
+          "description": "What this means for the people affected, in one or two sentences.",
+          "maxLength": 300,
           "title": "Meaning For Affected People",
           "type": "string"
         },
@@ -186,8 +187,8 @@
           "type": "string"
         },
         "justification": {
-          "description": "One sentence.",
-          "maxLength": 300,
+          "description": "One short sentence.",
+          "maxLength": 200,
           "title": "Justification",
           "type": "string"
         }
@@ -211,14 +212,14 @@
           "type": "array"
         },
         "trend_interpretation": {
-          "description": "The movement across windows (NIST AI RMF MEASURE 3).",
-          "maxLength": 900,
+          "description": "The movement across windows, conclusion first (NIST AI RMF MEASURE 3).",
+          "maxLength": 400,
           "title": "Trend Interpretation",
           "type": "string"
         },
         "representativeness": {
-          "description": "Whether the population mix shifted relative to the population affected (MEASURE 2).",
-          "maxLength": 900,
+          "description": "Whether the population mix shifted relative to the population affected, conclusion first (MEASURE 2).",
+          "maxLength": 400,
           "title": "Representativeness",
           "type": "string"
         },
@@ -251,14 +252,14 @@
           "type": "string"
         },
         "title": {
-          "description": "One line naming the risk or gap.",
-          "maxLength": 160,
+          "description": "The risk or gap in a few words (at most 12).",
+          "maxLength": 120,
           "title": "Title",
           "type": "string"
         },
         "statement": {
-          "description": "What could go wrong or is missing, for whom, and why it matters here.",
-          "maxLength": 700,
+          "description": "One or two sentences: what could go wrong or is missing, for whom, here.",
+          "maxLength": 400,
           "title": "Statement",
           "type": "string"
         },
@@ -325,8 +326,8 @@
           "type": "string"
         },
         "placement_rationale": {
-          "description": "Why this magnitude and likelihood, from the inputs and evidence.",
-          "maxLength": 400,
+          "description": "One sentence: why this magnitude and likelihood.",
+          "maxLength": 250,
           "title": "Placement Rationale",
           "type": "string"
         },
@@ -442,12 +443,13 @@
           "type": "string"
         },
         "description": {
-          "maxLength": 700,
+          "description": "The decision a person must take, in one or two sentences.",
+          "maxLength": 400,
           "title": "Description",
           "type": "string"
         },
         "options": {
-          "description": "The choices a person could make.",
+          "description": "The choices a person could make, a few words each.",
           "items": {
             "type": "string"
           },
@@ -506,25 +508,25 @@
       "properties": {
         "escalation_path": {
           "description": "Who is alerted, in what order, within what time.",
-          "maxLength": 600,
+          "maxLength": 300,
           "title": "Escalation Path",
           "type": "string"
         },
         "deactivation_criteria": {
           "description": "When the system is rolled back or deactivated (MANAGE 2).",
-          "maxLength": 600,
+          "maxLength": 300,
           "title": "Deactivation Criteria",
           "type": "string"
         },
         "affected_community_feedback": {
           "description": "How input from users and affected communities is captured (MANAGE 4).",
-          "maxLength": 600,
+          "maxLength": 300,
           "title": "Affected Community Feedback",
           "type": "string"
         },
         "recovery_and_communication": {
           "description": "How the system recovers and who is told.",
-          "maxLength": 600,
+          "maxLength": 300,
           "title": "Recovery And Communication",
           "type": "string"
         }
@@ -540,9 +542,17 @@
     }
   },
   "properties": {
+    "headline": {
+      "default": "",
+      "description": "The bottom line in one sentence a busy reader can act on: the verdict and what it means for the team.",
+      "maxLength": 160,
+      "model_required": true,
+      "title": "Headline",
+      "type": "string"
+    },
     "summary": {
-      "description": "The bottom line a reviewer reads first; at most five sentences.",
-      "maxLength": 1200,
+      "description": "At most three sentences that add to the headline: the main risks and what must happen next. No framework explanations.",
+      "maxLength": 600,
       "title": "Summary",
       "type": "string"
     },

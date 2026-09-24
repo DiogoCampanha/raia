@@ -25,17 +25,25 @@ Kinds
 ``number``               numeric, stored as ``str`` for prompt rendering
 ``csv``                  tabular paste, with an optional file upload
 ``file``                 upload only (text extraction happens in the UI layer)
+``stories``              a list of user stories, one entry each (id, title,
+                         description, acceptance criteria, and what it touches
+                         from ``options``); the engine that reads it supplies
+                         ``renderer`` and ``missing``
 
-Values are stored by the UI as ``str`` for single-valued kinds and
-``list[str]`` for ``multiselect``. Engines should read them through
+Values are stored by the UI as ``str`` for single-valued kinds,
+``list[str]`` for ``multiselect`` and ``list[dict]`` for ``stories``. Engines should read them through
 :func:`selected`, :func:`chosen` and :func:`is_yes` rather than touching the
 raw dict, so a missing key never raises.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 TEXT_KINDS = {"textarea", "text", "csv"}
+
+#: The keys of one entry in a ``stories`` field, all free text except
+#: ``capabilities`` (codes from the field's options) and ``uid`` (the form's own).
+STORY_TEXT_KEYS = ("id", "title", "description", "acceptance_criteria")
 
 
 @dataclass(frozen=True)
@@ -81,6 +89,13 @@ class InputField:
     group: str = "Inputs"
     height: int = 140
     file_types: Sequence[str] = field(default_factory=tuple)
+    #: Structured kinds: how a value reads in the prompt, and which of its
+    #: parts are still missing (labels, for the "required" message).
+    renderer: Optional[Callable[[Any], str]] = None
+    missing: Optional[Callable[[Any], List[str]]] = None
+    #: ``stories``: splits pasted text into entries (also reads answers saved
+    #: before the field was structured).
+    parse: Optional[Callable[[str], List[Dict[str, Any]]]] = None
 
     # -- helpers -----------------------------------------------------------
 
@@ -91,6 +106,11 @@ class InputField:
     @property
     def is_multi(self) -> bool:
         return self.kind == "multiselect"
+
+    @property
+    def is_list(self) -> bool:
+        """Kinds whose empty value is a list."""
+        return self.kind in ("multiselect", "stories")
 
     def label_for(self, value: str) -> str:
         for opt in self.options:
@@ -104,6 +124,9 @@ class InputField:
     def is_empty(self, value: Any) -> bool:
         if value is None:
             return True
+        if self.kind == "stories" and isinstance(value, (list, tuple)):
+            return not any(isinstance(s, dict) and any(str(s.get(k) or "").strip() for k in STORY_TEXT_KEYS[1:])
+                           for s in value)
         if isinstance(value, (list, tuple, set)):
             return len(value) == 0
         return not str(value).strip()
@@ -112,6 +135,8 @@ class InputField:
         """Human-readable rendering of a value, for the prompt and the artifact."""
         if self.is_empty(value):
             return "(not provided)"
+        if self.renderer is not None:
+            return self.renderer(value)
         if isinstance(value, (list, tuple, set)):
             return "\n".join(f"- {self.label_for(str(v))}" for v in value)
         if self.kind in ("select", "boolean"):
@@ -159,6 +184,8 @@ def missing_required(fields: Sequence[InputField], inputs: Dict[str, Any]) -> Li
             continue
         if f.is_empty(inputs.get(f.key)):
             out.append(f.label)
+        elif f.missing is not None:
+            out.extend(f.missing(inputs.get(f.key)))
     return out
 
 

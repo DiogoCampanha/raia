@@ -36,8 +36,8 @@ Fields marked **\*** are required. Answers are saved to the project as you type,
 
 Press **Run Risk Classifier**. After a short wait the draft appears under **Human review required**, with four tabs:
 
-- **Draft** — the result, in the standard record every stage uses: Summary, Findings, the stage's own sections, Action Plan, Open Issues, Not Grounded, Declared Coverage.
-- **Edit the record** — change the record's fields (a summary, a finding's placement, an action's owner). The software recomputes priorities and re-renders the draft.
+- **Draft** — the result, read the same way at every stage: a **summary** (status, headline, the risks found, actions to take, decisions needed, the main issues), then **What to do** (action cards grouped *Do now*, *Plan* and *Track*, and the decisions only a person can take; filter them by owner), then a **Deep dive** you open only when you want the analysis behind each point.
+- **Edit the record** — change the record's fields (the headline, a finding's placement, an action's owner). The software recomputes priorities and redraws the draft.
 - **Evidence** — the norm excerpts that were actually retrieved. Pick a citation in the draft and check that you can find it here.
 - **What the code computed** — what the rules decided before the model was called. Check that the verdict follows from your answers.
 
@@ -52,6 +52,8 @@ Under **Reject and regenerate**, choose the main reason and say what the agent s
 Back on the project page, continue with the next stage. Each stage builds on the ones approved before it, so a stage whose inputs are not approved yet says **Waiting on upstream** and cannot run. The table below says what each agent asks of you.
 
 In the **Requirements Reviewer**, first tick the controls you already have, then press **Recommend ethical requirements**. RAIA pre-fills the stakeholder and principle questions you left empty from the approved classification (each value says why) and proposes a few candidate requirements for the gaps that remain. **Adopt**, edit or **Reject** each one; nothing counts until you adopt it, and before running you confirm that the pre-filled answers reflect your project. The record then says which requirements RAIA recommended and you adopted.
+
+In the **User Story Refiner**, add each story on its own card with its acceptance criteria and what it touches (or paste several at once and check the cards). RAIA adds ethical criteria per story and flags any existing criterion that conflicts; each conflict becomes a decision for you. **Updated stories, ready to paste** gives the result in a form you can copy back to your tracker.
 
 ### 6. Revise a stage and re-check what depends on it
 
@@ -84,7 +86,7 @@ Open **Assessment** in the top menu. It asks five required statements (utility, 
 |---|---|---|---|
 | Risk Classifier (Product) | The product, How the AI works, Legal footprint, Purpose and practices, How decisions are made, Data, Status and exemptions (17 required answers) | nothing | `02_risk_classification.md` |
 | Requirements Reviewer (Product) | Current requirements, What already exists, Values and stakeholders (3 required answers) | Risk Classifier | `03_requirements_review.md` |
-| User Story Refiner (Dev) | The sprint's backlog, What these stories touch (2 required answers) | Requirements Reviewer | `04_refined_stories.md` |
+| User Story Refiner (Dev) | The stories, The sprint (1 required answers) | Requirements Reviewer | `04_refined_stories.md` |
 | Auditor (Dev) | What happened this sprint, Evidence produced, What comes next (2 required answers) | Requirements Reviewer | `05_audit_report.md` |
 | Drift Monitor (Ops) | Telemetry, Operational context (2 required answers) | Risk Classifier | `06_drift_report.md` |
 
@@ -102,7 +104,7 @@ These are what the study is asking you about.
 
 - **The questions are asked, not guessed.** Each stage has a structured form because the answers decide the outcome. A rule engine reads them and computes what can be computed — which prohibitions and risk areas match, which obligations follow, which principles your requirements leave uncovered, whether a fairness threshold was breached. The model explains and argues; it does not invent those facts.
 - **You get the evidence, not just the answer.** Every draft comes with the excerpts that were retrieved and the result of the automated checks: whether each citation resolves to a real excerpt, whether the required sections are there, whether the agent covered its checklist, and whether it agrees with the rules.
-- **Every stage answers in the same standard record.** Findings are placed on likelihood and magnitude, and the software, not the model, computes their priority. Every action names a response, an owner, a lifecycle stage and how it will be verified. You edit fields, not prose.
+- **Every stage answers in the same standard record.** Findings are placed on likelihood and magnitude, and the software, not the model, computes their priority. Every action names an owner, when it happens and what shows it is done. Every stage reads summary first, then what to do, then the deep dive. You edit fields, not prose.
 - **Disagreement is escalated, not resolved.** When a rule and an agent disagree, two norms of equal authority conflict, or your answers contradict each other, it goes to **Open issues** instead of being smoothed over.
 
 ## Worth trying to break

@@ -4,7 +4,7 @@
 
 ## 1. Purpose
 
-Selects the ethical themes that actually apply to this sprint and adds verifiable acceptance criteria to the backlog stories.
+Selects the ethical themes that actually apply to each story and adds verifiable acceptance criteria, flagging existing criteria that conflict.
 
 ## 2. Place in the lifecycle
 
@@ -28,15 +28,15 @@ Selects the ethical themes that actually apply to this sprint and adds verifiabl
 
 | Group | Question | Kind | Required |
 |---|---|---|---|
-| The sprint's backlog | Backlog user stories | textarea | yes |
-| The sprint's backlog | Sprint goal | text | no |
-| What these stories touch | What do these stories touch? | multiselect | yes |
-| What these stories touch | Your definition of done | textarea | no |
+| The stories | User stories | stories | yes |
+| The sprint | Sprint goal | text | no |
+| The sprint | Your definition of done | textarea | no |
 
 ## 5. What the decision procedure settles in code
 
-- Selects the ECCOLA themes relevant to this sprint from the approved risk tier, requirements and what the stories touch, and records why each one applies.
-- Traces every acceptance criterion back to an approved requirement.
+- Selects the ECCOLA themes relevant to each story from the approved risk tier, requirements and what that story touches, and records why each one applies.
+- Traces every new acceptance criterion back to an approved requirement.
+- Turns every existing criterion the agent flags as conflicting into a decision.
 
 Checklist the record must declare:
 
@@ -45,6 +45,7 @@ Checklist the record must declare:
 - `cards` — Cite the selected card id(s) that justify each criterion
 - `traceability` — Trace each criterion to an approved requirement id where one exists
 - `no_impact` — Justify, one line each, every story you leave unrefined
+- `conflicts` — Flag every existing acceptance criterion that conflicts with an approved requirement or a card in scope
 - `open_issues` — Carry forward every open issue raised here, plus any you add
 
 Excerpts pinned for the canonical scenario:
@@ -61,31 +62,37 @@ Excerpts pinned for the canonical scenario:
 ## 6. What a person decides
 
 - Whether each acceptance criterion is testable in your context.
+- Whether a conflicting existing criterion is rewritten or kept, and why.
 - Which stories carry no ethical impact and can move on unchanged.
 - Every open issue the record raises, and whether to approve, edit or reject the record.
 
 ## 7. The record it produces
 
-Schema `raia-record/1.0` — `docs/schema/story_refiner.schema.json`. Identifier prefix `SR`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.1` — `docs/schema/story_refiner.schema.json`. Identifier prefix `SR`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
 | `stories` | Exactly one entry per story id in the register. |
 | `stories[].story_id` | A story id from the register, exactly. |
-| `stories[].eccola_cards` | Selected ECCOLA card ids that make the story relevant. |
-| `stories[].card_discussion` | The card questions, answered for this story. |
-| `stories[].criteria` | Verifiable acceptance criteria (Microsoft RAI Standard v2 requirement pattern). |
+| `stories[].eccola_cards` | ECCOLA card ids in scope for THIS story that make it relevant. |
+| `stories[].card_discussion` | The cards' questions, answered for this story in two or three sentences. |
+| `stories[].criteria` | New verifiable ethical acceptance criteria (Microsoft RAI Standard v2 requirement pattern). Do not repeat the story's existing criteria. |
 | `stories[].criteria[].id` | AC-<story id>-<n>, e.g. AC-S1-1. |
 | `stories[].criteria[].ms_goal` | The Microsoft RAI Standard v2 goal it serves. |
 | `stories[].criteria[].stakeholder_group` | The affected stakeholder group. |
-| `stories[].criteria[].condition` | Measurable condition with its threshold. |
+| `stories[].criteria[].condition` | Measurable condition with its threshold, written as an acceptance criterion. |
 | `stories[].criteria[].evidence_artifact` | The artifact that demonstrates compliance. |
 | `stories[].criteria[].owner_role` | — |
 | `stories[].criteria[].evr_ids` | Approved EVR ids this criterion implements. |
-| `stories[].no_impact_reason` | Only for a story with no ethical impact. |
-| `sprint_ethics_log` | Decisions and rationales taken this sprint (ECCOLA documentation step). |
+| `stories[].conflicts` | Existing acceptance criteria of this story that conflict with an approved requirement or a selected card. Only real conflicts; leave empty otherwise. |
+| `stories[].conflicts[].criterion_id` | The id of one of the story's EXISTING acceptance criteria (e.g. S1-E2), exactly. |
+| `stories[].conflicts[].conflicts_with` | What it conflicts with: approved EVR ids, selected ECCOLA card ids or principle keys. |
+| `stories[].conflicts[].problem` | One sentence: why the existing criterion conflicts. |
+| `stories[].conflicts[].suggested_rewrite` | The criterion rewritten so the conflict is gone. |
+| `stories[].no_impact_reason` | Only for a story with no ethical impact: one line. |
+| `sprint_ethics_log` | Up to five decisions taken this sprint, one sentence each with its reason (ECCOLA documentation step). |
 
-Rendered sections: Summary → Findings → Refined Stories → Stories Without Ethical Impact → Sprint Ethics Log → Action Plan → Open Issues → Not Grounded in Retrieved Excerpts → Declared Coverage.
+Rendered sections: Summary → Action Plan → Open Issues → Findings → Refined Stories → Stories Without Ethical Impact → Sprint Ethics Log → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
 
 Verdict keys the agent declares: `story_count`.
 
@@ -97,11 +104,13 @@ Verdict keys the agent declares: `story_count`.
 - Every finding has an action or an open issue
 - The rule engine's issues are carried forward; the verdict is reconciled
 - Every story id has an entry
-- Only selected ECCOLA cards and approved EVR ids are used
+- Only cards in scope for each story and approved EVR ids are used
 - Criteria are labelled AC-<story>-<n>
+- A conflict names an existing criterion of its own story, and opens a decision (by code)
 
 ## 9. Limitations
 
 - The normative corpus is a set of curated summaries prepared for the project; a citation resolves to a section of a summary, not to official wording.
-- Card selection follows the declared capabilities and upstream answers; a capability not declared does not select its cards.
+- Card selection follows each story's declared capabilities and the upstream answers; a capability not declared does not select its cards.
+- A conflict is flagged by the agent and settled by a person; an existing criterion is never changed by RAIA.
 - Acceptance criteria are checked for form, not for whether the threshold is right.

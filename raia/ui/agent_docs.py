@@ -60,12 +60,14 @@ DOCS: Dict[str, Dict[str, object]] = {
     "story_refiner": {
         "when": "During sprint planning, for the stories about to enter a sprint.",
         "decides": [
-            "Selects the ECCOLA themes relevant to this sprint from the approved risk tier, "
-            "requirements and what the stories touch, and records why each one applies.",
-            "Traces every acceptance criterion back to an approved requirement.",
+            "Selects the ECCOLA themes relevant to each story from the approved risk tier, "
+            "requirements and what that story touches, and records why each one applies.",
+            "Traces every new acceptance criterion back to an approved requirement.",
+            "Turns every existing criterion the agent flags as conflicting into a decision.",
         ],
         "you": [
             "Whether each acceptance criterion is testable in your context.",
+            "Whether a conflicting existing criterion is rewritten or kept, and why.",
             "Which stories carry no ethical impact and can move on unchanged.",
         ],
     },

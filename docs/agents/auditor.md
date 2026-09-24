@@ -60,7 +60,7 @@ Excerpts pinned for the canonical scenario:
 
 ## 7. The record it produces
 
-Schema `raia-record/1.0` — `docs/schema/auditor.schema.json`. Identifier prefix `AU`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.1` — `docs/schema/auditor.schema.json`. Identifier prefix `AU`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
@@ -82,7 +82,7 @@ Schema `raia-record/1.0` — `docs/schema/auditor.schema.json`. Identifier prefi
 | `upcoming_checkpoints[].item_ids` | — |
 | `upcoming_checkpoints[].lifecycle_stage` | — |
 
-Rendered sections: Summary → Findings → Progress Audit → Accountability Documentation → Upcoming Ethical Checkpoints → Action Plan → Open Issues → Not Grounded in Retrieved Excerpts → Declared Coverage.
+Rendered sections: Summary → Action Plan → Open Issues → Findings → Progress Audit → Accountability Documentation → Upcoming Ethical Checkpoints → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
 
 Verdict keys the agent declares: `items_audited`.
 

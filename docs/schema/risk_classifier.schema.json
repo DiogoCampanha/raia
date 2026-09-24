@@ -1,5 +1,5 @@
 {
-  "$id": "raia-record/1.0/risk_classifier",
+  "$id": "raia-record/1.1/risk_classifier",
   "title": "RiskClassifierRecord",
   "$defs": {
     "Action": {
@@ -18,8 +18,8 @@
           "type": "array"
         },
         "action": {
-          "description": "Imperative, specific, checkable: what is done.",
-          "maxLength": 400,
+          "description": "One sentence starting with a verb: what is done, specific and checkable.",
+          "maxLength": 250,
           "title": "Action",
           "type": "string"
         },
@@ -83,8 +83,8 @@
           "type": "string"
         },
         "evidence_artifact": {
-          "description": "The artifact that will demonstrate completion.",
-          "maxLength": 200,
+          "description": "The artifact that will demonstrate completion, named concretely.",
+          "maxLength": 150,
           "title": "Evidence Artifact",
           "type": "string"
         },
@@ -147,8 +147,8 @@
           "type": "string"
         },
         "justification": {
-          "description": "One sentence.",
-          "maxLength": 300,
+          "description": "One short sentence.",
+          "maxLength": 200,
           "title": "Justification",
           "type": "string"
         }
@@ -169,14 +169,14 @@
           "type": "string"
         },
         "title": {
-          "description": "One line naming the risk or gap.",
-          "maxLength": 160,
+          "description": "The risk or gap in a few words (at most 12).",
+          "maxLength": 120,
           "title": "Title",
           "type": "string"
         },
         "statement": {
-          "description": "What could go wrong or is missing, for whom, and why it matters here.",
-          "maxLength": 700,
+          "description": "One or two sentences: what could go wrong or is missing, for whom, here.",
+          "maxLength": 400,
           "title": "Statement",
           "type": "string"
         },
@@ -243,8 +243,8 @@
           "type": "string"
         },
         "placement_rationale": {
-          "description": "Why this magnitude and likelihood, from the inputs and evidence.",
-          "maxLength": 400,
+          "description": "One sentence: why this magnitude and likelihood.",
+          "maxLength": 250,
           "title": "Placement Rationale",
           "type": "string"
         },
@@ -346,8 +346,8 @@
           "type": "string"
         },
         "meaning_for_this_product": {
-          "description": "One or two sentences for this product.",
-          "maxLength": 500,
+          "description": "One sentence: what the team must do or show for this product.",
+          "maxLength": 300,
           "title": "Meaning For This Product",
           "type": "string"
         },
@@ -389,12 +389,13 @@
           "type": "string"
         },
         "description": {
-          "maxLength": 700,
+          "description": "The decision a person must take, in one or two sentences.",
+          "maxLength": 400,
           "title": "Description",
           "type": "string"
         },
         "options": {
-          "description": "The choices a person could make.",
+          "description": "The choices a person could make, a few words each.",
           "items": {
             "type": "string"
           },
@@ -452,20 +453,20 @@
     "RiskClassificationExt": {
       "properties": {
         "prohibited_screen": {
-          "description": "Result of the EU AI Act Art. 5 and PL 2338 excessive-risk screen.",
-          "maxLength": 800,
+          "description": "Result of the EU AI Act Art. 5 and PL 2338 excessive-risk screen, conclusion first.",
+          "maxLength": 400,
           "title": "Prohibited Screen",
           "type": "string"
         },
         "eu_tier_justification": {
-          "description": "Why the EU tier holds, naming the area or article.",
-          "maxLength": 800,
+          "description": "Why the EU tier holds, naming the area or article; at most two sentences.",
+          "maxLength": 400,
           "title": "Eu Tier Justification",
           "type": "string"
         },
         "br_tier_justification": {
-          "description": "Why the Brazilian tier holds, naming the area.",
-          "maxLength": 800,
+          "description": "Why the Brazilian tier holds, naming the area; at most two sentences.",
+          "maxLength": 400,
           "title": "Br Tier Justification",
           "type": "string"
         },
@@ -478,20 +479,20 @@
           "type": "array"
         },
         "human_oversight_assessment": {
-          "description": "Whether the declared oversight design meets the oversight obligations.",
-          "maxLength": 900,
+          "description": "Whether the declared oversight design meets the oversight obligations, conclusion first.",
+          "maxLength": 450,
           "title": "Human Oversight Assessment",
           "type": "string"
         },
         "affected_persons_rights": {
-          "description": "How affected persons' rights are operationalised in the product.",
-          "maxLength": 900,
+          "description": "How affected persons' rights are operationalised in the product, conclusion first.",
+          "maxLength": 450,
           "title": "Affected Persons Rights",
           "type": "string"
         },
         "impact_assessments": {
           "description": "Which impact assessments the instruments require (fundamental rights / algorithmic).",
-          "maxLength": 700,
+          "maxLength": 400,
           "title": "Impact Assessments",
           "type": "string"
         }
@@ -509,9 +510,17 @@
     }
   },
   "properties": {
+    "headline": {
+      "default": "",
+      "description": "The bottom line in one sentence a busy reader can act on: the verdict and what it means for the team.",
+      "maxLength": 160,
+      "model_required": true,
+      "title": "Headline",
+      "type": "string"
+    },
     "summary": {
-      "description": "The bottom line a reviewer reads first; at most five sentences.",
-      "maxLength": 1200,
+      "description": "At most three sentences that add to the headline: the main risks and what must happen next. No framework explanations.",
+      "maxLength": 600,
       "title": "Summary",
       "type": "string"
     },
