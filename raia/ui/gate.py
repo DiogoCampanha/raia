@@ -662,17 +662,6 @@ def evidence_panel(evidence: List[Dict[str, Any]]) -> None:
             st.text(e["text"])
 
 
-def _next_step_hint(agent_key: str, impact: List[str]) -> str:
-    if impact:
-        return ("These stages were approved against the previous version and are now flagged "
-                "for review: **" + "**, **".join(impact) + "**.")
-    keys = list(AGENTS)
-    i = keys.index(agent_key)
-    if i + 1 < len(keys):
-        return f"Next stage: **{AGENTS[keys[i + 1]].spec.name}**."
-    return "Pipeline complete. When you are done, please complete the **Assessment**."
-
-
 def _options(values) -> Dict[str, Any]:
     return {"options": list(values), "required": True}
 
@@ -921,8 +910,10 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
                     return
             st.session_state.pop(pkey("pending", agent_key), None)
             st.session_state.pop(pkey("revising", agent_key), None)
-            flash(f"Approved and committed (`{result.get('commit', '')}`). "
-                  + _next_step_hint(agent_key, impact))
+            # The stage page reads this once it redraws in read mode and shows
+            # what was recorded and where to go next (components.next_step_card).
+            st.session_state["just_approved"] = {"project": project.id, "agent": agent_key,
+                                                 "commit": result.get("commit", ""), "flagged": impact}
             st.rerun()
 
     with col_r, st.container(border=True):

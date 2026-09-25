@@ -10,7 +10,8 @@ from raia.contract import SCHEMA_VERSION
 from raia.contract.assemble import RECORD_TYPES
 from raia.repository import ARTIFACT_FILES
 from raia.ui.agent_docs import DOCS, LAYERS, TURN
-from raia.ui.components import esc, page_header
+from raia.ui.components import agent_header, esc, page_header
+from raia.ui.theme import look
 
 page_header(
     "How RAIA works",
@@ -56,8 +57,9 @@ for i, n in enumerate(nodes):
     if i:
         node_html.append('<div class="arch-gate" aria-hidden="true"><span>H</span></div>')
     node_html.append(
-        f'<button type="button" class="arch-node {n["layer"].lower()}" data-key="{esc(n["key"])}" '
-        f'aria-pressed="false"><span class="arch-layer">{esc(n["layer"])}</span>'
+        f'<button type="button" class="arch-node look-{esc(n["key"])}" data-key="{esc(n["key"])}" '
+        f'aria-pressed="false"><span class="arch-layer"><span class="raia-icon">{esc(look(n["key"]).icon)}</span>'
+        f'{esc(n["layer"])}</span>'
         f'<span class="arch-name">{esc(n["name"])}</span>'
         f'<span class="arch-phase">{esc(n["phase"])}</span></button>'
     )
@@ -71,9 +73,10 @@ DIAGRAM = """
   border-top: 3px solid var(--c); background: rgba(100,116,139,.05); transition: background .15s, box-shadow .15s; }
 .arch-node:hover { background: rgba(100,116,139,.11); }
 .arch-node:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; }
-.arch-node[aria-pressed="true"] { background: rgba(37,99,235,.08); box-shadow: 0 0 0 1px var(--c) inset; }
-.arch-node.product { --c: #2563eb; } .arch-node.dev { --c: #059669; } .arch-node.ops { --c: #d97706; }
-.arch-layer { font-size: .6875rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--c); }
+.arch-node[aria-pressed="true"] { background: color-mix(in srgb, var(--c) 9%, transparent); box-shadow: 0 0 0 1px var(--c) inset; }
+.arch-node { --c: var(--agent, #2563eb); }
+.arch-layer { display: flex; align-items: center; gap: .35rem; font-size: .6875rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--c); }
+.arch-layer .raia-icon { font-size: 1.05rem; letter-spacing: 0; }
 .arch-name { font-weight: 600; font-size: .95rem; line-height: 1.25; }
 .arch-phase { font-size: .75rem; opacity: .65; line-height: 1.3; }
 .arch-gate { display: flex; align-items: center; justify-content: center; }
@@ -145,13 +148,13 @@ for i, (col, (kind, name, body)) in enumerate(zip(cols, TURN), start=1):
 # ---- Agent documentation ----------------------------------------------------------------
 
 st.subheader("Agent documentation", anchor=False)
-tabs = st.tabs([a.spec.name for a in AGENTS.values()])
+tabs = st.tabs([f"{look(k).material} {a.spec.name}" for k, a in AGENTS.items()])
 for tab, (key, agent) in zip(tabs, AGENTS.items()):
     spec = agent.spec
     doc = DOCS.get(key, {})
     with tab:
-        st.markdown(f"**{spec.layer} layer** · {spec.sdlc_phase}")
-        st.markdown(spec.description)
+        agent_header(key, spec.name, spec.description, eyebrow=f"{spec.layer} layer · {spec.sdlc_phase}",
+                     compact=True)
         if doc.get("when"):
             st.markdown(f"**When to use it.** {doc['when']}")
         c1, c2 = st.columns(2, gap="large")

@@ -338,10 +338,57 @@ def test_story_conflicts() -> None:
     check("[REVIEW" in paste and "S1 — Ranked shortlist" in paste, "the paste-ready stories mark the conflict for review")
 
 
+def test_signatures() -> None:
+    print("== each agent opens its summary with its own picture, from computed facts ==")
+    r = _rationale("risk_classifier")
+    rec = assemble.finalize("risk_classifier", _record(), r, EVIDENCE, AGENTS["risk_classifier"].spec)
+    dg = digest.build("risk_classifier", rec, r.data)
+    sig = dg["signature"]
+    eu = sig and sig["rows"][0]
+    check(sig and sig["kind"] == "scale" and eu["label"] == "EU AI Act"
+          and eu["steps"][eu["active"]] == "High" and "high" in r.verdict["eu_tier"],
+          "the Risk Classifier marks the computed EU tier on the scale")
+    md = render.render("risk_classifier", rec, r.data, r.checklist_keys())
+    check(md.index("**Where the product sits**") < md.index("## Action Plan"),
+          "…and the document carries the same picture, in the summary")
+    check(digest.signature("risk_classifier", {"computed_verdict": {"eu_tier": "unacceptable — prohibited practice",
+                                                                    "br_tier": "excessive risk — prohibited"}}, {})
+          ["rows"][1]["steps"][2] == "Excessive", "a prohibited practice lands on the last step of both scales")
+
+    sig = digest.signature("requirements_reviewer", {"computed_verdict": {"gap_count": 3, "obligation_gaps": 2}},
+                           {"principle_coverage": {"Transparency": "addressed",
+                                                   "Accountability": "GAP — declared at stake",
+                                                   "Privacy and data governance": "GAP",
+                                                   "Human agency and oversight": "addressed by an adopted suggestion"}})
+    check([c["tone"] for c in sig["cells"]] == ["ok", "high", "medium", "low"] and sig["caption"].startswith("2 of 4"),
+          "the Requirements Reviewer shows coverage per principle, an adopted suggestion kept apart")
+    sig = digest.signature("story_refiner", {"extension": {"stories": [
+        {"story_id": "S1", "criteria": [{"id": "a"}], "conflicts": []},
+        {"story_id": "S2", "criteria": [], "conflicts": [{"id": "c"}]},
+        {"story_id": "S3", "criteria": [], "conflicts": [], "no_impact_reason": "n"}]}},
+        {"stories": [{"id": "S1", "title": "Ranked shortlist"}]})
+    check([c["tone"] for c in sig["cells"]] == ["ok", "high", "neutral"] and sig["cells"][0]["label"] == "S1 · Ranked shortlist",
+          "the Story Refiner shows how each story came out, a conflict flagged")
+    sig = digest.signature("auditor", {"extension": {"items": [{"verdict": "satisfied"}, {"verdict": "not_verified"},
+                                                               {"verdict": "not_verified"}]}}, {})
+    check(sig["kind"] == "split" and [x["value"] for x in sig["segments"]] == [1, 0, 0, 2],
+          "the Auditor splits the items by verdict")
+    sig = digest.signature("drift_monitor", {}, {
+        "thresholds": {"parity_difference": {"value": 0.1}},
+        "analysis": {"windows": [{"window": "2026-04", "dp_difference": 0.05, "parity_breach": False},
+                                 {"window": "2026-06", "dp_difference": 0.18, "parity_breach": True}],
+                     "trend": {"direction": "widening"}}})
+    check(sig["kind"] == "series" and sig["threshold"] == 0.1 and [p["tone"] for p in sig["points"]] == ["ok", "high"],
+          "the Drift Monitor plots the parity gap per window against its threshold")
+    check("2026-06: 0.18 (breach)" in digest.signature_text(sig), "…and the document states the same numbers")
+    check(digest.signature("auditor", {}, {}) is None and digest.signature("drift_monitor", {"extension": None}, {}) is None,
+          "no computed facts, no picture: nothing is drawn from the model's prose")
+
+
 def main() -> None:
     for fn in (test_vocabularies_come_from_the_corpus, test_rubric, test_parse_and_fallback,
                test_finalize, test_render_and_schema, test_published_schemas_are_current, test_action_plan,
-               test_reading_order, test_length_overflow, test_story_conflicts):
+               test_reading_order, test_length_overflow, test_story_conflicts, test_signatures):
         fn()
     print()
     if FAILURES:

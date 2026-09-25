@@ -87,7 +87,60 @@ def no_emoji(at: AppTest, where: str) -> None:
     check(not found, f"no emoji in the {where} ({''.join(found) or 'none'})")
 
 
+def _lab(hex_: str):
+    rgb = [int(hex_.lstrip("#")[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    c = [((x + 0.055) / 1.055) ** 2.4 if x > 0.04045 else x / 12.92 for x in rgb]
+    xyz = ((0.4124 * c[0] + 0.3576 * c[1] + 0.1805 * c[2]) / 0.95047,
+           0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2],
+           (0.0193 * c[0] + 0.1192 * c[1] + 0.9505 * c[2]) / 1.08883)
+    f = [t ** (1 / 3) if t > 0.008856 else 7.787 * t + 16 / 116 for t in xyz]
+    return 116 * f[1] - 16, 500 * (f[0] - f[1]), 200 * (f[1] - f[2])
+
+
+def _delta_e(a: str, b: str) -> float:
+    return sum((x - y) ** 2 for x, y in zip(_lab(a), _lab(b))) ** .5
+
+
+def _contrast(a: str, b: str) -> float:
+    def lum(h):
+        rgb = [int(h.lstrip("#")[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in rgb]
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def agent_identity() -> None:
+    """Every agent is recognisable, and its colour never borrows a meaning."""
+    from itertools import combinations
+
+    from raia.agents import AGENTS
+    from raia.ui.theme import AGENT_LOOK, TONES
+
+    from raia.ui import theme
+
+    check("<" not in theme._css() + theme._agent_css(),
+          "the CSS layer has no '<' anywhere, not even in a comment: the HTML sanitizer drops the "
+          "whole style block if it finds one")
+    check(set(AGENT_LOOK) == set(AGENTS), "every agent has its own look, and no look is orphaned")
+    check(len({lk.icon for lk in AGENT_LOOK.values()}) == len(AGENT_LOOK) and
+          all(lk.question and lk.motif for lk in AGENT_LOOK.values()),
+          "…each with its own icon, question and header pattern")
+    worst = min((_delta_e(c, t), k, n) for k, lk in AGENT_LOOK.items() for c in (lk.ink, lk.glow)
+                for n, t in TONES.items())
+    check(worst[0] >= 20, f"no agent colour can be mistaken for a tone that carries meaning "
+                          f"(closest: {worst[1]} vs {worst[2]}, ΔE {worst[0]:.0f})")
+    pair = min((_delta_e(a.ink, b.ink), x, y) for (x, a), (y, b) in combinations(AGENT_LOOK.items(), 2))
+    check(pair[0] >= 25, f"agents are told apart by colour (closest: {pair[1]} vs {pair[2]}, ΔE {pair[0]:.0f})")
+    check(all(_contrast(lk.ink, "#ffffff") >= 4.5 and _contrast(lk.glow, "#0b1120") >= 4.5
+              for lk in AGENT_LOOK.values()),
+          "agent colours pass WCAG AA: as text on the light theme and under white text, and on the dark theme")
+
+
 def main() -> None:
+    print("== Agent identity ==")
+    agent_identity()
+
     print("== 0. The legal page is public ==")
     anon = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180)
     from raia import config
@@ -150,9 +203,28 @@ def main() -> None:
               "…and the draft reads summary first, then what to do")
         check(any(t.label == "Traceability" for t in at.tabs) and "Deep dive" in str(at._tree),
               "…with the deep dive, section by section, behind a dropdown")
+        check(f'data-agent="{agent}"' in text(at) and "agent-hero" in text(at),
+              "the stage page wears its agent's own header")
+        check(has_button(at, "foot_next") and (has_button(at, "foot_prev") or has_button(at, "foot_project_l")),
+              "…and ends with the previous and next stage, even before anything is approved")
         button(at, f"{pid1}::approve::{agent}").click()
         ok(at.run(), "the draft is approved")
         check("Approved and committed" in text(at), "approval is confirmed")
+        following = {"risk_classifier": "requirements_reviewer", "requirements_reviewer": "story_refiner"}[agent]
+        check('class="next-label"' in text(at) and has_button(at, f"next_{following}")
+              and button(at, f"next_{following}").label.startswith("Continue to"),
+              "…with a button that continues to the next agent")
+        check(button(at, "foot_next").proto.type == "primary", "…and the footer's Next leads on")
+    button(at, "next_story_refiner").click()
+    ok(at.run(), "the continue button navigates without an error")
+    goto(at, "stage", project=pid1, agent="story_refiner")
+    ok(at.run(), "the next stage opens")
+    check("rail-current" in str(at._tree) or 'data-agent="story_refiner"' in text(at),
+          "…in its own identity, with the stage rail marking where the person is")
+    goto(at, "stage", project=pid1, agent="requirements_reviewer")
+    ok(at.run(), "an approved stage reopens")
+    check('class="next-head"' not in text(at) and not has_button(at, "next_story_refiner"),
+          "the what's-next card belongs to the approval: it is gone once another stage was opened")
     no_emoji(at, "stage page")
     from raia.storage import open_repository
 
@@ -220,6 +292,9 @@ def main() -> None:
     button(at, f"{pid1}::approve::risk_classifier").click()
     ok(at.run(), "the revision is approved")
     check("now flagged for review" in text(at), "the approval says which stages were flagged")
+    check(has_button(at, "next_requirements_reviewer")
+          and button(at, "next_requirements_reviewer").label == "Re-check Requirements Reviewer",
+          "…and the next step is to re-check the flagged stage, before moving on")
 
     goto(at, "home")
     ok(at.run(), "Home opens")

@@ -152,3 +152,38 @@ def revision_impact(repo, agent_key: str, agents: Optional[Dict[str, Any]] = Non
     agents = _agents(agents)
     done = set(repo.existing_artifacts())
     return [k for k in descendants(agent_key, agents) if agents[k].spec.output_key in done]
+
+
+#: Statuses a person can act on from a stage page, and the order a project page
+#: offers them in when no stage was just finished.
+_ACTIONABLE = (IN_REVIEW, STALE, READY)
+
+
+def next_steps(stages: List[Dict[str, Any]], after: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Where a person can usefully go next, most useful first.
+
+    ``stages`` is :func:`stage_states` (or a stage summary built on it). With
+    ``after`` — the stage just approved or being read — the order is:
+
+    1. approved stages that **need review**: approving a revision flags them,
+       and checking them comes before moving on;
+    2. stages later in the pipeline that are waiting for a review or ready to
+       run, in pipeline order. The Auditor and the Drift Monitor read the same
+       upstream work, so both can open at once; both are returned;
+    3. earlier stages that are still open.
+
+    Without ``after`` (a project page) the order is drafts waiting for review,
+    then stages needing review, then stages ready to run.
+
+    Blocked and approved stages are never offered. An empty list means every
+    stage is approved. Nothing here runs anything: it only says where to look.
+    """
+    open_ = [s for s in stages if s["status"] in _ACTIONABLE and s["agent"] != after]
+    if after is None:
+        return sorted(open_, key=lambda s: _ACTIONABLE.index(s["status"]))
+    order = [s["agent"] for s in stages]
+    here = order.index(after) if after in order else -1
+    stale = [s for s in open_ if s["status"] == STALE]
+    later = [s for s in open_ if s["status"] != STALE and order.index(s["agent"]) > here]
+    earlier = [s for s in open_ if s["status"] != STALE and order.index(s["agent"]) < here]
+    return stale + later + earlier

@@ -353,6 +353,37 @@ def main() -> None:
     check(ev["user"] == bruno.id and ev["upstream"] == ["risk_classifier"], "…and is attributed and explained")
     check(summary["risk"]["label"] != "Not assessed", "the dashboard risk label comes from the approved classification")
 
+    print("== 11d. Where to go next after a stage ==")
+    keys = ["risk_classifier", "requirements_reviewer", "story_refiner", "auditor", "drift_monitor"]
+
+    def stages(*statuses):
+        return [{"agent": k, "status": st_} for k, st_ in zip(keys, statuses)]
+
+    def nxt(statuses, after=None):
+        return [s["agent"] for s in lineage.next_steps(stages(*statuses), after)]
+
+    check(nxt(("approved", "ready", "blocked", "blocked", "ready"), "risk_classifier")
+          == ["requirements_reviewer", "drift_monitor"],
+          "after the first stage: the next stage in order, then anything else now open")
+    check(nxt(("approved", "approved", "approved", "ready", "ready"), "story_refiner")
+          == ["auditor", "drift_monitor"],
+          "the Auditor and the Drift Monitor open together, and both are offered")
+    check(nxt(("approved", "stale", "stale", "ready", "blocked"), "risk_classifier")
+          == ["requirements_reviewer", "story_refiner", "auditor"],
+          "stages flagged by a revision come first, before moving on")
+    check(nxt(("ready", "approved", "approved", "in_review", "approved"), "drift_monitor")
+          == ["risk_classifier", "auditor"] and
+          nxt(("approved", "approved", "approved", "in_review", "approved"), "drift_monitor") == ["auditor"],
+          "with nothing later open, earlier open stages are offered")
+    check(nxt(("approved",) * 5, "drift_monitor") == [] and nxt(("approved",) * 5) == [],
+          "an empty answer means every stage is approved")
+    check(nxt(("approved", "stale", "ready", "in_review", "blocked")) == ["auditor", "requirements_reviewer",
+                                                                          "story_refiner"],
+          "a project page offers drafts first, then flagged stages, then stages ready to run")
+    check("blocked" not in {s["status"] for s in lineage.next_steps(stages("approved", "blocked", "blocked",
+                                                                             "blocked", "ready"), "risk_classifier")},
+          "a blocked stage is never offered")
+
     print("== 11c. Assessment drafts and personal data ==")
     svc.save_assessment_draft(bruno, {"instrument": "test", "dimensions": {"utility": {"score": 2}}})
     check(svc.my_assessment_draft(bruno) is not None, "a draft is kept")

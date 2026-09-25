@@ -111,9 +111,12 @@ STEPS: List[Step] = [
     ),
     Step(
         "Continue through the stages",
-        "Back on the project page, continue with the next stage. Each stage builds on the ones "
-        "approved before it, so a stage whose inputs are not approved yet says **Waiting on "
-        "upstream** and cannot run. The table below says what each agent asks of you.\n\n"
+        "Right after an approval, **What's next** offers the next stage: press **Continue to** "
+        "it. Every stage page also shows the five stages across the top and ends with "
+        "**Previous** and **Next**, and each agent has its own colour and icon, so you always "
+        "know which one you are working with. Each stage builds on the ones approved before it, "
+        "so a stage whose inputs are not approved yet says **Waiting on upstream** and cannot "
+        "run. The table below says what each agent asks of you.\n\n"
         "In the **Requirements Reviewer**, first tick the controls you already have, then press "
         "**Recommend ethical requirements**. RAIA pre-fills the stakeholder and principle "
         "questions you left empty from the approved classification (each value says why) and "

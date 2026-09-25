@@ -4,11 +4,12 @@ import streamlit as st
 
 from raia.agents import AGENTS
 from raia.examples import EXAMPLES
+from raia.lineage import next_steps
 from raia.ui import routes
 from raia.ui.components import (empty_state, page_header, risk_badge, role_badge, rule, stat_tiles,
                                 status_badge)
 from raia.ui.state import current_user, flash, get_service, show_flash
-from raia.ui.theme import I
+from raia.ui.theme import I, look
 
 user = current_user()
 svc = get_service()
@@ -107,7 +108,7 @@ if attention:
     with st.container(border=True):
         for i, (p, stg, why) in enumerate(attention):
             c1, c2, c3 = st.columns([4, 2, 1], vertical_alignment="center")
-            c1.markdown(f"**{stg['name']}** · {p.name}")
+            c1.markdown(f"{look(stg['agent']).material} **{stg['name']}** · {p.name}")
             c1.caption(why)
             with c2:
                 status_badge(stg["status"])
@@ -164,12 +165,10 @@ with st.container(border=True):
         with c[2]:
             st.progress(s["approved"] / s["total"], text=f"{s['approved']}/{s['total']} approved")
         with c[3]:
-            if s["in_review"]:
-                st.markdown(f"Review **{s['in_review'][0]}**")
-            elif s["stale"]:
-                st.markdown(f"Re-check **{s['stale'][0]}**")
-            elif s["next"]:
-                st.markdown(f"Run **{s['next']}**")
+            step = next(iter(next_steps(s["stages"])), None)
+            if step:
+                verb = {"in_review": "Review", "stale": "Re-check", "ready": "Run"}[step["status"]]
+                st.markdown(f"{look(step['agent']).material} {verb} **{step['name']}**")
             else:
                 st.markdown("All stages approved")
             if s["open_issues"]:

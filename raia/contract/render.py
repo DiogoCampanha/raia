@@ -163,6 +163,8 @@ def markdown_from_digest(dg: Dict[str, Any]) -> Dict[str, str]:
     summary = [f"**{dg['status']['label']}** — {dg['headline']}".rstrip(" —")]
     if dg["summary"]:
         summary += ["", dg["summary"]]
+    if dg.get("signature"):
+        summary += ["", D.signature_text(dg["signature"])]
     summary += ["", table([k["label"] for k in kpis], [[f"{k['value']} — {k['hint']}" for k in kpis]])]
     if dg["top_issues"]:
         summary += ["", "**Main issues**", ""]
