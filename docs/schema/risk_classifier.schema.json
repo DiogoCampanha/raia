@@ -512,8 +512,8 @@
   "properties": {
     "headline": {
       "default": "",
-      "description": "The bottom line in one sentence a busy reader can act on: the verdict and what it means for the team.",
-      "maxLength": 160,
+      "description": "The bottom line in ONE sentence of at most 25 words a busy reader can act on: the verdict and what it means for the team.",
+      "maxLength": 200,
       "model_required": true,
       "title": "Headline",
       "type": "string"

@@ -46,7 +46,8 @@ def check_corrections(record: Dict[str, Any]) -> List[ValidationItem]:
     notes = record.get("contract_notes") or []
     upgrades = [n for n in notes if n.startswith("UPGRADE:")]
     severities = [n for n in notes if n.startswith("SEVERITY:")]
-    other = [n for n in notes if n not in upgrades and n not in severities]
+    shortened = [n for n in notes if n.startswith("SHORTENED:")]
+    other = [n for n in notes if n not in upgrades and n not in severities and n not in shortened]
     out: List[ValidationItem] = []
     if upgrades:
         out.append(ValidationItem(
@@ -58,6 +59,12 @@ def check_corrections(record: Dict[str, Any]) -> List[ValidationItem]:
             "severity.altered", FAIL, "Computed severity",
             "The model restated a severity the engine computed. Code restored the computed value.",
             severities))
+    if shortened:
+        out.append(ValidationItem(
+            "contract.shortened", WARN, "Length limits",
+            f"The model wrote past {len(shortened)} length limit(s). Code shortened those values at a "
+            "sentence or word end instead of discarding the reply; check that nothing important was cut.",
+            [n.split(":", 1)[1].strip() for n in shortened]))
     if other:
         out.append(ValidationItem("contract.corrected", WARN, "Corrections applied by code",
                                   f"{len(other)} correction(s) were applied to the record.", other))

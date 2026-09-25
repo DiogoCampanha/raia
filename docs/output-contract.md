@@ -52,7 +52,7 @@ Every record, for every agent, has these fields.
 
 | Field | Content | Grounding |
 |---|---|---|
-| `headline` | The bottom line in one sentence: the verdict and what it means for the team (required of the model; older records fall back to the summary's first sentence) | Human oversight: the reviewer reads it first |
+| `headline` | The bottom line in one sentence (at most 200 characters): the verdict and what it means for the team (required of the model; older records fall back to the summary's first sentence) | Human oversight: the reviewer reads it first |
 | `summary` | At most three sentences that add to the headline | Human oversight |
 | `overall_status` | `on_track` · `needs_attention` · `blocked` (code raises, never lowers) | Human oversight |
 | `declared_verdict`, `agrees_with_rule_engine`, `disagreement_rationale` | The agent's verdict per key, and whether it agrees with the rule engine | RAIA reconciliation channel; conflicts reach a human |
@@ -255,6 +255,11 @@ The User Story Refiner also offers the refined stories as plain text, ready to
 paste into the team's tracker.
 
 ## 9. Parsing, repair and fallback
+
+A value over its length limit is not a reason to discard a reply: code shortens
+it at a sentence end (or a word end, with an ellipsis), keeps the first entries
+of an over-long list, and reports each change as a *Length limits* warning at
+the gate. Every other error goes to repair.
 
 A reply that does not validate is sent back once (`RAIA_CONTRACT_REPAIRS`):
 

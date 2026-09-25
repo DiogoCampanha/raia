@@ -154,9 +154,9 @@ class OpenIssue(_Model):
 
 
 class RecordCore(_Model):
-    headline: str = asked(max_length=160, description=(
-        "The bottom line in one sentence a busy reader can act on: the verdict and what it means "
-        "for the team."))
+    headline: str = asked(max_length=200, description=(
+        "The bottom line in ONE sentence of at most 25 words a busy reader can act on: the verdict "
+        "and what it means for the team."))
     summary: str = Field(max_length=600, description=(
         "At most three sentences that add to the headline: the main risks and what must happen next. "
         "No framework explanations."))

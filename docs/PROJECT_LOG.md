@@ -124,6 +124,7 @@ Recorded so the log stays honest about its own errors.
 | D34 | Shorter records by contract: a one-sentence `headline`, a summary of at most three sentences, lower caps on every free-text field, and a rule that each field leads with its conclusion and does not explain frameworks or law. | Length was the complaint; a prompt asking for brevity without caps was not enough. Leading with the conclusion is also what lets code lift section conclusions without a second model call. |
 | D35 | The User Story Refiner takes stories one by one — id, title, description, existing acceptance criteria, and what each story touches — and selects ECCOLA cards per story. | One text box split every line into a story, so a pasted story with its criteria became several stories, and one capability answer for the whole sprint gave every story the same cards. |
 | D36 | Existing acceptance criteria stay the team's: the agent adds new ethical criteria and may flag an existing one only when it conflicts; code turns each conflict into a decision for the product owner, with the suggested rewrite as an option. | Rewriting a team's criteria silently would take a product decision out of human hands; ignoring conflicts would let an unethical criterion ship. |
+| D37 | A value over its length limit is shortened by code and reported, never a reason to discard the reply. | Limits exist for readability; losing a complete analysis over a few characters costs the reviewer far more than a trimmed sentence, and the warning keeps the trim visible. |
 
 ---
 
@@ -132,6 +133,36 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-25 — A reply a few characters too long is shortened, not discarded (branch `agent-output-revamp`)
+
+Decision D37.
+
+#### What was wrong
+
+- **TST-9** A real Risk Classifier run failed the output contract because the
+  headline was over its 160-character limit, and the retry was over it again.
+  The whole analysis was replaced by the fallback record: no findings, no
+  actions, every coverage and obligation check failed.
+
+#### What changed
+
+- `raia/contract/assemble.py` — `parse_record` shortens values over their
+  `maxLength` (at a sentence end, else a word end with an ellipsis) and keeps
+  the first entries of over-long lists, then validates again; only other errors
+  go to repair. Each change is kept in the record's `shortened` list and
+  becomes a `SHORTENED:` contract note.
+- `raia/contract/checks.py` — a *Length limits* warning lists what was
+  shortened.
+- `raia/contract/schema.py` — the headline limit is 200 characters, and its
+  description asks for one sentence of at most 25 words.
+
+#### Tests
+
+- `tests/test_contract.py` — a reply whose only fault is length is accepted
+  without a repair, every value ends inside its limit, each shortening is
+  recorded and reported as a warning, and a reply with another error still goes
+  to repair with only that error.
+
 ### 2026-09-24 — Agent outputs a person can act on, and stories entered one by one (branch `agent-output-revamp`)
 
 Decisions D33–D36.
