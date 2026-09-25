@@ -125,6 +125,9 @@ Recorded so the log stays honest about its own errors.
 | D35 | The User Story Refiner takes stories one by one — id, title, description, existing acceptance criteria, and what each story touches — and selects ECCOLA cards per story. | One text box split every line into a story, so a pasted story with its criteria became several stories, and one capability answer for the whole sprint gave every story the same cards. |
 | D36 | Existing acceptance criteria stay the team's: the agent adds new ethical criteria and may flag an existing one only when it conflicts; code turns each conflict into a decision for the product owner, with the suggested rewrite as an option. | Rewriting a team's criteria silently would take a product decision out of human hands; ignoring conflicts would let an unethical criterion ship. |
 | D37 | A value over its length limit is shortened by code and reported, never a reason to discard the reply. | Limits exist for readability; losing a complete analysis over a few characters costs the reviewer far more than a trimmed sentence, and the warning keeps the trim visible. |
+| D38 | After an approval the stage page says where to go next and takes you there; every stage page keeps the five stages in view and ends with Previous and Next. "Next" is derived: stages the approval flagged for review first, then later stages that are open, then earlier ones. | Testers finished a stage and found no way forward except back through the project page. The order puts re-checking flagged work before moving on, so navigation never hides the consequences of a revision; it only points, and never runs anything. |
+| D39 | Each agent has its own identity — colour, icon, the question it answers, a header pattern — used only for chrome (header, stage rail, navigation, primary button, the summary picture's frame). Inside a record, colour keeps its shared meaning, and no agent colour is close to a meaning colour. | Every stage looked the same, so people lost track of which agent they were using. Colour that means "critical" or "on track" must mean it on every page, so identity stays out of the content; the icon and name always accompany the colour. |
+| D40 | Every summary opens with one picture only that agent draws — the risk tier on each legal scale, coverage per principle, how each story came out, what the audit verified, the parity gap per window against its threshold — built in the digest from computed facts, on screen and in the exported document alike. | The agents answer different questions; the first thing a person sees should be the shape of that answer. Drawing only computed facts keeps the picture from restating model prose as if it were measured. |
 
 ---
 
@@ -133,6 +136,72 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-25 — Continue to the next agent, and agents you can tell apart (branch `agent-identity-nav`)
+
+Decisions D38–D40.
+
+#### What was wrong
+
+- **TST-10** After *Approve and commit* the stage page only named the next
+  stage in a message. There was no button to continue; the stage tracker was
+  hidden in an expander, so people went back through the project page.
+- **TST-11** Every agent's page looked the same. The minimal look is
+  professional, but nothing told a person which agent they were using, and the
+  layer colours (Product blue, Dev green, Ops amber) repeated the colours that
+  mean *on track* and *medium* inside a record.
+
+#### What changed
+
+- `raia/lineage.py` — `next_steps(stages, after)`: where a person can usefully
+  go next, derived from the stage states (flagged stages first, then open
+  later stages, then open earlier ones). The Auditor and the Drift Monitor read
+  the same upstream work, so both are offered when both open. Stage, project
+  and Home pages use it, so they cannot disagree.
+- `raia/ui/components.py` — `next_step_card` (after an approval: the commit,
+  what was flagged, a *Continue to …* button in the next agent's colour and the
+  other open stages; with every stage approved, the Assessment),
+  `stage_footer` (Previous / Next on every stage page, whatever its state),
+  `stage_rail` (the five stages, always visible) and `agent_header`.
+- `raia/ui/gate.py` — the approval hands the page what to show next instead of
+  a one-line message; the card scrolls into view once, since the Approve button
+  sits at the foot of a long draft.
+- `views/stage.py` — the page wears its agent's identity and always draws the
+  navigation (early exits return instead of stopping the script).
+- `raia/ui/theme.py` — `AGENT_LOOK`: per agent, a colour for each theme, a
+  Material icon, the question it answers and a header pattern. `look_key`
+  names a container whose contents take the agent's colours; the pattern
+  travels as a CSS mask because the sanitizer in front of `st.html` removes
+  inline SVG.
+- `raia/ui/theme.css` — header, rail, what's-next card, footer and signature
+  styles; primary buttons inside an agent container take its colour; layer
+  labels are neutral text.
+- `raia/contract/digest.py` — `signature(...)`: each agent's summary picture
+  (`scale`, `cells`, `split`, `series`) from computed facts, and
+  `signature_text` for the document. `raia/contract/render.py` prints it in
+  the summary; `raia/ui/record_view.py` draws it above the figures.
+- `views/agents.py`, `views/project.py`, `views/home.py` — the architecture
+  diagram, documentation tabs, stage tracker and next-step prompts carry each
+  agent's colour and icon.
+- `raia/ui/guide.py` (and `docs/TESTERS.md`) — the Guide explains *What's
+  next*, the stage rail and Previous / Next.
+
+#### Tests
+
+- `tests/test_projects.py` — `next_steps` in a straight line, with the Auditor
+  and Drift Monitor open together, after a revision flags stages, with only
+  earlier stages open, and with everything approved; blocked stages are never
+  offered.
+- `tests/test_ui.py` — every agent has a distinct look; no agent colour is
+  within ΔE 20 of a meaning colour; agent colours pass WCAG AA in both themes;
+  the CSS layer contains no `<` (the sanitizer would drop the whole block);
+  each stage page has its header and Previous / Next; after an approval the
+  next agent's *Continue to* button appears and the footer's Next leads on;
+  after a revision the next step is to re-check the flagged stage; the card is
+  gone once another stage is opened.
+- `tests/test_contract.py` — each agent's signature is built from computed
+  facts (tier on each scale, coverage per principle, story outcomes, audit
+  verdicts, parity gap per window) and the document carries the same picture.
+
 ### 2026-09-25 — A reply a few characters too long is shortened, not discarded (branch `agent-output-revamp`)
 
 Decision D37.

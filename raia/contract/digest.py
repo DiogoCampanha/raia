@@ -7,9 +7,10 @@ The reading order of every RAIA record, computed from the record.
 People act on a record between other work, so every stage is read the same
 way, top to bottom, and can be put down at any point:
 
-1. **Summary** — the status, a one-line headline, a few numbers (risks found,
-   actions to take, decisions needed, one figure specific to the stage) and
-   the main issues.
+1. **Summary** — the status, a one-line headline, the stage's signature (one
+   picture only this agent draws — see :func:`signature`), a few numbers
+   (risks found, actions to take, decisions needed, one figure specific to the
+   stage) and the main issues.
 2. **Actions** — what to do, grouped by computed priority (Do now, Plan,
    Track), each with its owner, when, and what shows it is done; then the
    decisions only a person can take.
@@ -608,6 +609,189 @@ AGENT_MD_SECTIONS: Dict[str, List[str]] = {
 
 
 # ---------------------------------------------------------------------------
+# Signature: the one picture each agent draws at the top of its summary
+# ---------------------------------------------------------------------------
+#
+# Every agent reads the same way, but each answers a different question, and
+# its summary opens with the picture of that answer: where the product sits on
+# the legal risk scales, which principles the requirements cover, how each
+# story came out, what the audit could verify, how the fairness gap moved
+# across windows. Only facts code computed (or the record's own verdict
+# fields) are drawn; tones keep their shared meaning. Kinds:
+#
+# ``scale``   ``{"rows": [{"label", "steps": [str], "active": int, "tone", "note"}]}``
+# ``cells``   ``{"cells": [{"label", "state", "tone"}]}``
+# ``split``   ``{"segments": [{"label", "value": int, "tone"}]}`` — parts of one whole
+# ``series``  ``{"points": [{"label", "value": float, "tone", "note"}], "threshold": float, "unit"}``
+
+EU_STEPS = ["Minimal", "Limited", "High", "Prohibited"]
+BR_STEPS = ["Not listed", "High", "Excessive"]
+_STEP_TONES = {"Minimal": "ok", "Limited": "medium", "High": "high", "Prohibited": "critical",
+               "Not listed": "ok", "Excessive": "critical"}
+
+
+def _eu_step(tier: str) -> Optional[int]:
+    t = tier.lower()
+    if not t:
+        return None
+    if t.startswith("unacceptable") or t.startswith("prohibited"):
+        return 3
+    if t.startswith("high"):
+        return 2
+    if t.startswith("limited"):
+        return 1
+    if t.startswith("minimal"):
+        return 0
+    return None
+
+
+def _br_step(tier: str) -> Optional[int]:
+    t = tier.lower()
+    if not t:
+        return None
+    if t.startswith("excessive") or t.startswith("prohibited"):
+        return 2
+    if t.startswith("high"):
+        return 1
+    if t.startswith("not in"):
+        return 0
+    return None
+
+
+def _sig_risk(ext, data, record) -> Optional[Dict[str, Any]]:
+    v = record.get("computed_verdict") or {}
+    rows = []
+    for name, steps, tier, step in (("EU AI Act", EU_STEPS, str(v.get("eu_tier") or ""), _eu_step),
+                                    ("PL 2338/2023", BR_STEPS, str(v.get("br_tier") or ""), _br_step)):
+        at = step(tier)
+        if at is not None:
+            note = short_tier(tier)
+            rows.append({"label": name, "steps": steps, "active": at, "tone": _STEP_TONES[steps[at]],
+                         # The step already says it; keep the note only when it adds something.
+                         "note": "" if note.lower().startswith(steps[at].lower()) else note})
+    if not rows:
+        return None
+    return {"kind": "scale", "title": "Where the product sits", "rows": rows,
+            "caption": "Tiers computed by the rule engine from the declared answers."}
+
+
+def _sig_requirements(ext, data, record) -> Optional[Dict[str, Any]]:
+    cov = data.get("principle_coverage") or {}
+    if not cov:
+        return None
+    cells = []
+    for name, status in cov.items():
+        st_ = str(status)
+        if st_ == "addressed":
+            cells.append({"label": name, "state": "Addressed", "tone": "ok"})
+        elif st_.startswith("addressed"):
+            cells.append({"label": name, "state": "By an adopted suggestion", "tone": "low"})
+        elif "at stake" in st_:
+            cells.append({"label": name, "state": "Gap · at stake", "tone": "high"})
+        else:
+            cells.append({"label": name, "state": "Gap", "tone": "medium"})
+    covered = sum(1 for c in cells if c["tone"] in ("ok", "low"))
+    v = record.get("computed_verdict") or {}
+    legal, total = int(v.get("obligation_gaps") or 0), int(v.get("gap_count") or 0)
+    return {"kind": "cells", "title": "Principle coverage",
+            "cells": cells,
+            "caption": f"{covered} of {len(cells)} principles covered by the team's requirements"
+                       + (f"; {plural(total, 'gap')} to close ({legal} from legal obligations)." if total else ".")}
+
+
+def _sig_stories(ext, data, record) -> Optional[Dict[str, Any]]:
+    given = {s.get("id"): s for s in data.get("stories") or []}
+    entries = ext.get("stories") or []
+    if not entries:
+        return None
+    cells = []
+    for s in entries:
+        sid = str(s.get("story_id") or "")
+        title = (given.get(sid) or {}).get("title") or ""
+        n_new, n_conf = len(s.get("criteria") or []), len(s.get("conflicts") or [])
+        if n_conf:
+            state, tone = plural(n_conf, "conflict") + (f", {n_new} new" if n_new else ""), "high"
+        elif n_new:
+            state, tone = plural(n_new, "new criterion", "new criteria"), "ok"
+        else:
+            state, tone = "No ethical impact", "neutral"
+        cells.append({"label": f"{sid} · {title}" if title else sid, "state": state, "tone": tone})
+    return {"kind": "cells", "title": "How each story came out", "cells": cells,
+            "caption": "Conflicts with existing criteria are decisions for the team; RAIA never rewrites one."}
+
+
+def _sig_audit(ext, data, record) -> Optional[Dict[str, Any]]:
+    items = ext.get("items") or []
+    if not items:
+        return None
+    counts = _count_by(items, "verdict", V.AUDIT_VERDICTS)
+    return {"kind": "split", "title": "What the evidence verifies",
+            "segments": [{"label": V.AUDIT_VERDICT_LABELS[k], "value": counts[k], "tone": VERDICT_TONE[k]}
+                         for k in V.AUDIT_VERDICTS],
+            "caption": f"{plural(len(items), 'item')} audited. When in doubt an item stays Not verified."}
+
+
+def _sig_drift(ext, data, record) -> Optional[Dict[str, Any]]:
+    windows = ((data.get("analysis") or {}).get("windows")) or []
+    points = [w for w in windows if isinstance(w.get("dp_difference"), (int, float))]
+    if not points:
+        return None
+    threshold = ((data.get("thresholds") or {}).get("parity_difference") or {}).get("value")
+    trend = ((data.get("analysis") or {}).get("trend") or {}).get("direction")
+    return {"kind": "series", "title": "Parity gap by window",
+            "threshold": threshold, "unit": "",
+            "points": [{"label": str(w.get("window")), "value": float(w["dp_difference"]),
+                        "tone": "high" if w.get("parity_breach") else "ok",
+                        "note": "breach" if w.get("parity_breach") else ""} for w in points],
+            "caption": "Demographic-parity difference computed from the telemetry"
+                       + (f"; the trend is {trend}." if trend else ".")}
+
+
+SIGNATURES = {
+    "risk_classifier": _sig_risk,
+    "requirements_reviewer": _sig_requirements,
+    "story_refiner": _sig_stories,
+    "auditor": _sig_audit,
+    "drift_monitor": _sig_drift,
+}
+
+
+def signature(agent_key: str, record: Dict[str, Any], data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The agent's own summary picture, or ``None`` when its facts are missing."""
+    fn = SIGNATURES.get(agent_key)
+    if not fn:
+        return None
+    try:
+        return fn(record.get("extension") or {}, data, record)
+    except (TypeError, ValueError, KeyError, AttributeError):
+        # A record from an older schema may lack a field; the picture is an aid,
+        # never the only place a fact is shown, so it is simply left out.
+        return None
+
+
+def signature_text(sig: Optional[Dict[str, Any]]) -> str:
+    """One Markdown line for the exported document, so it reads like the screen."""
+    if not sig:
+        return ""
+    kind = sig["kind"]
+    if kind == "scale":
+        body = "; ".join(f"{r['label']}: **{r['steps'][r['active']]}** (of {' · '.join(r['steps'])})"
+                         for r in sig["rows"])
+    elif kind == "cells":
+        body = "; ".join(f"{c['label']}: {c['state']}" for c in sig["cells"])
+    elif kind == "split":
+        body = " · ".join(f"{s['label']} {s['value']}" for s in sig["segments"])
+    elif kind == "series":
+        thr = sig.get("threshold")
+        body = ((f"threshold {thr:g} — " if isinstance(thr, (int, float)) else "")
+                + " · ".join(f"{p['label']}: {p['value']:g}" + (f" ({p['note']})" if p["note"] else "")
+                             for p in sig["points"]))
+    else:
+        return ""
+    return f"**{sig['title']}** — {body}. {sig.get('caption', '')}".strip()
+
+
+# ---------------------------------------------------------------------------
 # The digest
 # ---------------------------------------------------------------------------
 
@@ -656,6 +840,7 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
 
     meta = record.get("meta") or {}
     return {
+        "signature": signature(agent_key, record, data),
         "agent_key": agent_key,
         "meta": meta,
         "status": {"key": status, "label": V.STATUS_LABELS.get(status, label(status)),

@@ -8,6 +8,7 @@ from raia.agents import AGENTS
 from raia.contract import actions as action_plan
 from raia.contract import vocab as V
 from raia.export import bundle_name, session_bundle
+from raia.lineage import next_steps
 from raia.projects import EDITOR, OWNER, REVIEWER, ROLE_LABELS
 from raia.repository import ACCEPTED, ARTIFACT_FILES, OPEN, RESOLVED
 from raia.ui import routes
@@ -15,7 +16,7 @@ from raia.ui.components import (artifact_body, empty_state, page_header, risk_md
                                 role_label, role_md, stage_tracker, stat_tiles)
 from raia.ui.record_view import record_from_data, record_view
 from raia.ui.state import current_user, flash, get_service, open_project, pkey, show_flash
-from raia.ui.theme import I
+from raia.ui.theme import I, look, look_key
 
 user = current_user()
 svc = get_service()
@@ -44,9 +45,7 @@ show_flash()
 
 # ---- Primary action -------------------------------------------------------------
 
-focus = (next((s for s in stages if s["status"] == "in_review"), None)
-         or next((s for s in stages if s["status"] == "stale"), None)
-         or next((s for s in stages if s["status"] == "ready"), None))
+focus = next(iter(next_steps(stages)), None)
 with st.container(border=True):
     c1, c2 = st.columns([4, 1.4], vertical_alignment="center")
     if focus is None:
@@ -61,11 +60,12 @@ with st.container(border=True):
                "stale": "Upstream work changed after this stage was approved: "
                         + ", ".join(focus["stale_because_names"]) + ".",
                "ready": "This is the next stage in the pipeline."}[focus["status"]]
-        c1.markdown(f"**Next: {verb} {focus['name']}**")
+        c1.markdown(f"{look(focus['agent']).material} **Next: {verb} {focus['name']}**")
         c1.caption(why)
-        if c2.button(f"{verb} {focus['name']}", type="primary", key="cta_stage", icon=I.OPEN,
-                     width="stretch"):
-            routes.go(routes.STAGE, project=proj.id, agent=focus["agent"])
+        with c2, st.container(key=look_key(focus["agent"], "cta")):
+            if st.button(f"{verb} {focus['name']}", type="primary", key="cta_stage", icon=I.OPEN,
+                         width="stretch"):
+                routes.go(routes.STAGE, project=proj.id, agent=focus["agent"])
 
 plan_rows = action_plan.project_actions(repo)
 

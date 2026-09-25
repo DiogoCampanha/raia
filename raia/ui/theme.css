@@ -83,9 +83,8 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   display: inline-flex; align-items: center; gap: .375rem;
   font-size: .6875rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
 }
-.raia-layer-tag.product { color: var(--raia-product); }
-.raia-layer-tag.dev { color: var(--raia-dev); }
-.raia-layer-tag.ops { color: var(--raia-ops); }
+/* Layers are named, not coloured: colour belongs to the agent (see below). */
+.raia-layer-tag { color: var(--raia-muted); }
 
 /* ---- Empty state ------------------------------------------------------- */
 
@@ -218,3 +217,159 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .rv-text .lbl { display: block; font-size: .8125rem; color: var(--raia-muted); font-weight: 600; margin-bottom: .1rem; }
 .rv-text .lead { font-weight: 600; }
 .rv-notice { border: 1px solid rgba(220, 38, 38, .45); background: rgba(220, 38, 38, .07); border-radius: .5rem; padding: .6rem .8rem; margin-bottom: .6rem; }
+
+/* ---- Agent identity ------------------------------------------------------ */
+/*
+ * Each agent has its own colour, icon and header pattern (raia/ui/theme.py,
+ * AGENT_LOOK). A keyed container named "look-{agent}-..." sets --agent for what
+ * is inside it; the rules below use it for chrome only — header, stage rail,
+ * navigation and primary buttons. Record content keeps the shared tones above.
+ * --agent switches between the light and dark variants with light-dark(),
+ * which follows the color-scheme Streamlit sets for the active theme.
+ */
+
+[class*="st-key-look-"] [data-testid="stBaseButton-primary"] {
+  background-color: var(--agent-ink); border-color: var(--agent-ink); color: #fff;
+}
+[class*="st-key-look-"] [data-testid="stBaseButton-primary"]:hover {
+  background-color: color-mix(in srgb, var(--agent-ink) 84%, #000); border-color: color-mix(in srgb, var(--agent-ink) 84%, #000); color: #fff;
+}
+[class*="st-key-look-"] [data-testid="stBaseButton-primary"]:focus-visible {
+  box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--agent) 45%, transparent);
+}
+[class*="st-key-look-"] [data-testid="stBaseButton-primary"]:disabled {
+  background-color: transparent; color: inherit; opacity: .5; border-color: var(--raia-border);
+}
+
+.raia-icon {
+  font-family: "Material Symbols Rounded"; font-weight: normal; font-style: normal;
+  line-height: 1; letter-spacing: normal; text-transform: none; white-space: nowrap;
+  font-feature-settings: "liga"; -webkit-font-smoothing: antialiased; display: inline-block;
+}
+
+/* Page header of a stage */
+.agent-hero {
+  position: relative; overflow: hidden; isolation: isolate;
+  display: flex; gap: var(--raia-space-4); align-items: flex-start;
+  padding: 1.1rem 1.25rem 1.15rem; border-radius: calc(var(--raia-radius) + .125rem);
+  border: 1px solid color-mix(in srgb, var(--agent) 26%, transparent);
+  border-left: 5px solid var(--agent);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--agent) 11%, transparent),
+                                      color-mix(in srgb, var(--agent) 3%, transparent) 72%);
+}
+.agent-hero-icon {
+  flex: none; width: 3.25rem; height: 3.25rem; border-radius: .8rem;
+  display: grid; place-items: center; background: var(--agent-ink); color: #fff; font-size: 1.9rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .12);
+}
+.agent-hero-text { min-width: 0; flex: 1 1 auto; }
+.agent-hero-top { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; margin-bottom: .3rem; }
+.agent-hero-eyebrow {
+  font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--raia-muted); margin: 0;
+}
+.agent-hero h1.raia-title { padding: 0 !important; margin: 0 !important; line-height: 1.2; }
+.agent-hero-q { margin: .2rem 0 0; font-size: 1.0625rem; font-weight: 600; color: var(--agent); }
+.agent-hero-desc { margin: .45rem 0 0; color: var(--raia-muted); line-height: 1.55; max-width: 70ch; font-size: .9375rem; }
+.agent-hero::after {
+  content: ""; position: absolute; right: -6px; bottom: -8px; width: 250px; height: 125px; z-index: -1;
+  background: var(--agent); opacity: .17; pointer-events: none;
+  -webkit-mask: var(--agent-motif) no-repeat right bottom / contain;
+  mask: var(--agent-motif) no-repeat right bottom / contain;
+}
+.agent-hero.is-compact { margin: .25rem 0 .75rem; padding: .85rem 1rem; }
+.agent-hero.is-compact .agent-hero-icon { width: 2.6rem; height: 2.6rem; font-size: 1.5rem; }
+.agent-hero.is-compact .agent-hero-q { margin-top: 0; }
+@media (max-width: 720px) { .agent-hero::after { opacity: .08; } .agent-hero-icon { width: 2.6rem; height: 2.6rem; font-size: 1.5rem; } }
+
+/* Stage rail: the five stages, always visible on a stage page */
+[class*="st-key-look-"][class*="-rail"] {
+  border-top: 3px solid color-mix(in srgb, var(--agent) 30%, transparent);
+  padding-top: .35rem; gap: .1rem;
+}
+[class*="st-key-look-"][class*="-rail-current"] { border-top-color: var(--agent); }
+[class*="st-key-look-"][class*="-rail"] [data-testid="stBaseButton-tertiary"] { color: var(--agent); font-weight: 600; min-height: 0; padding: 0; }
+[class*="st-key-look-"][class*="-rail"] [data-testid="stBaseButton-tertiary"]:hover { text-decoration: underline; }
+.rail-name { display: flex; align-items: center; gap: .35rem; font-weight: 700; color: var(--agent); line-height: 1.6; }
+.rail-name .raia-icon, .rail-meta .raia-icon { font-size: 1.1rem; }
+.rail-meta { font-size: .75rem; color: var(--raia-muted); display: flex; align-items: center; gap: .35rem; }
+.rail-meta .raia-dot { width: .45rem; height: .45rem; }
+.rail-meta.s-approved .raia-dot { color: #059669; }
+.rail-meta.s-stale .raia-dot { color: #ea580c; }
+.rail-meta.s-in_review .raia-dot { color: #7c3aed; }
+.rail-meta.s-ready .raia-dot { color: #2563eb; }
+.rail-meta.s-blocked .raia-dot { color: #94a3b8; }
+
+/* On a phone the columns stack; keep only the current stage (Previous and
+ * Next at the foot of the page still move between stages). */
+@media (max-width: 640px) {
+  [class*="st-key-look-"][class*="-rail"]:not([class*="-rail-current"]) { display: none; }
+}
+
+/* Project-page tracker cards carry the agent colour on their top edge */
+[class*="st-key-look-"][class*="-trk"] { border-top: 3px solid var(--agent) !important; }
+[class*="st-key-look-"][class*="-trk"] [data-testid="stBaseButton-tertiary"] { color: var(--agent); font-weight: 600; }
+
+/* What's next, after an approval */
+[class*="st-key-look-"][class*="-done"] {
+  border-color: color-mix(in srgb, #059669 40%, transparent) !important;
+  background: color-mix(in srgb, #059669 6%, transparent);
+}
+.next-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: 1rem; }
+.next-head .raia-icon { color: #059669; font-size: 1.35rem; }
+.next-head code { font-size: .8125rem; }
+.next-label { font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--raia-muted); margin: .25rem 0 0; }
+
+/* Previous / next at the foot of a stage */
+.stage-foot-step { text-align: center; font-size: .8125rem; color: var(--raia-muted); }
+
+/* Signature: each agent's own picture at the top of its summary
+ * (raia/contract/digest.py, signature). Framed in the agent's colour;
+ * everything inside keeps the shared tones. */
+.rv-sig {
+  border: 1px solid var(--raia-border); border-radius: var(--raia-radius);
+  padding: var(--raia-space-3) var(--raia-space-4); margin: 0 0 var(--raia-space-3);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--agent) 6%, transparent), transparent 60%);
+}
+.rv-sig-h { display: flex; align-items: center; gap: .4rem; font-weight: 650; font-size: .9375rem; color: var(--agent); margin-bottom: .6rem; }
+.rv-sig-h .raia-icon { font-size: 1.15rem; }
+.rv-sig-cap { margin: .6rem 0 0; font-size: .8125rem; color: var(--raia-muted); }
+
+.sig-scale { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr) auto; align-items: center; gap: .75rem; margin: .35rem 0; }
+.sig-row-label { font-size: .8125rem; font-weight: 600; }
+.sig-steps { display: flex; gap: .25rem; }
+.sig-step {
+  flex: 1 1 0; text-align: center; font-size: .75rem; font-weight: 500; padding: .3rem .25rem; border-radius: .35rem;
+  color: var(--raia-muted); background: var(--raia-surface); border: 1px solid var(--raia-border);
+}
+/* Darkened so white text keeps AA contrast on every tone. */
+.sig-step.is-on { color: #fff; background: color-mix(in srgb, var(--tone) 80%, #000); border-color: transparent; font-weight: 700; }
+.sig-note { font-size: .8125rem; white-space: nowrap; }
+@media (max-width: 720px) { .sig-scale { grid-template-columns: 1fr; gap: .3rem; } }
+
+.sig-cells { display: grid; gap: .4rem; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.sig-cell {
+  border: 1px solid var(--raia-border); border-top: 3px solid var(--tone); border-radius: .45rem;
+  padding: .4rem .55rem; background: var(--raia-surface); min-width: 0;
+}
+.sig-cell .l { font-size: .8125rem; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.sig-cell .s { font-size: .75rem; color: var(--tone); font-weight: 600; margin-top: .15rem; }
+.sig-cell.tone-neutral .s, .sig-cell.tone-low .s { color: var(--raia-muted); }
+
+.sig-split { display: flex; height: .8rem; border-radius: 999px; overflow: hidden; gap: 2px; background: var(--raia-surface); margin-bottom: .1rem; }
+.sig-split .seg { background: var(--tone); min-width: .5rem; }
+
+.sig-plot {
+  position: relative; display: flex; align-items: flex-end; gap: .75rem; height: 88px;
+  padding: 0 .25rem; border-bottom: 1px solid var(--raia-border);
+}
+.sig-bar {
+  flex: 1 1 0; max-width: 76px; border-radius: .3rem .3rem 0 0;
+  background: color-mix(in srgb, var(--tone) 70%, transparent); border: 1px solid var(--tone); border-bottom: none;
+}
+.sig-thr { position: absolute; left: 0; right: 0; border-top: 1.5px dashed #dc2626; pointer-events: none; }
+.sig-thr span { position: absolute; right: 0; top: -1.15rem; font-size: .6875rem; font-weight: 600; color: #dc2626; }
+.sig-xs { display: flex; gap: .75rem; padding: .3rem .25rem 0; }
+.sig-x { flex: 1 1 0; max-width: 76px; font-size: .75rem; color: var(--raia-muted); line-height: 1.35; }
+.sig-x b { display: block; color: inherit; font-size: .8125rem; color: var(--raia-muted); }
+.sig-x .flag { color: #ea580c; font-weight: 600; }

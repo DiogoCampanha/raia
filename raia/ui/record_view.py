@@ -33,7 +33,7 @@ from raia.contract import digest as D
 from raia.contract import vocab as V
 from raia.contract.render import table as md_table
 
-from .theme import I
+from .theme import I, look
 
 
 def esc(value: Any) -> str:
@@ -70,6 +70,54 @@ def _lead_split(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _signature(dg: Dict[str, Any]) -> str:
+    """The agent's own picture (``digest.signature``), drawn in its identity."""
+    sig = dg.get("signature")
+    if not sig:
+        return ""
+    agent = str(dg.get("agent_key") or "")
+    kind = sig["kind"]
+    out = [f'<div class="rv-sig look-{esc(agent)}" data-kind="{esc(kind)}">',
+           f'<div class="rv-sig-h"><span class="raia-icon" aria-hidden="true">{esc(look(agent).icon)}</span>'
+           f'{esc(sig["title"])}</div>']
+    if kind == "scale":
+        for r in sig["rows"]:
+            on = f' is-on tone-{esc(r["tone"])}" aria-current="true'
+            steps = "".join(f'<span class="sig-step{on if i == r["active"] else ""}">{esc(step)}</span>'
+                            for i, step in enumerate(r["steps"]))
+            out.append(f'<div class="sig-scale"><span class="sig-row-label">{esc(r["label"])}</span>'
+                       f'<div class="sig-steps">{steps}</div>'
+                       f'<span class="rv-muted sig-note">{esc(r["note"])}</span></div>')
+    elif kind == "cells":
+        out.append('<div class="sig-cells">' + "".join(
+            f'<div class="sig-cell tone-{esc(c["tone"])}"><div class="l">{esc(c["label"])}</div>'
+            f'<div class="s">{esc(c["state"])}</div></div>' for c in sig["cells"]) + "</div>")
+    elif kind == "split":
+        segs = [x for x in sig["segments"] if x["value"]]
+        out.append('<div class="sig-split" role="img" aria-label="'
+                   + esc(", ".join(f'{x["label"]} {x["value"]}' for x in sig["segments"])) + '">'
+                   + "".join(f'<span class="seg tone-{esc(x["tone"])}" style="flex-grow:{int(x["value"])}"></span>'
+                             for x in segs) + "</div>")
+        out.append('<div class="rv-tags">' + "".join(chip(x["label"], x["tone"], n=x["value"])
+                                                     for x in sig["segments"]) + "</div>")
+    elif kind == "series":
+        pts = sig["points"]
+        thr = sig.get("threshold")
+        top = max([p["value"] for p in pts] + ([thr] if isinstance(thr, (int, float)) else [])) * 1.2 or 1
+        bars = "".join(f'<div class="sig-bar tone-{esc(p["tone"])}" style="height:{max(p["value"] / top * 100, 2):.1f}%"'
+                       f' title="{esc(p["label"])}: {p["value"]:g}"></div>' for p in pts)
+        line = (f'<div class="sig-thr" style="bottom:{thr / top * 100:.1f}%"><span>threshold {thr:g}</span></div>'
+                if isinstance(thr, (int, float)) else "")
+        labels = "".join(f'<div class="sig-x"><b>{p["value"]:g}</b> {esc(p["label"])}'
+                         + (f' · <span class="flag">{esc(p["note"])}</span>' if p["note"] else "") + "</div>"
+                         for p in pts)
+        out.append(f'<div class="sig-plot">{line}{bars}</div><div class="sig-xs">{labels}</div>')
+    if sig.get("caption"):
+        out.append(f'<p class="rv-sig-cap">{esc(sig["caption"])}</p>')
+    out.append("</div>")
+    return "".join(out)
+
+
 def _summary(dg: Dict[str, Any]) -> None:
     status = dg["status"]
     parts = [
@@ -78,6 +126,7 @@ def _summary(dg: Dict[str, Any]) -> None:
         f'<p class="rv-headline">{esc(dg["headline"])}</p>' if dg["headline"] else "",
         f'<p class="rv-summary">{esc(dg["summary"])}</p>' if dg["summary"] else "",
         "</div>",
+        _signature(dg),
         '<div class="rv-kpis">',
     ]
     for k in dg["kpis"]:
