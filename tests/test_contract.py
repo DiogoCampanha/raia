@@ -282,6 +282,30 @@ def test_reading_order() -> None:
     check("headline" in model_facing_schema("risk_classifier")["required"], "the model is always asked for a headline")
 
 
+def test_length_overflow() -> None:
+    print("== a reply over a length limit is shortened, not discarded ==")
+    long_head = ("High-risk under both instruments because candidate ranking is listed for employment, so "
+                 "documented human review of every shortlist must exist before the pilot starts in any market "
+                 "where the company operates.")
+    reply = "```json\n" + json.dumps(_record(headline=long_head, summary="x " * 400)) + "\n```"
+    rec, errors = assemble.parse_record("risk_classifier", reply)
+    check(rec is not None and not errors, "a reply whose only fault is length is accepted without a repair")
+    check(len(rec["headline"]) <= 200 and len(rec["summary"]) <= 600, "…with every value inside its limit")
+    check(any(n.startswith("headline") for n in rec["shortened"]) and any(n.startswith("summary") for n in rec["shortened"]),
+          "…and each shortening recorded")
+    r = _rationale("risk_classifier")
+    fin = assemble.finalize("risk_classifier", rec, r, EVIDENCE, AGENTS["risk_classifier"].spec)
+    items = {i.code: i for i in checks.check_corrections(fin)}
+    check("contract.shortened" in items and items["contract.shortened"].level != FAIL,
+          "the reviewer is told, as a warning, what was shortened")
+    check(checks.check_schema(fin).level == PASS, "…and the record still conforms")
+    bad = _record(headline=long_head)
+    bad["overall_status"] = "fine"
+    rec2, errors2 = assemble.parse_record("risk_classifier", "```json\n" + json.dumps(bad) + "\n```")
+    check(rec2 is None and errors2 and all("headline" not in e for e in errors2),
+          "a reply with a real error still goes to repair, with only that error reported")
+
+
 def test_story_conflicts() -> None:
     print("== conflicting existing criteria become decisions ==")
     from raia.rationale import story_map
@@ -317,7 +341,7 @@ def test_story_conflicts() -> None:
 def main() -> None:
     for fn in (test_vocabularies_come_from_the_corpus, test_rubric, test_parse_and_fallback,
                test_finalize, test_render_and_schema, test_published_schemas_are_current, test_action_plan,
-               test_reading_order, test_story_conflicts):
+               test_reading_order, test_length_overflow, test_story_conflicts):
         fn()
     print()
     if FAILURES:

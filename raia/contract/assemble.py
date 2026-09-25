@@ -81,21 +81,88 @@ def extract_json(text: str) -> Dict[str, Any]:
     raise ValueError(f"the reply is not a JSON object ({last})")
 
 
+LENGTH_ERRORS = ("string_too_long", "too_long")
+
+
+def shorten_text(text: str, limit: int) -> str:
+    """Cut text to ``limit`` characters at a sentence end, or else a word end with an ellipsis."""
+    text = str(text or "").strip()
+    if len(text) <= limit:
+        return text
+    head = text[:limit]
+    ends = [m.end() for m in re.finditer(r"[.!?](?=\s|$)", head)]
+    if ends and ends[-1] >= limit * 0.5:
+        return head[: ends[-1]].strip()
+    cut = head[: max(1, limit - 1)]
+    space = cut.rfind(" ")
+    if space >= limit * 0.5:
+        cut = cut[:space]
+    return cut.rstrip(" ,;:—-") + "…"
+
+
+def _shorten(raw: Any, errors: Sequence[Dict[str, Any]]) -> List[str]:
+    """Bring every over-length value back within its limit, in place. Returns what was changed.
+
+    A length limit is a readability rule. A reply whose only fault is a field a
+    few characters over it carries a complete analysis, and throwing that away —
+    or spending a repair round trip on it — costs the reviewer far more than a
+    trimmed sentence. The trim is recorded and reported, never silent.
+    """
+    notes: List[str] = []
+    for e in errors:
+        if e.get("type") not in LENGTH_ERRORS:
+            continue
+        loc, limit = list(e.get("loc", ())), int((e.get("ctx") or {}).get("max_length") or 0)
+        if not loc or limit <= 0:
+            continue
+        parent: Any = raw
+        try:
+            for part in loc[:-1]:
+                parent = parent[part]
+            value = parent[loc[-1]]
+        except (KeyError, IndexError, TypeError):
+            continue
+        where = ".".join(str(p) for p in loc)
+        if isinstance(value, str):
+            parent[loc[-1]] = shorten_text(value, limit)
+            notes.append(f"{where} was {len(value)} characters (limit {limit}); shortened by code.")
+        elif isinstance(value, list):
+            parent[loc[-1]] = value[:limit]
+            notes.append(f"{where} had {len(value)} entries (limit {limit}); the first {limit} were kept.")
+    return notes
+
+
 def parse_record(agent_key: str, text: str) -> Tuple[Optional[Dict[str, Any]], List[str]]:
-    """Validate a reply against the agent's schema. Returns (record, errors)."""
+    """Validate a reply against the agent's schema. Returns (record, errors).
+
+    Values over a length limit are shortened by code (and reported in the
+    record's ``shortened`` list) rather than failing the reply; every other
+    error is returned for the bounded repair.
+    """
     try:
         raw = extract_json(text)
     except ValueError as exc:
         return None, [str(exc)]
-    try:
-        model = record_model(agent_key).model_validate(raw)
-    except ValidationError as exc:
-        errors = []
-        for e in exc.errors()[:30]:
-            loc = ".".join(str(p) for p in e.get("loc", ()))
-            errors.append(f"{loc or '(root)'}: {e.get('msg', 'invalid')}")
-        return None, errors
-    return model.model_dump(), []
+    shortened: List[str] = []
+    for _ in range(4):
+        try:
+            model = record_model(agent_key).model_validate(raw)
+        except ValidationError as exc:
+            details = exc.errors()
+            fixed = _shorten(raw, details)
+            shortened += fixed
+            if fixed:
+                continue
+            errors = []
+            for e in details[:30]:
+                loc = ".".join(str(p) for p in e.get("loc", ()))
+                errors.append(f"{loc or '(root)'}: {e.get('msg', 'invalid')}")
+            return None, errors
+        record = model.model_dump()
+        if shortened:
+            record["shortened"] = shortened
+        return record, []
+    return None, ["the reply kept exceeding its length limits after shortening"]
 
 
 TRUNCATED_REASONS = ("max_tokens", "length")
@@ -387,6 +454,8 @@ def finalize(
     if V.rank(V.OVERALL_STATUSES, floor) > V.rank(V.OVERALL_STATUSES, declared):
         notes.append(f"Overall status raised from {declared} to {floor} by code.")
         rec["overall_status"] = floor
+
+    notes += [f"SHORTENED: {n}" for n in rec.get("shortened") or []]
 
     rec["meta"] = {
         "schema_version": V.SCHEMA_VERSION,
