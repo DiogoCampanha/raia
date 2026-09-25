@@ -58,17 +58,17 @@ Excerpts pinned for the canonical scenario:
 
 ## 7. The record it produces
 
-Schema `raia-record/1.0` — `docs/schema/drift_monitor.schema.json`. Identifier prefix `DM`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.1` — `docs/schema/drift_monitor.schema.json`. Identifier prefix `DM`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
 | `alerts` | One alert per computed breach window. |
 | `alerts[].window` | A computed breach window label, exactly. |
 | `alerts[].severity` | Exactly the severity the engine computed. |
-| `alerts[].meaning_for_affected_people` | — |
+| `alerts[].meaning_for_affected_people` | What this means for the people affected, in one or two sentences. |
 | `alerts[].citations` | Citation tags copied exactly from the retrieved excerpts, e.g. "[Source: ... / authority: legal]". Never invent one. |
-| `trend_interpretation` | The movement across windows (NIST AI RMF MEASURE 3). |
-| `representativeness` | Whether the population mix shifted relative to the population affected (MEASURE 2). |
+| `trend_interpretation` | The movement across windows, conclusion first (NIST AI RMF MEASURE 3). |
+| `representativeness` | Whether the population mix shifted relative to the population affected, conclusion first (MEASURE 2). |
 | `sample_adequacy` | Groups whose samples do not support a conclusion. |
 | `response_plan` | Response, recovery and communication (NIST AI RMF MANAGE). |
 | `response_plan.escalation_path` | Who is alerted, in what order, within what time. |
@@ -76,7 +76,7 @@ Schema `raia-record/1.0` — `docs/schema/drift_monitor.schema.json`. Identifier
 | `response_plan.affected_community_feedback` | How input from users and affected communities is captured (MANAGE 4). |
 | `response_plan.recovery_and_communication` | How the system recovers and who is told. |
 
-Rendered sections: Summary → Findings → Drift Alerts → Fairness & Representativeness Analysis → Response Plan → Action Plan → Open Issues → Not Grounded in Retrieved Excerpts → Declared Coverage.
+Rendered sections: Summary → Action Plan → Open Issues → Findings → Drift Alerts → Fairness & Representativeness Analysis → Response Plan → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
 
 Verdict keys the agent declares: `windows`.
 

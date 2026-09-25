@@ -79,16 +79,26 @@ EXAMPLES: Dict[str, Dict[str, Any]] = {
         "stakeholders": ["users", "subjects"],
     },
     "story_refiner": {
-        "user_stories": (
-            "S1. As a recruiter, I want to see the top-20 ranked candidates for a vacancy so "
-            "that I can build an interview shortlist quickly.\n"
-            "S2. As a recruiter, I want to filter candidates by minimum qualification criteria "
-            "so that unqualified applications are excluded automatically.\n"
-            "S3. As an HR manager, I want a dashboard of screening throughput so that I can "
-            "report hiring KPIs."
-        ),
+        "user_stories": [
+            {"id": "S1", "title": "Ranked shortlist",
+             "description": "As a recruiter, I want to see the top-20 ranked candidates for a vacancy so "
+                            "that I can build an interview shortlist quickly.",
+             "acceptance_criteria": "Shows the 20 highest-scoring candidates, ordered by score\n"
+                                    "The list loads in under 2 seconds for a vacancy with 5,000 applications",
+             "capabilities": ["scoring", "automation"]},
+            {"id": "S2", "title": "Minimum-qualification filter",
+             "description": "As a recruiter, I want to filter candidates by minimum qualification criteria "
+                            "so that unqualified applications are excluded automatically.",
+             "acceptance_criteria": "Applications that miss any minimum criterion are rejected automatically, "
+                                    "with no human review\nThe filter criteria are configurable per vacancy",
+             "capabilities": ["automation", "scoring"]},
+            {"id": "S3", "title": "Screening throughput dashboard",
+             "description": "As an HR manager, I want a dashboard of screening throughput so that I can "
+                            "report hiring KPIs.",
+             "acceptance_criteria": "Shows applications screened per week and per vacancy",
+             "capabilities": ["analytics"]},
+        ],
         "sprint_goal": "Ship ranking v2 and the qualification filter",
-        "touched_capabilities": ["scoring", "automation", "analytics"],
         "definition_of_done": (
             "Merged behind a feature flag, unit and integration tests green, evaluation report "
             "attached to the ticket, documentation updated."

@@ -29,12 +29,22 @@ def read_hints(prompt: str) -> Dict[str, Any]:
 
 
 def _finding(cite: List[str], links: List[str], principle: str = "accountability",
-             category: str = "MAP 5") -> Dict[str, Any]:
+             category: str = "MAP 5", fid: str = "F1", magnitude: str = "significant",
+             likelihood: str = "possible", title: str = "Placeholder finding from mock mode") -> Dict[str, Any]:
     return {
-        "id": "F1", "title": "Placeholder finding from mock mode", "statement": MOCK_NOTE,
-        "principle": principle, "nist_category": category, "magnitude": "significant",
-        "likelihood": "possible", "placement_rationale": "Mock placement.",
+        "id": fid, "title": title, "statement": MOCK_NOTE,
+        "principle": principle, "nist_category": category, "magnitude": magnitude,
+        "likelihood": likelihood, "placement_rationale": "Mock placement.",
         "stakeholders": ["affected persons"], "citations": cite, "links": links,
+    }
+
+
+def _action(aid: str, fid: str, owner: str, cite: List[str], text: str) -> Dict[str, Any]:
+    return {
+        "id": aid, "finding_ids": [fid], "action": text,
+        "response": "mitigate", "owner_role": owner, "lifecycle_stage": "plan_and_design",
+        "review_cadence": "every_release", "verification_method": "inspection",
+        "evidence_artifact": "placeholder artifact", "citations": cite, "links": [],
     }
 
 
@@ -77,18 +87,26 @@ def build(prompt: str) -> Dict[str, Any]:
     elif key == "story_refiner":
         stories = ids.get("story_ids") or []
         cards = ids.get("card_ids") or []
+        story_cards = ids.get("story_cards") or {}
+        existing = ids.get("existing_criteria") or {}
         links = stories[:1]
         entries = []
         for i, sid in enumerate(stories):
             if i == 0:
-                entries.append({"story_id": sid, "eccola_cards": cards[:1], "card_discussion": MOCK_NOTE,
-                                "criteria": [{"id": f"AC-{sid}-1", "ms_goal": "F2", "stakeholder_group": "applicants",
-                                              "condition": "Measured selection-rate test passes the threshold.",
-                                              "evidence_artifact": "evaluation report", "owner_role": "data_science",
-                                              "evr_ids": (ids.get("evr_ids") or [])[:1]}]})
+                entry = {"story_id": sid, "eccola_cards": (story_cards.get(sid) or cards)[:1], "card_discussion": MOCK_NOTE,
+                         "criteria": [{"id": f"AC-{sid}-1", "ms_goal": "F2", "stakeholder_group": "applicants",
+                                       "condition": "Measured selection-rate test passes the threshold.",
+                                       "evidence_artifact": "evaluation report", "owner_role": "data_science",
+                                       "evr_ids": (ids.get("evr_ids") or [])[:1]}]}
+                if existing.get(sid):
+                    entry["conflicts"] = [{"criterion_id": existing[sid][0],
+                                           "conflicts_with": (ids.get("evr_ids") or [])[:1] or (story_cards.get(sid) or cards)[:1],
+                                           "problem": "[MOCK MODE] Placeholder conflict.",
+                                           "suggested_rewrite": "[MOCK MODE] Placeholder rewrite."}]
+                entries.append(entry)
             else:
                 entries.append({"story_id": sid, "no_impact_reason": MOCK_NOTE})
-        ext = {"stories": entries, "sprint_ethics_log": MOCK_NOTE}
+        ext = {"stories": entries, "sprint_ethics_log": [MOCK_NOTE]}
     elif key == "auditor":
         items = ids.get("audit_items") or {}
         links = list(items)[:1]
@@ -111,18 +129,24 @@ def build(prompt: str) -> Dict[str, Any]:
         }
 
     return {
+        "headline": "[MOCK MODE] Placeholder headline: no model was called.",
         "summary": MOCK_NOTE,
         "overall_status": "needs_attention",
         "declared_verdict": verdict,
         "agrees_with_rule_engine": True,
         "disagreement_rationale": "",
-        "findings": [_finding(cite, links)],
-        "actions": [{
-            "id": "A1", "finding_ids": ["F1"], "action": "Placeholder action from mock mode.",
-            "response": "mitigate", "owner_role": "product", "lifecycle_stage": "plan_and_design",
-            "review_cadence": "every_release", "verification_method": "inspection",
-            "evidence_artifact": "placeholder artifact", "citations": cite, "links": [],
-        }],
+        "findings": [
+            _finding(cite, links),
+            _finding(cite, [], "transparency", "MEASURE 2", "F2", "significant", "likely",
+                     "Second placeholder finding from mock mode"),
+            _finding([], [], "privacy", "MAP 1", "F3", "limited", "possible",
+                     "Third placeholder finding from mock mode"),
+        ],
+        "actions": [
+            _action("A1", "F1", "product", cite, "Placeholder action from mock mode."),
+            _action("A2", "F2", "engineering", cite, "Second placeholder action from mock mode."),
+            _action("A3", "F3", "data_science", [], "Third placeholder action from mock mode."),
+        ],
         "open_issues": [],
         "not_grounded": [],
         "coverage": [{"key": k, "status": "covered", "justification": "Placeholder declaration from mock mode."}

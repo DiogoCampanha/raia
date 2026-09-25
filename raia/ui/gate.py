@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import copy
 import json
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -40,6 +41,7 @@ from raia.fields import InputField
 from raia.rationale.coverage import ORIGIN_KEY, next_requirement
 from raia.projects import AccessDenied, Project, UsageLimitReached
 
+from .record_view import record_view
 from .state import current_user, flash, get_service, pkey
 from .theme import CHECK, I
 
@@ -70,15 +72,148 @@ def _current_inputs(agent_key: str, fields: List[InputField]) -> Dict[str, Any]:
     for f in fields:
         value = st.session_state.get(_state_key(agent_key, f.key))
         if value is None:
-            value = [] if f.is_multi else (f.default or "")
+            value = [] if f.is_list else (f.default or "")
+        if f.kind == "stories" and isinstance(value, list):
+            value = [{k: v for k, v in s.items() if k != "uid"} for s in value if isinstance(s, dict)]
         out[f.key] = value
     return out
+
+
+# ---------------------------------------------------------------------------
+# Stories, one card each
+# ---------------------------------------------------------------------------
+#
+# A story is entered with its own description, acceptance criteria and what it
+# touches, so the engine can select themes per story and the agent can tell a
+# story's existing criteria from the story itself. The list lives in session
+# state under the field's key; each card's widgets are keyed by a stable uid, so
+# removing one story never shifts another's answers.
+
+STORY_PARTS = (("id", ""), ("title", ""), ("description", ""), ("acceptance_criteria", ""), ("capabilities", []))
+
+
+def _new_story(**values: Any) -> Dict[str, Any]:
+    story = {part: copy.deepcopy(default) for part, default in STORY_PARTS}
+    story.update(values)
+    story["uid"] = uuid.uuid4().hex[:10]
+    return story
+
+
+def _story_key(agent_key: str, uid: str, part: str) -> str:
+    return pkey("story", agent_key, uid, part)
+
+
+def _stories(agent_key: str, f: InputField) -> List[Dict[str, Any]]:
+    """The field's stories as a list of dicts with uids (reading older shapes too)."""
+    key = _state_key(agent_key, f.key)
+    value = st.session_state.get(key)
+    if isinstance(value, str):
+        value = f.parse(value) if f.parse and value.strip() else []
+    if not isinstance(value, list):
+        value = []
+    stories = [s if isinstance(s, dict) and s.get("uid") else _new_story(**(s if isinstance(s, dict) else {}))
+               for s in value]
+    if not stories:
+        stories = [_new_story()]
+    st.session_state[key] = stories
+    return stories
+
+
+def _sync_story(agent_key: str, story: Dict[str, Any]) -> None:
+    for part, _ in STORY_PARTS:
+        k = _story_key(agent_key, story["uid"], part)
+        if k in st.session_state:
+            story[part] = copy.deepcopy(st.session_state[k])
+
+
+def _add_story(agent_key: str, field_key: str, after: Optional[str] = None, copy_of: Optional[str] = None) -> None:
+    stories = st.session_state.get(_state_key(agent_key, field_key)) or []
+    for s in stories:
+        _sync_story(agent_key, s)
+    source = next((s for s in stories if s.get("uid") == copy_of), None)
+    new = _new_story(**{p: copy.deepcopy(source.get(p, d)) for p, d in STORY_PARTS if p != "id"}) if source else _new_story()
+    at = next((i + 1 for i, s in enumerate(stories) if s.get("uid") == after), len(stories))
+    stories.insert(at, new)
+    st.session_state[_state_key(agent_key, field_key)] = stories
+
+
+def _remove_story(agent_key: str, field_key: str, uid: str) -> None:
+    stories = [s for s in st.session_state.get(_state_key(agent_key, field_key)) or [] if s.get("uid") != uid]
+    for part, _ in STORY_PARTS:
+        st.session_state.pop(_story_key(agent_key, uid, part), None)
+    st.session_state[_state_key(agent_key, field_key)] = stories or [_new_story()]
+
+
+def _paste_stories(agent_key: str, f: InputField) -> None:
+    paste_key = pkey("story_paste", agent_key)
+    text = st.session_state.get(paste_key) or ""
+    parsed = f.parse(text) if f.parse else []
+    stories = [s for s in st.session_state.get(_state_key(agent_key, f.key)) or []]
+    for s in stories:
+        _sync_story(agent_key, s)
+    # A lone empty card is replaced, not kept above the pasted ones.
+    stories = [s for s in stories if any(str(s.get(p) or "").strip() for p in ("title", "description", "acceptance_criteria"))]
+    stories += [_new_story(**{k: v for k, v in p.items() if k in dict(STORY_PARTS)}) for p in parsed]
+    st.session_state[_state_key(agent_key, f.key)] = stories or [_new_story()]
+    st.session_state[paste_key] = ""
+    st.session_state[pkey("story_paste_note", agent_key)] = (
+        f"Added {len(parsed)} story card(s). Check each one, and answer what it touches." if parsed
+        else "No story was found in the pasted text.")
+
+
+def _stories_field(agent_key: str, f: InputField, disabled: bool) -> List[Dict[str, Any]]:
+    stories = _stories(agent_key, f)
+    st.markdown(f"**{f.label}**" + (" \\*" if f.required else ""), help=f.help or None)
+    for i, story in enumerate(stories, 1):
+        uid = story["uid"]
+        k = lambda part: _story_key(agent_key, uid, part)  # noqa: E731
+        for part, default in STORY_PARTS:
+            if k(part) not in st.session_state:
+                st.session_state[k(part)] = copy.deepcopy(story.get(part, default))
+        with st.container(border=True):
+            top = st.columns([1.2, 5, 0.45, 0.45], vertical_alignment="bottom")
+            top[0].text_input("ID", key=k("id"), placeholder=f"S{i}", disabled=disabled,
+                              help="The id in your tracker (S1, PROJ-42). Left empty, one is assigned.")
+            top[1].text_input("Title", key=k("title"), placeholder="A short name for the story", disabled=disabled)
+            top[2].button(":material/content_copy:", key=k("dup"), help="Duplicate this story",
+                          on_click=_add_story, args=(agent_key, f.key, uid, uid), disabled=disabled)
+            top[3].button(":material/delete:", key=k("del"), help="Remove this story",
+                          on_click=_remove_story, args=(agent_key, f.key, uid), disabled=disabled)
+            st.text_area("Story *", key=k("description"), height=76, disabled=disabled,
+                         placeholder="As a …, I want … so that …")
+            st.text_area("Acceptance criteria", key=k("acceptance_criteria"), height=88, disabled=disabled,
+                         placeholder="One per line. They stay yours: RAIA adds ethical criteria and flags "
+                                     "any of these that conflicts.")
+            st.multiselect("What does this story touch? *", [o.value for o in f.options], key=k("capabilities"),
+                           format_func=f.label_for, placeholder="Choose all that apply", disabled=disabled,
+                           help="This answer selects the ethical themes for this story. Choose \"None of "
+                                "these\" if it touches none.")
+        _sync_story(agent_key, story)
+    if not disabled:
+        row = st.container(horizontal=True)
+        row.button("Add a story", icon=I.ADD, key=pkey("story_add", agent_key),
+                   on_click=_add_story, args=(agent_key, f.key))
+        with row.popover("Paste several at once", icon=I.EXAMPLE):
+            st.text_area("Paste stories", key=pkey("story_paste", agent_key), height=180,
+                         placeholder="S1. As a recruiter, I want …\nAcceptance criteria:\n- …\n\n"
+                                     "S2. As an HR manager, I want …",
+                         help="Ids like S1 or PROJ-42, or one story per paragraph. Lines under "
+                              "\"Acceptance criteria\", bullets and \"Given …\" lines become that "
+                              "story's criteria.")
+            st.button("Add as story cards", key=pkey("story_paste_go", agent_key), type="primary",
+                      on_click=_paste_stories, args=(agent_key, f))
+        note = st.session_state.pop(pkey("story_paste_note", agent_key), None)
+        if note:
+            st.caption(note)
+    return stories
 
 
 def _render_field(agent_key: str, f: InputField, disabled: bool) -> Any:
     key = _state_key(agent_key, f.key)
     label = f.label + (" *" if f.required else "")
 
+    if f.kind == "stories":
+        return _stories_field(agent_key, f, disabled)
     if f.kind == "textarea":
         return st.text_area(label, key=key, help=f.help, height=f.height,
                             placeholder=f.placeholder, disabled=disabled)
@@ -123,8 +258,10 @@ def _snapshot(spec) -> Dict[str, Any]:
     out = {}
     for f in spec.input_fields:
         value = st.session_state.get(_state_key(spec.key, f.key))
-        if value not in (None, "", []):
-            out[f.key] = value
+        if value not in (None, "", []) and not (f.kind == "stories" and f.is_empty(value)):
+            # A copy: the stories list is edited in place, and the last saved
+            # snapshot must not change with it or no change would ever be saved.
+            out[f.key] = copy.deepcopy(value)
     origin = st.session_state.get(_origin_key(spec.key))
     if origin:
         out[ORIGIN_KEY] = origin
@@ -379,7 +516,12 @@ def _load_saved_intake(project: Project, spec) -> None:
         value = saved.get(f.key)
         if value in (None, "", []):
             continue
-        if f.options and not f.is_multi and value not in [o.value for o in f.options]:
+        if f.kind == "stories" and isinstance(value, str) and f.parse:
+            # Saved before stories were entered one by one: split the text, and
+            # give every story the capabilities once declared for the whole sprint.
+            caps = [c for c in saved.get("touched_capabilities") or [] if c]
+            value = [{**s, "capabilities": s.get("capabilities") or list(caps)} for s in f.parse(value)]
+        if f.kind in ("select", "boolean") and value not in [o.value for o in f.options]:
             continue
         st.session_state[_state_key(spec.key, f.key)] = value
     st.session_state[pkey("saved", spec.key)] = {**saved, **_snapshot(spec)}
@@ -426,7 +568,7 @@ def _intake_fields(project: Project, agent, can_run: bool) -> None:
         for f in spec.input_fields:
             value = EXAMPLES.get(spec.key, {}).get(f.key)
             if value is not None:
-                st.session_state[_state_key(spec.key, f.key)] = value
+                st.session_state[_state_key(spec.key, f.key)] = copy.deepcopy(value)
         st.session_state.pop(_origin_key(spec.key), None)
         st.session_state.pop(_recs_key(spec.key), None)
         st.rerun()
@@ -567,7 +709,9 @@ def record_editor(agent_key: str, payload: Dict[str, Any]) -> Tuple[Optional[Dic
 
     st.caption("Change fields, not prose. Risk level, priority, identifiers and the issues the "
                "rule engine raised are recomputed by the software when you approve.")
-    rec["summary"] = st.text_area("Summary", original.get("summary", ""), height=110, key=k("summary"))
+    rec["headline"] = st.text_input("Headline", original.get("headline", ""), key=k("headline"),
+                                    help="The bottom line in one sentence.")
+    rec["summary"] = st.text_area("Summary", original.get("summary", ""), height=90, key=k("summary"))
     rec["overall_status"] = st.selectbox(
         "Overall status", list(V.OVERALL_STATUSES), key=k("status"),
         index=V.rank(V.OVERALL_STATUSES, original.get("overall_status", "on_track")),
@@ -650,7 +794,10 @@ def record_editor(agent_key: str, payload: Dict[str, Any]) -> Tuple[Optional[Dic
         except ValueError as exc:
             errors.append(f"extension: not valid JSON ({exc})")
 
-    if not errors and not original.get("schema_errors"):
+    # A draft is checked against the schema only once a person has changed it:
+    # an untouched draft written under an earlier version of the contract stays
+    # approvable exactly as it was generated.
+    if not errors and not original.get("schema_errors") and _edited_changes(original, rec):
         try:
             record_model(agent_key).model_validate(rec)
         except Exception as exc:  # noqa: BLE001 - shown to the reviewer
@@ -670,17 +817,29 @@ def _edited_changes(original: Dict[str, Any], edited: Optional[Dict[str, Any]]) 
     return _core(edited) != _core(original)
 
 
-def _preview(agent_key: str, payload: Dict[str, Any], edited: Dict[str, Any]) -> str:
+def _preview(agent_key: str, payload: Dict[str, Any], edited: Dict[str, Any]) -> Dict[str, Any]:
+    """The edited record, re-computed exactly as it would be on approval."""
     from raia.pipeline import _rationale_stub
-    from raia.sanitize import sanitization_notice
 
     agent = AGENTS[agent_key]
     stub = _rationale_stub(payload)
-    record = agent.finalize_record(edited, stub, payload.get("evidence") or [], payload.get("attempt", 1))
-    text = agent.render_record(record, stub)
-    if payload.get("sanitization"):
-        text = sanitization_notice(payload["sanitization"]) + text
-    return text
+    return agent.finalize_record(edited, stub, payload.get("evidence") or [], payload.get("attempt", 1))
+
+
+def _computed_data(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return dict((payload.get("rationale") or {}).get("data") or {})
+
+
+def draft_view(agent_key: str, payload: Dict[str, Any], record: Optional[Dict[str, Any]] = None) -> None:
+    """A draft in the three tiers every record is read in."""
+    record = record if record is not None else (payload.get("record") or {})
+    record_view(agent_key, record, _computed_data(payload),
+                key=pkey("draft", agent_key, str(payload.get("attempt", 1))),
+                fallback_markdown=payload.get("draft") or "")
+    st.download_button("Download this draft (Markdown)", payload.get("draft") or "",
+                       file_name=f"{payload.get('artifact_key', agent_key)}-draft.md", mime="text/markdown",
+                       key=pkey("dl_draft", agent_key, str(payload.get("attempt", 1))), icon=I.DOWNLOAD,
+                       type="tertiary")
 
 
 def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> None:
@@ -714,13 +873,13 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
     changed = _edited_changes(payload.get("record") or {}, edited_record) and not edit_errors
     with tab_read:
         if changed:
-            st.caption("Showing your edits, re-computed and re-rendered. Nothing is saved until you approve.")
+            st.caption("Showing your edits, re-computed. Nothing is saved until you approve.")
             try:
-                st.markdown(_preview(agent_key, payload, edited_record))
+                draft_view(agent_key, payload, _preview(agent_key, payload, edited_record))
             except Exception as exc:  # noqa: BLE001 - shown to the reviewer
                 st.error(f"The edited record could not be rendered: {exc}")
         else:
-            st.markdown(payload["draft"])
+            draft_view(agent_key, payload)
     with tab_evidence:
         evidence_panel(payload.get("evidence") or [])
     with tab_reason:

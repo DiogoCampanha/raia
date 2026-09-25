@@ -33,7 +33,9 @@ the **Open Issues** register rather than averaged away.
 summary, findings placed on likelihood and magnitude, actions with a response,
 owner, lifecycle stage, review cadence, verification method and evidence
 artifact, typed open issues, declared coverage — plus an extension shaped by
-the norm the agent operationalises. All vocabularies come from the project's
+the norm the agent operationalises. Every record reads the same way: a summary
+with the figures that matter, then what to do, then a deep dive for whoever
+wants the analysis behind it. All vocabularies come from the project's
 normative sources only. See [`docs/output-contract.md`](docs/output-contract.md),
 the agent cards in [`docs/agents/`](docs/agents/) and the JSON Schemas in
 [`docs/schema/`](docs/schema/).
@@ -93,8 +95,9 @@ artifact.
 2. **Run the stage.** The rule engine computes its verdict, pins the excerpts
    its decision depends on, retrieves more by similarity, and the model writes
    the analysis.
-3. **Review at the gate.** You get four tabs: the draft in the standard layout,
-   a structured editor for the record (summary, findings' placement, actions,
+3. **Review at the gate.** You get four tabs: the draft (summary, action and
+   decision cards, a deep dive behind a dropdown), a structured editor for the
+   record (headline and summary, findings' placement, actions,
    the agent's issues, the agent-specific sections), the evidence that was in
    the prompt, and everything the code computed. Above them, the result of the
    automated checks. Edits are re-computed and re-rendered before approval.
@@ -195,7 +198,8 @@ raia/
 │   │   ├── schema.py          #   shared core + one extension per agent
 │   │   ├── prompt.py          #   the contract as the model sees it
 │   │   ├── assemble.py        #   parse, repair, finalise, fallback
-│   │   ├── render.py          #   the one Markdown layout
+│   │   ├── digest.py          #   the reading order: summary, actions, deep dive
+│   │   ├── render.py          #   the one Markdown layout, written from the digest
 │   │   ├── checks.py          #   record-level checks
 │   │   ├── actions.py         #   project action plan and its exports
 │   │   ├── export_schema.py   #   writes docs/schema/
@@ -208,7 +212,7 @@ raia/
 │   ├── projects.py            # people, projects, roles, invitations, authorization
 │   ├── lineage.py             # stage dependencies and the derived "needs review" flag
 │   ├── ui/                    # routes, theme (CSS + icons), components, approval gate,
-│   │                          #   agent docs, tester guide, assessment instrument, legal page
+│   │                          #   record view, agent docs, tester guide, assessment, legal page
 │   ├── auth.py                # Google sign-in via Streamlit, or a local dev identity
 │   ├── pipeline.py            # the graph: generate → human gate → persist
 │   ├── sanitize.py            # injection screening (EN + PT), flag-never-delete

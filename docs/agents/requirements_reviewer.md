@@ -72,7 +72,7 @@ Excerpts pinned for the canonical scenario:
 
 ## 7. The record it produces
 
-Schema `raia-record/1.0` — `docs/schema/requirements_reviewer.schema.json`. Identifier prefix `RR`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.1` — `docs/schema/requirements_reviewer.schema.json`. Identifier prefix `RR`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
@@ -84,17 +84,17 @@ Schema `raia-record/1.0` — `docs/schema/requirements_reviewer.schema.json`. Id
 | `value_register` | Prioritised core values with threats and opportunities (IEEE 7000 Value Register). |
 | `value_register[].value` | The core value. |
 | `value_register[].rank` | 1 = highest priority core value. |
-| `value_register[].threats` | How the design could harm this value. |
-| `value_register[].opportunities` | How the design could advance it. |
+| `value_register[].threats` | How the design could harm this value, in one sentence. |
+| `value_register[].opportunities` | How the design could advance it, in one sentence. |
 | `gap_analysis` | One entry per computed EVR id. |
 | `gap_analysis[].evr_id` | A computed EVR id, exactly. |
-| `gap_analysis[].explanation` | What is missing and why it matters for this product. |
+| `gap_analysis[].explanation` | What is missing and why it matters for this product, in one or two sentences. |
 | `gap_analysis[].citations` | Citation tags copied exactly from the retrieved excerpts, e.g. "[Source: ... / authority: legal]". Never invent one. |
 | `evrs` | One ethical value requirement per assigned id. |
 | `evrs[].id` | An assigned EVR id, exactly. |
 | `evrs[].value` | — |
 | `evrs[].stakeholders` | — |
-| `evrs[].statement` | The requirement, bound to this context of use. |
+| `evrs[].statement` | The requirement, bound to this context of use, in one sentence. |
 | `evrs[].fit_criterion` | The measurable condition that settles whether it is met. |
 | `evrs[].verification_method` | — |
 | `evrs[].traces_to` | Obligation codes or principle refs it derives from. |
@@ -105,9 +105,9 @@ Schema `raia-record/1.0` — `docs/schema/requirements_reviewer.schema.json`. Id
 | `impact_assessment.harms_and_benefits[].stakeholder` | — |
 | `impact_assessment.harms_and_benefits[].harms` | — |
 | `impact_assessment.harms_and_benefits[].benefits` | — |
-| `impact_assessment.mitigations` | — |
+| `impact_assessment.mitigations` | The main mitigations, conclusion first. |
 
-Rendered sections: Summary → Findings → Context of Use and Stakeholders → Value Register → Gap Analysis → Ethical Value Requirements → Impact Assessment → Action Plan → Open Issues → Not Grounded in Retrieved Excerpts → Declared Coverage.
+Rendered sections: Summary → Action Plan → Open Issues → Findings → Context of Use and Stakeholders → Value Register → Gap Analysis → Ethical Value Requirements → Impact Assessment → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
 
 Verdict keys the agent declares: `gap_count`.
 

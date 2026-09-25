@@ -1,5 +1,5 @@
 {
-  "$id": "raia-record/1.0/requirements_reviewer",
+  "$id": "raia-record/1.1/requirements_reviewer",
   "title": "RequirementsReviewerRecord",
   "$defs": {
     "Action": {
@@ -18,8 +18,8 @@
           "type": "array"
         },
         "action": {
-          "description": "Imperative, specific, checkable: what is done.",
-          "maxLength": 400,
+          "description": "One sentence starting with a verb: what is done, specific and checkable.",
+          "maxLength": 250,
           "title": "Action",
           "type": "string"
         },
@@ -83,8 +83,8 @@
           "type": "string"
         },
         "evidence_artifact": {
-          "description": "The artifact that will demonstrate completion.",
-          "maxLength": 200,
+          "description": "The artifact that will demonstrate completion, named concretely.",
+          "maxLength": 150,
           "title": "Evidence Artifact",
           "type": "string"
         },
@@ -147,8 +147,8 @@
           "type": "string"
         },
         "justification": {
-          "description": "One sentence.",
-          "maxLength": 300,
+          "description": "One short sentence.",
+          "maxLength": 200,
           "title": "Justification",
           "type": "string"
         }
@@ -189,14 +189,14 @@
           "type": "array"
         },
         "statement": {
-          "description": "The requirement, bound to this context of use.",
-          "maxLength": 500,
+          "description": "The requirement, bound to this context of use, in one sentence.",
+          "maxLength": 300,
           "title": "Statement",
           "type": "string"
         },
         "fit_criterion": {
           "description": "The measurable condition that settles whether it is met.",
-          "maxLength": 400,
+          "maxLength": 250,
           "title": "Fit Criterion",
           "type": "string"
         },
@@ -246,14 +246,14 @@
           "type": "string"
         },
         "title": {
-          "description": "One line naming the risk or gap.",
-          "maxLength": 160,
+          "description": "The risk or gap in a few words (at most 12).",
+          "maxLength": 120,
           "title": "Title",
           "type": "string"
         },
         "statement": {
-          "description": "What could go wrong or is missing, for whom, and why it matters here.",
-          "maxLength": 700,
+          "description": "One or two sentences: what could go wrong or is missing, for whom, here.",
+          "maxLength": 400,
           "title": "Statement",
           "type": "string"
         },
@@ -320,8 +320,8 @@
           "type": "string"
         },
         "placement_rationale": {
-          "description": "Why this magnitude and likelihood, from the inputs and evidence.",
-          "maxLength": 400,
+          "description": "One sentence: why this magnitude and likelihood.",
+          "maxLength": 250,
           "title": "Placement Rationale",
           "type": "string"
         },
@@ -423,8 +423,8 @@
           "type": "string"
         },
         "explanation": {
-          "description": "What is missing and why it matters for this product.",
-          "maxLength": 600,
+          "description": "What is missing and why it matters for this product, in one or two sentences.",
+          "maxLength": 300,
           "title": "Explanation",
           "type": "string"
         },
@@ -451,12 +451,12 @@
           "type": "string"
         },
         "harms": {
-          "maxLength": 400,
+          "maxLength": 250,
           "title": "Harms",
           "type": "string"
         },
         "benefits": {
-          "maxLength": 400,
+          "maxLength": 250,
           "title": "Benefits",
           "type": "string"
         }
@@ -473,7 +473,7 @@
       "properties": {
         "intended_uses": {
           "description": "Intended and out-of-scope uses.",
-          "maxLength": 700,
+          "maxLength": 400,
           "title": "Intended Uses",
           "type": "string"
         },
@@ -486,7 +486,8 @@
           "type": "array"
         },
         "mitigations": {
-          "maxLength": 700,
+          "description": "The main mitigations, conclusion first.",
+          "maxLength": 400,
           "title": "Mitigations",
           "type": "string"
         }
@@ -520,12 +521,13 @@
           "type": "string"
         },
         "description": {
-          "maxLength": 700,
+          "description": "The decision a person must take, in one or two sentences.",
+          "maxLength": 400,
           "title": "Description",
           "type": "string"
         },
         "options": {
-          "description": "The choices a person could make.",
+          "description": "The choices a person could make, a few words each.",
           "items": {
             "type": "string"
           },
@@ -584,7 +586,7 @@
       "properties": {
         "context_of_use": {
           "description": "The operational environment and conditions of use (IEEE 7000 concept of operations).",
-          "maxLength": 900,
+          "maxLength": 450,
           "title": "Context Of Use",
           "type": "string"
         },
@@ -694,14 +696,14 @@
           "type": "integer"
         },
         "threats": {
-          "description": "How the design could harm this value.",
-          "maxLength": 500,
+          "description": "How the design could harm this value, in one sentence.",
+          "maxLength": 250,
           "title": "Threats",
           "type": "string"
         },
         "opportunities": {
-          "description": "How the design could advance it.",
-          "maxLength": 500,
+          "description": "How the design could advance it, in one sentence.",
+          "maxLength": 250,
           "title": "Opportunities",
           "type": "string"
         }
@@ -717,9 +719,17 @@
     }
   },
   "properties": {
+    "headline": {
+      "default": "",
+      "description": "The bottom line in one sentence a busy reader can act on: the verdict and what it means for the team.",
+      "maxLength": 160,
+      "model_required": true,
+      "title": "Headline",
+      "type": "string"
+    },
     "summary": {
-      "description": "The bottom line a reviewer reads first; at most five sentences.",
-      "maxLength": 1200,
+      "description": "At most three sentences that add to the headline: the main risks and what must happen next. No framework explanations.",
+      "maxLength": 600,
       "title": "Summary",
       "type": "string"
     },

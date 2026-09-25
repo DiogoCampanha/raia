@@ -9,6 +9,7 @@ from raia.ui import routes
 from raia.ui.components import artifact_body, page_header, stage_tracker, status_badge
 from raia.rationale.coverage import ORIGIN_KEY
 from raia.ui.gate import intake_form, pending_suggestions, review_gate
+from raia.ui.record_view import record_from_data, record_view
 from raia.ui.state import current_user, flash, get_service, open_project, pkey, show_flash
 from raia.ui.theme import I
 
@@ -81,7 +82,9 @@ if not pending:
 if pending:
     if current:
         with st.expander("Currently approved version", icon=I.DOCS):
-            st.markdown(artifact_body(current))
+            record, computed = record_from_data(repo.read_data(spec.output_key))
+            record_view(agent_key, record, computed, key=pkey("approved_now", agent_key), nested=True,
+                        fallback_markdown=artifact_body(current))
     review_gate(proj, agent_key, pending)
     st.stop()
 
@@ -115,8 +118,12 @@ if current and not st.session_state.get(revising_key):
     if approval:
         st.caption(f"Approved by **{approval.get('approved_by', '?')}**. The full provenance and "
                    "version history are in the project's Documents and Activity tabs.")
-    with st.container(border=True):
-        st.markdown(artifact_body(current))
+    record, computed = record_from_data(data)
+    record_view(agent_key, record, computed, key=pkey("approved", agent_key),
+                fallback_markdown=artifact_body(current))
+    st.download_button("Download (Markdown)", artifact_body(current), file_name=f"{spec.output_key}.md",
+                       mime="text/markdown", key=pkey("dl_approved", agent_key), icon=I.DOWNLOAD,
+                       type="tertiary")
 
     if can_run and state["status"] != "stale":
         impact = svc.revision_impact(user, proj.id, agent_key)

@@ -120,6 +120,10 @@ Recorded so the log stays honest about its own errors.
 | D30 | The Requirements Reviewer can **recommend ethical requirements** from the approved risk classification, but only as proposals: context questions (stakeholders, principles at stake) are pre-filled only when empty, and candidate requirements enter the requirements one at a time, when a person adopts them. | A blank form stalled testers, and the classification already holds most of the context. Writing requirements into the field directly would let the model close the gaps the engine computes from that same field, so the coverage matrix would be marking the model's own work. |
 | D31 | The controls already in place, the requirements the team wrote, its delivery constraints and the requirement format are **never** pre-filled; the controls question is only annotated with the controls the assigned obligations make relevant. | A ticked control discharges obligations. Proposing one would be inventing evidence, not recommending. |
 | D32 | Adopted recommendations stay distinguishable: the engine marks coverage that rests only on them as *addressed by an adopted suggestion*, the record says which requirements RAIA recommended and whether they were edited, pre-filled answers must be confirmed before running, and every suggestion, adoption and rejection is an evaluation event. | Accepting a proposal is a weaker claim than writing a requirement. Keeping the two apart lets a reviewer weigh them, and the adoption rate is evidence about automation bias for the evaluation. Candidates use only project data and the normative corpus, never other users' projects. |
+| D33 | Every record reads in three tiers — a summary with figures and the main issues, then what to do (actions grouped Do now / Plan / Track, and decisions), then a deep dive behind a dropdown whose sections each open with a conclusion — and the exported document follows the same order. | RAIA is a work tool. Testers faced pages of tables and legal explanation before reaching what to do; the gate is only a safety net if the reviewer can take in the draft. One digest feeds screen and document so they cannot drift. |
+| D34 | Shorter records by contract: a one-sentence `headline`, a summary of at most three sentences, lower caps on every free-text field, and a rule that each field leads with its conclusion and does not explain frameworks or law. | Length was the complaint; a prompt asking for brevity without caps was not enough. Leading with the conclusion is also what lets code lift section conclusions without a second model call. |
+| D35 | The User Story Refiner takes stories one by one — id, title, description, existing acceptance criteria, and what each story touches — and selects ECCOLA cards per story. | One text box split every line into a story, so a pasted story with its criteria became several stories, and one capability answer for the whole sprint gave every story the same cards. |
+| D36 | Existing acceptance criteria stay the team's: the agent adds new ethical criteria and may flag an existing one only when it conflicts; code turns each conflict into a decision for the product owner, with the suggested rewrite as an option. | Rewriting a team's criteria silently would take a product decision out of human hands; ignoring conflicts would let an unethical criterion ship. |
 
 ---
 
@@ -128,6 +132,80 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-24 — Agent outputs a person can act on, and stories entered one by one (branch `agent-output-revamp`)
+
+Decisions D33–D36.
+
+#### What was wrong
+
+- **TST-7** Every agent's draft was a wall of text: a metadata header, a
+  verdict table, ten-column findings and action tables, then coverage and a
+  visible machine block, all expanded. What to do came after the analysis,
+  and the prose explained frameworks and law the reader did not ask about.
+- **TST-8** The User Story Refiner took the backlog as one text box and split
+  it line by line, so a story pasted with its description and acceptance
+  criteria became several stories. Existing criteria could not be told apart
+  from the story, and one capability answer applied to the whole sprint.
+
+#### What changed
+
+- `raia/contract/digest.py` (new) — the reading order of every record, as
+  data: status, headline, four figures, main issues, risk areas; actions
+  grouped by computed priority with owner, when and "done when"; decisions;
+  deep-dive sections, each with a computed conclusion; the traceability
+  appendix; paste-ready stories for the Story Refiner.
+- `raia/contract/render.py` — the Markdown is written from the digest in the
+  same order: Summary, Action Plan, Open Issues, then Findings, the agent's
+  sections and the appendix (new section: Verdict Reconciliation). All
+  identifiers, citations, open issues and the machine block are kept, so every
+  existing check still reads the document.
+- `raia/ui/record_view.py` (new), `raia/ui/theme.css` — the three tiers on
+  screen: status banner, figure cards, main issues, colour-coded action and
+  decision cards with an owner filter, and the deep dive behind a dropdown
+  with one tab per section. Used for the draft at the gate (and its edited
+  preview), the approved version on the stage page and the project documents.
+- `raia/contract/schema.py`, `vocab.py`, `prompt.py`, `agents/base.py` —
+  `raia-record/1.1`: `headline` (required of the model, optional on read),
+  shorter caps, a work-tool writing rule; `sprint_ethics_log` is a list (an
+  older paragraph reads as one entry); `stories[].conflicts`.
+- `raia/contract/assemble.py` — one `value_tradeoff` decision per flagged
+  conflict; issues raised by the engine or by code are recomputed on every
+  finalisation, so one a reviewer's edit resolved does not linger.
+- `raia/fields.py`, `raia/rationale/story_map.py`,
+  `raia/agents/story_refiner.py`, `raia/ui/gate.py`, `raia/examples.py` — a
+  `stories` field kind: one card per story with add, duplicate, remove and
+  "paste several at once"; a backlog parser that keeps criteria with their
+  story; stable story ids and `<story>-E<n>` ids for existing criteria; card
+  selection per story; answers saved as one text box are converted on load,
+  with the sprint's old capability answer applied to each story.
+- `raia/ui/gate.py` — an untouched draft is not re-validated against the
+  schema, so a draft written under 1.0 stays approvable after the upgrade.
+- Guide, `docs/TESTERS.md`, agent cards, `docs/schema/` and
+  `docs/output-contract.md` regenerated or updated.
+
+#### Tests
+
+- `tests/test_contract.py` — the figures are the record's counts, every action
+  appears once and in the group of its priority, a blocking finding leads the
+  main issues, every deep-dive section has a conclusion, the document follows
+  the screen's order, a record without a headline still reads and validates;
+  a conflict opens exactly one decision, is not duplicated on re-finalising and
+  disappears when a reviewer removes it; the paste-ready stories mark it.
+- `tests/test_engines.py` — pasted criteria stay with their story, the team's
+  ids are kept, duplicate ids are replaced, cards are selected per story,
+  existing criteria are registered, a story without its capabilities is
+  reported.
+- `tests/test_ui.py` — the draft reads summary first then what to do, the deep
+  dive is present; the demo project's stories open as cards; a story card can
+  be added and removed.
+
+#### Still open, by decision
+
+- Conclusions are computed or lifted from the first sentence of a field; no
+  second model call summarises the analysis.
+- The record editor at the gate is unchanged apart from the headline; stories
+  are still edited there through the extension JSON.
+
 ### 2026-09-24 — Recommend ethical requirements (branch `recommend-requirements`)
 
 Decisions D30–D32.

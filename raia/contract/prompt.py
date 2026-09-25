@@ -41,6 +41,8 @@ def hints(agent_key: str, verdict_keys: List[str], rationale: RationaleResult,
     if agent_key == "story_refiner":
         ids["story_ids"] = list(verdict.get("story_ids") or [])
         ids["card_ids"] = list(verdict.get("card_ids") or [])
+        ids["story_cards"] = dict(verdict.get("story_cards") or {})
+        ids["existing_criteria"] = dict(verdict.get("existing_criteria") or {})
         ids["evr_ids"] = list(verdict.get("evr_ids") or [])
     if agent_key == "auditor":
         ids["audit_items"] = {str(i.get("id")): i.get("computed_verdict")
@@ -89,11 +91,25 @@ this JSON Schema ({V.SCHEMA_VERSION}); a reply that does not validate is returne
   `agrees_with_rule_engine` honestly; if false, argue it in `disagreement_rationale`.
 - `coverage` must contain exactly one entry per checklist key: {", ".join(h["checklist_keys"]) or "(none)"}.
 - Every `citations` entry is a tag copied exactly from the retrieved excerpts.
-- Write for the people who will act on it: specific to this product, short enough to review.
-- Stay inside every `maxLength` in the schema: at most three sentences per free-text field, one
-  or two per obligation note. The whole record must fit in a single reply — a reply cut off at
-  the token limit cannot be read at all. Where several obligations are met by the same work, say
-  so once and refer back to it rather than repeating it.
+
+### How to write it — this is a work tool, not a lesson
+
+The people reading this record act on it between other work. Write so they can decide in
+seconds:
+
+- `headline`: one sentence with the verdict and what it means for the team. `summary`: at most
+  three sentences that add to it. Neither restates the scales, the frameworks or the method.
+- Every free-text field leads with its conclusion, in its first sentence. Add a second sentence
+  only when it changes what someone does.
+- Be specific to this product: name the feature, the data, the group, the artefact. No generic
+  advice, no definitions, no paraphrase of the law or the standards — cite the excerpt by its tag
+  instead.
+- Actions start with a verb and are done by one role. `evidence_artifact` names a concrete thing
+  (a test report, a signed log, a dashboard), not "documentation".
+- Prefer fewer, sharper findings and actions: merge findings that share a cause, and say once
+  when one action answers several findings.
+- Stay inside every `maxLength` in the schema. The whole record must fit in a single reply — a
+  reply cut off at the token limit cannot be read at all.
 
 ### Identifiers from the computed block you must use exactly
 

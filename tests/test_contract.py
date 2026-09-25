@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 
 from raia.agents import AGENTS  # noqa: E402
 from raia.contract import actions as action_plan  # noqa: E402
-from raia.contract import assemble, checks, mock, render, rubric  # noqa: E402
+from raia.contract import assemble, checks, digest, mock, render, rubric  # noqa: E402
 from raia.contract import vocab as V  # noqa: E402
 from raia.contract.prompt import contract_text  # noqa: E402
 from raia.contract.schema import model_facing_schema, record_model  # noqa: E402
@@ -195,8 +195,8 @@ def test_render_and_schema() -> None:
         dumped = json.dumps(schema)
         check('"priority"' not in dumped and '"risk_level"' not in dumped and '"computed"' not in dumped,
               f"{key}: computed fields are hidden from the model")
-        check(set(render.required_sections(key)[:2]) == {"Summary", "Findings"}
-              and render.required_sections(key)[-4:] == render.COMMON_TAIL, f"{key}: shared frame around its own sections")
+        check(render.required_sections(key)[:4] == ["Summary", "Action Plan", "Open Issues", "Findings"]
+              and render.required_sections(key)[-3:] == render.COMMON_TAIL, f"{key}: shared frame around its own sections")
         check(AGENTS[key].spec.required_sections == render.required_sections(key), f"{key}: the spec uses the contract's layout")
     r = _rationale("risk_classifier")
     r.checklist = [ChecklistItem("tier_eu", "x")]
@@ -243,9 +243,81 @@ def test_action_plan() -> None:
     check(json.loads(action_plan.to_json(rows))["schema"] == V.SCHEMA_VERSION, "JSON export is versioned")
 
 
+def test_reading_order() -> None:
+    print("== every record reads summary, actions, deep dive ==")
+    r = _rationale("risk_classifier")
+    rec = assemble.finalize("risk_classifier", _record(headline="High-risk: add human review first."), r, EVIDENCE,
+                            AGENTS["risk_classifier"].spec)
+    dg = digest.build("risk_classifier", rec, r.data)
+    check(dg["headline"] == "High-risk: add human review first.", "the headline leads")
+    kpi = {k["label"]: k for k in dg["kpis"]}
+    check(kpi["Risks identified"]["value"] == len(rec["findings"]) and kpi["Actions to take"]["value"] == len(rec["actions"])
+          and kpi["Decisions needed"]["value"] == len(rec["open_issues"]), "the summary counts are the record's counts")
+    grouped = [a["id"] for g in dg["action_groups"] for a in g["actions"]]
+    check(sorted(grouped) == sorted(a["id"] for a in rec["actions"]) and len(grouped) == len(set(grouped)),
+          "every action appears exactly once in the action groups")
+    members = {k: m for k, _, m, _ in V.ACTION_GROUPS}
+    check(all(a["priority"] in members[g["key"]] for g in dg["action_groups"] for a in g["actions"]),
+          "…in the group of its computed priority")
+    top = dg["top_issues"][0]
+    check(top["priority"] == max((f["priority"] for f in rec["findings"]), key=lambda p: V.rank(V.PRIORITIES, p)),
+          "the main issues start with the highest priority")
+    blocked = json.loads(json.dumps(rec))
+    low = min(blocked["findings"], key=lambda f: V.rank(V.PRIORITIES, f["priority"]))
+    low["blocking"] = True
+    check(digest.build("risk_classifier", blocked, r.data)["top_issues"][0]["id"] == low["id"],
+          "a blocking finding leads the main issues, whatever its priority")
+    check(all(s.get("conclusion") for s in dg["deep"]), "every deep-dive section opens with a conclusion")
+    check([s["md_title"] for s in dg["deep"]] == render.required_sections("risk_classifier")[3:],
+          "the deep dive has exactly the document's analysis and appendix sections")
+    md = render.render("risk_classifier", rec, r.data, r.checklist_keys())
+    order = [md.index(f"## {t}") for t in render.required_sections("risk_classifier")]
+    check(order == sorted(order), "the document follows the same order as the screen")
+    check(md.index("High-risk: add human review first.") < md.index("## Action Plan"), "the document leads with the headline")
+    older = dict(rec)
+    older.pop("headline")
+    check(digest.build("risk_classifier", older, r.data)["headline"] == "s",
+          "a record written before headlines existed falls back to its summary's first sentence")
+    check(record_model("risk_classifier").model_validate(_record()) is not None, "…and still validates")
+    check("headline" in model_facing_schema("risk_classifier")["required"], "the model is always asked for a headline")
+
+
+def test_story_conflicts() -> None:
+    print("== conflicting existing criteria become decisions ==")
+    from raia.rationale import story_map
+
+    rationale = story_map.run(EXAMPLES["story_refiner"], {"requirements_review": {"data": {"evr_ids": ["EVR-1"]}}})
+    stories = [{"story_id": sid, "no_impact_reason": "none"} for sid in rationale.verdict["story_ids"]]
+    stories[1] = {"story_id": "S2", "criteria": [], "eccola_cards": ["#10"], "conflicts": [
+        {"criterion_id": "S2-E1", "conflicts_with": ["EVR-1"], "problem": "Rejects with no human review.",
+         "suggested_rewrite": "Reject only after a recruiter confirms."}]}
+    base = {"headline": "h", "summary": "s", "overall_status": "on_track", "declared_verdict": {"story_count": "3"},
+            "agrees_with_rule_engine": True, "findings": [], "actions": [], "open_issues": [], "coverage": [],
+            "extension": {"stories": stories, "sprint_ethics_log": "One paragraph from an older record."}}
+    check(record_model("story_refiner").model_validate(base).extension.sprint_ethics_log
+          == ["One paragraph from an older record."], "an older one-paragraph ethics log still reads, as one entry")
+    spec = AGENTS["story_refiner"].spec
+    rec = assemble.finalize("story_refiner", base, rationale, [], spec)
+    conflict = [i for i in rec["open_issues"] if "S2-E1" in (i.get("links") or [])]
+    check(len(conflict) == 1 and conflict[0]["type"] == "value_tradeoff" and conflict[0]["origin"] == "code",
+          "one decision per conflict, raised by code")
+    check(any(o.startswith("Rewrite it:") for o in conflict[0]["options"]), "…offering the suggested rewrite")
+    again = assemble.finalize("story_refiner", rec, rationale, [], spec)
+    check(len([i for i in again["open_issues"] if "S2-E1" in (i.get("links") or [])]) == 1,
+          "finalising again does not duplicate it")
+    resolved = json.loads(json.dumps(rec))
+    resolved["extension"]["stories"][1]["conflicts"] = []
+    after = assemble.finalize("story_refiner", resolved, rationale, [], spec)
+    check(not any("S2-E1" in (i.get("links") or []) for i in after["open_issues"]),
+          "a conflict a reviewer removes no longer opens a decision")
+    paste = digest.build("story_refiner", rec, rationale.data)["paste"]
+    check("[REVIEW" in paste and "S1 — Ranked shortlist" in paste, "the paste-ready stories mark the conflict for review")
+
+
 def main() -> None:
     for fn in (test_vocabularies_come_from_the_corpus, test_rubric, test_parse_and_fallback,
-               test_finalize, test_render_and_schema, test_published_schemas_are_current, test_action_plan):
+               test_finalize, test_render_and_schema, test_published_schemas_are_current, test_action_plan,
+               test_reading_order, test_story_conflicts):
         fn()
     print()
     if FAILURES:

@@ -19,7 +19,7 @@ invariant rather than a line in a prompt.
 """
 
 import re
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Sequence, Set
 
 from ..fields import options, selected, text_of
 from .types import ChecklistItem, Finding, Pin, RationaleResult, md_table
@@ -99,35 +99,186 @@ CARDS: List[Dict[str, Any]] = [
 SECTION_MS_STYLE = "Practical Requirement Style (What RAIA Borrows)"
 SECTION_ECCOLA_SPRINTS = "How ECCOLA Is Used in Sprints"
 
-_STORY_ID = re.compile(r"^\s*(?:[-*]\s*)?(S\d+|US-?\d+|STORY-?\d+)[.):\-]?\s+(.*)$", re.I)
+_STORY_ID = re.compile(r"^\s*(?:[-*]\s*)?(S\d+|US-?\d+|STORY-?\d+|(?!AC-?\d)[A-Z][A-Z0-9]{1,9}-\d+)[.):\-]?\s+(.*)$", re.I)
 _AS_A = re.compile(r"^\s*(?:[-*]\s*)?(?:\d+[.)]\s*)?(as an?\b.*)$", re.I)
+_AC_HEADER = re.compile(r"^\s*(?:acceptance\s+criteria|a\.?c\.?)(?![\w-])\s*[:\-]?\s*(.*)$", re.I)
+_AC_LINE = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)]|AC-?\d+\s*[:.)\-]|given\b)", re.I)
+_BULLET = re.compile(r"^\s*(?:[-*\u2022]\s*|\d+[.)]\s*|AC-?\d+\s*[:.)\-]\s*)", re.I)
+_TITLE = re.compile(r"^\s*title\s*:\s*(.*)$", re.I)
+_VALID_ID = re.compile(r"^[A-Z][A-Z0-9]{0,9}-?\d+$")
+
+
+def _legacy_id(raw: str) -> str:
+    """``US-12`` and ``STORY-12`` are read as ``S12``; any other id is kept, upper-cased."""
+    m = re.match(r"^(?:US|STORY)-?(\d+)$", raw, re.I)
+    return f"S{m.group(1)}" if m else raw.upper()
+
+
+def parse_backlog(text: str) -> List[Dict[str, Any]]:
+    """Split pasted backlog text into stories, each with its own acceptance criteria.
+
+    A story starts at an explicit id (``S1``, ``US-12``, ``PROJ-42``), at an
+    ``As a …`` line once the current story already has one, or after a blank
+    line. Lines under an "Acceptance criteria" heading, and bullet or
+    ``Given …`` lines after the description, are the story's criteria — not
+    stories of their own.
+    """
+    stories: List[Dict[str, Any]] = []
+    cur: Dict[str, Any] = {}
+    in_ac = False
+
+    def close() -> None:
+        nonlocal cur, in_ac
+        if cur and (cur.get("description") or cur.get("title") or cur.get("criteria")):
+            stories.append({"id": cur.get("id", ""), "title": cur.get("title", ""),
+                            "description": " ".join(cur.get("description") or []).strip(),
+                            "acceptance_criteria": "\n".join(cur.get("criteria") or []),
+                            "capabilities": []})
+        cur, in_ac = {}, False
+
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            if cur.get("description") and not in_ac:
+                close()
+            continue
+        m_id = _STORY_ID.match(line)
+        if m_id:
+            close()
+            cur = {"id": _legacy_id(m_id.group(1)), "description": [], "criteria": []}
+            rest = m_id.group(2).strip()
+            if rest and not _AS_A.match(rest) and len(rest) <= 90 and not rest.endswith("."):
+                cur["title"] = rest
+            elif rest:
+                cur["description"].append(rest)
+            continue
+        m_title = _TITLE.match(line)
+        if m_title:
+            close()
+            cur = {"title": m_title.group(1).strip(), "description": [], "criteria": []}
+            continue
+        m_ac = _AC_HEADER.match(line)
+        if m_ac and (cur.get("description") or cur.get("title")):
+            in_ac = True
+            cur.setdefault("criteria", [])
+            if m_ac.group(1).strip():
+                cur["criteria"].append(_BULLET.sub("", m_ac.group(1)).strip())
+            continue
+        if _AS_A.match(line):
+            if cur.get("description") or in_ac:
+                close()
+            cur = cur or {"description": [], "criteria": []}
+            cur.setdefault("description", []).append(_AS_A.match(line).group(1).strip())
+            continue
+        if not cur:
+            cur = {"description": [line], "criteria": []}
+            continue
+        if in_ac or (cur.get("description") and _AC_LINE.match(line)):
+            in_ac = True
+            cur.setdefault("criteria", []).append(_BULLET.sub("", line).strip())
+            continue
+        cur.setdefault("description", []).append(line)
+    close()
+    return stories
 
 
 def parse_stories(text: str) -> List[Dict[str, str]]:
-    """Split a backlog blob into identified stories.
+    """Legacy reader: a backlog blob → ``[{"id", "text"}]`` (see :func:`normalize_stories`)."""
+    return [{"id": s["id"], "text": s["text"]} for s in normalize_stories(text)]
 
-    Accepts explicit ids (``S1``, ``US-12``), plain ``As a …`` lines, or one
-    story per paragraph, and always returns a stable id for every story so the
-    register can be checked for completeness.
-    """
-    stories: List[Dict[str, str]] = []
-    blocks = [b.strip() for b in re.split(r"\n\s*\n", text or "") if b.strip()]
-    lines: List[str] = []
-    for b in blocks:
-        lines.extend([l for l in b.splitlines() if l.strip()] or [b])
 
+def _criteria_lines(value: Any) -> List[str]:
+    if isinstance(value, (list, tuple)):
+        lines = [str(v) for v in value]
+    else:
+        lines = str(value or "").splitlines()
+    out = []
     for line in lines:
-        m = _STORY_ID.match(line)
-        if m:
-            stories.append({"id": m.group(1).upper().replace("US-", "S").replace("STORY-", "S"),
-                            "text": m.group(2).strip()})
+        t = _BULLET.sub("", line).strip()
+        if t:
+            out.append(t)
+    return out
+
+
+def normalize_stories(value: Any, fallback_caps: Sequence[str] = ()) -> List[Dict[str, Any]]:
+    """Stories as the engine reads them, whatever shape the form stored.
+
+    Accepts the structured list the form writes (one entry per story: id,
+    title, description, acceptance criteria, what it touches) or, for answers
+    saved before stories were entered one by one, a pasted blob. Every story
+    gets a stable id — the one the team uses when it is well-formed and
+    unique, ``S<n>`` otherwise — and every existing acceptance criterion gets
+    ``<story id>-E<n>`` so a conflict can point at it.
+    """
+    raw = parse_backlog(value) if isinstance(value, str) else [s for s in value or [] if isinstance(s, dict)]
+    out: List[Dict[str, Any]] = []
+    used: Set[str] = set()
+    pending: List[Dict[str, Any]] = []
+    for s in raw:
+        title = str(s.get("title") or "").strip()
+        description = str(s.get("description") or s.get("text") or "").strip()
+        criteria = _criteria_lines(s.get("acceptance_criteria") or s.get("criteria_text") or "")
+        if not (title or description or criteria):
             continue
-        m2 = _AS_A.match(line)
-        if m2:
-            stories.append({"id": f"S{len(stories) + 1}", "text": m2.group(1).strip()})
-            continue
-        stories.append({"id": f"S{len(stories) + 1}", "text": line.strip()})
-    return stories
+        sid = re.sub(r"\s+", "", str(s.get("id") or "")).upper()
+        sid = _legacy_id(sid) if sid else ""
+        if not _VALID_ID.match(sid) or sid in used:
+            sid = ""
+        caps = [c for c in (s.get("capabilities") or []) if c]
+        if not caps:
+            caps = list(fallback_caps)
+        entry = {"id": sid, "title": title, "description": description,
+                 "text": (f"{title}. " if title and description else title) + description,
+                 "criteria_raw": criteria, "capabilities": [c for c in caps if c != "none"],
+                 "declared_capabilities": bool(s.get("capabilities"))}
+        if sid:
+            used.add(sid)
+        pending.append(entry)
+    n = 0
+    for entry in pending:
+        if not entry["id"]:
+            n += 1
+            while f"S{n}" in used:
+                n += 1
+            entry["id"] = f"S{n}"
+            used.add(entry["id"])
+        entry["criteria"] = [{"id": f"{entry['id']}-E{i}", "text": t}
+                             for i, t in enumerate(entry.pop("criteria_raw"), 1)]
+        out.append(entry)
+    return out
+
+
+def render_stories(value: Any) -> str:
+    """The stories as the model reads them: one block per story, with its criteria."""
+    stories = normalize_stories(value)
+    if not stories:
+        return "(not provided)"
+    labels = {o.value: o.label for o in CAPABILITY_OPTIONS}
+    blocks = []
+    for s in stories:
+        lines = [f"{s['id']}" + (f" — {s['title']}" if s["title"] else "")]
+        if s["description"]:
+            lines.append(s["description"])
+        if s["criteria"]:
+            lines.append("Existing acceptance criteria:")
+            lines += [f"- {c['id']}: {c['text']}" for c in s["criteria"]]
+        else:
+            lines.append("Existing acceptance criteria: none")
+        lines.append("Touches: " + (", ".join(labels.get(c, c) for c in s["capabilities"]) or "none of the listed capabilities"))
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+def stories_missing(value: Any) -> List[str]:
+    """Per-story answers that decide the outcome and are still empty."""
+    out = []
+    raw = value if isinstance(value, list) else []
+    for i, s in enumerate(normalize_stories(raw), 1):
+        if not s["description"] and not s["title"]:
+            out.append(f"{s['id']}: the story")
+        if not s["declared_capabilities"]:
+            out.append(f"{s['id']}: what it touches")
+    return out
 
 
 def _context_tokens(risk: Dict[str, Any], caps: List[str]) -> Set[str]:
@@ -155,8 +306,12 @@ def _context_tokens(risk: Dict[str, Any], caps: List[str]) -> Set[str]:
 def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
     r = RationaleResult(engine="story_card_map")
 
-    stories = parse_stories(text_of(inputs, "user_stories"))
-    caps = [c for c in selected(inputs, "touched_capabilities") if c != "none"]
+    # Stories are entered one by one, each with what it touches. Answers saved
+    # before that carried one capability list for the whole sprint: it still
+    # applies to every story that declares none of its own.
+    sprint_caps = [c for c in selected(inputs, "touched_capabilities") if c != "none"]
+    stories = normalize_stories(inputs.get("user_stories"), sprint_caps)
+    caps = list(dict.fromkeys(c for s in stories for c in s["capabilities"]))
     sprint_goal = text_of(inputs, "sprint_goal")
     dod = text_of(inputs, "definition_of_done")
 
@@ -166,22 +321,51 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
 
     tokens = _context_tokens(risk, caps)
 
-    selected_cards: List[Dict[str, Any]] = []
-    for card in CARDS:
-        why: List[str] = []
-        if card["always"]:
-            why.append("applies to any AI product")
-        why.extend(t for t in card["triggers"] if t in tokens)
-        if why:
-            selected_cards.append({**card, "why": why})
+    def cards_for(story_caps: Sequence[str]) -> List[Dict[str, Any]]:
+        story_tokens = _context_tokens(risk, story_caps)
+        chosen_cards = []
+        for card in CARDS:
+            why: List[str] = []
+            if card["always"]:
+                why.append("applies to any AI product")
+            why.extend(t for t in card["triggers"] if t in story_tokens)
+            if why:
+                chosen_cards.append({**card, "why": why})
+        return chosen_cards
 
+    # Each story gets the cards its own capabilities select; the sprint's set is
+    # their union, and a capability reason names the stories it came from.
+    per_story: Dict[str, List[str]] = {}
+    reasons: Dict[str, Dict[str, List[str]]] = {}
+    for st in stories:
+        chosen_cards = cards_for(st["capabilities"])
+        st["cards"] = [c["id"] for c in chosen_cards]
+        per_story[st["id"]] = st["cards"]
+        for c in chosen_cards:
+            bucket = reasons.setdefault(c["id"], {})
+            for why in c["why"]:
+                bucket.setdefault(why, [])
+                if why.startswith("cap.") and st["id"] not in bucket[why]:
+                    bucket[why].append(st["id"])
+    selected_cards: List[Dict[str, Any]] = [
+        {**card, "why": [f"{w} ({', '.join(ids)})" if ids else w for w, ids in reasons[card["id"]].items()]}
+        for card in CARDS if card["id"] in reasons
+    ]
+    if not stories:
+        selected_cards = cards_for(caps)
+
+    existing_total = sum(len(st["criteria"]) for st in stories)
     r.findings.append(
         Finding("stories.parsed", f"{len(stories)} story/stories in the register",
-                ", ".join(s["id"] for s in stories))
+                ", ".join(st["id"] for st in stories))
     )
     r.findings.append(
         Finding("cards.selected", f"{len(selected_cards)} of 21 ECCOLA cards are in scope",
                 ", ".join(c["id"] for c in selected_cards))
+    )
+    r.findings.append(
+        Finding("criteria.existing", f"{existing_total} existing acceptance criteria across the stories",
+                ", ".join(c["id"] for st in stories for c in st["criteria"]) or "none")
     )
 
     r.tables["ECCOLA cards selected for this sprint (use these ids; do not invent others)"] = md_table(
@@ -189,7 +373,9 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
         [[c["id"], c["title"], c["module"], ", ".join(c["why"])] for c in selected_cards],
     )
     r.tables["Story register (every id must appear in your output exactly once)"] = md_table(
-        ["Story", "Text"], [[s["id"], s["text"][:100]] for s in stories]
+        ["Story", "Title", "Existing criteria", "Cards in scope for this story"],
+        [[st["id"], st["title"] or st["description"][:80], ", ".join(c["id"] for c in st["criteria"]) or "none",
+          ", ".join(st["cards"])] for st in stories]
     )
 
     if evr_ids:
@@ -204,9 +390,14 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
 
     if not caps:
         r.notes.append(
-            "No capability was declared for this sprint, so only the always-relevant cards were "
-            "selected. If the stories do touch scoring, automation or personal data, go back and "
-            "declare it — card selection is driven by that answer."
+            "No story declares a capability, so only the always-relevant cards were selected. If "
+            "the stories do touch scoring, automation or personal data, go back and declare it — "
+            "card selection is driven by that answer."
+        )
+    if existing_total:
+        r.notes.append(
+            "Existing acceptance criteria are the team's. Do not repeat them; flag one only when it "
+            "conflicts with an approved requirement or a card in scope, and suggest a rewrite."
         )
     if dod:
         r.notes.append("A definition of done was provided; acceptance criteria must be expressed in its terms.")
@@ -239,13 +430,16 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
         ChecklistItem("cards", "Cite the selected card id(s) that justify each criterion"),
         ChecklistItem("traceability", "Trace each criterion to an approved requirement id where one exists"),
         ChecklistItem("no_impact", "Justify, one line each, every story you leave unrefined"),
+        ChecklistItem("conflicts", "Flag every existing acceptance criterion that conflicts with an approved requirement or a card in scope"),
         ChecklistItem("open_issues", "Carry forward every open issue raised here, plus any you add"),
     ]
 
     r.verdict = {
         "story_count": len(stories),
-        "story_ids": [s["id"] for s in stories],
+        "story_ids": [st["id"] for st in stories],
         "card_ids": [c["id"] for c in selected_cards],
+        "story_cards": per_story,
+        "existing_criteria": {st["id"]: [c["id"] for c in st["criteria"]] for st in stories if st["criteria"]},
         "evr_ids": evr_ids,
     }
     r.query_terms = (
@@ -256,7 +450,7 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
     )
     r.data.update(
         {
-            "stories": stories,
+            "stories": [{k: v for k, v in st.items() if k != "declared_capabilities"} for st in stories],
             "cards": [{"id": c["id"], "title": c["title"], "why": c["why"]} for c in selected_cards],
             "capabilities": caps,
             "evr_ids": evr_ids,

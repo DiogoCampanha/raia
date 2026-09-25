@@ -114,7 +114,7 @@ def compact_prompt(budget: int) -> str:
     return (
         f"Your previous reply was cut off at the token limit ({budget} tokens), so it could not "
         "be read as a record. Send the whole record again, complete and compact:\n"
-        "- at most three sentences per free-text field, and one or two for each obligation note;\n"
+        "- one or two sentences per free-text field, conclusion first, and one for each obligation note;\n"
         "- keep every required identifier and every required field, and drop nothing;\n"
         "- where several obligations are met by the same work, say so once and refer back to it;\n"
         "- no text outside the single ```json fence."
@@ -293,10 +293,12 @@ def finalize(
     issues: List[Dict[str, Any]] = _engine_issues(rationale)
     seen = {_norm(i["description"]) for i in issues}
     for issue in rec.get("open_issues") or []:
-        if issue.get("origin") == "engine" or _norm(issue.get("description", "")) in seen:
+        # Issues the engine or code raised are recomputed below from the record as
+        # it is now, so one a reviewer's edit has resolved does not linger.
+        if issue.get("origin") in ("engine", "code") or _norm(issue.get("description", "")) in seen:
             continue
         seen.add(_norm(issue.get("description", "")))
-        issue["origin"] = issue.get("origin") if issue.get("origin") in ("code",) else "agent"
+        issue["origin"] = "agent"
         issue["links"] = [fmap.get(str(l), amap.get(str(l), str(l))) for l in issue.get("links") or []]
         issues.append(issue)
 
@@ -323,6 +325,26 @@ def finalize(
                 "decision_owner": "leadership" if a.get("priority") in ("high", "critical") else a.get("owner_role", "product"),
                 "blocking": False, "links": [a["id"], *a.get("finding_ids", [])], "origin": "code",
             })
+
+    if agent_key == "story_refiner":
+        # An existing acceptance criterion that conflicts with an approved
+        # requirement is the team's call, not the agent's: it becomes a decision.
+        for story in (rec.get("extension") or {}).get("stories") or []:
+            for c in story.get("conflicts") or []:
+                against = ", ".join(c.get("conflicts_with") or []) or "an ethical requirement"
+                description = (f"{c.get('criterion_id')} ({story.get('story_id')}) conflicts with "
+                               f"{against}: {c.get('problem', '')}")
+                if _norm(description) in seen:
+                    continue
+                seen.add(_norm(description))
+                rewrite = (c.get("suggested_rewrite") or "").strip()
+                issues.append({
+                    "type": "value_tradeoff", "description": description,
+                    "options": ([f"Rewrite it: {rewrite}"] if rewrite else ["Rewrite the criterion"])
+                               + ["Keep it and record why"],
+                    "decision_owner": "product", "blocking": False,
+                    "links": [str(c.get("criterion_id")), str(story.get("story_id"))], "origin": "code",
+                })
 
     for i, issue in enumerate(issues, 1):
         issue["id"] = f"{prefix}-I{i}"
@@ -396,6 +418,7 @@ def fallback_record(agent_key: str, rationale: RationaleResult, errors: Sequence
                    "shown. The rule engine's facts and open issues are below. Reject this draft "
                    "to regenerate it.")
     return {
+        "headline": "The agent's reply could not be read — reject this draft to regenerate it.",
         "summary": summary,
         "overall_status": "needs_attention",
         "declared_verdict": {},

@@ -1,4 +1,4 @@
-# The RAIA Output Contract (`raia-record/1.0`)
+# The RAIA Output Contract (`raia-record/1.1`)
 
 Every RAIA agent answers in the same standard record. Two projects that go
 through the same stage answer the same questions, on the same scales, with the
@@ -52,7 +52,8 @@ Every record, for every agent, has these fields.
 
 | Field | Content | Grounding |
 |---|---|---|
-| `summary` | The bottom line, at most five sentences | Human oversight: the reviewer reads it first |
+| `headline` | The bottom line in one sentence: the verdict and what it means for the team (required of the model; older records fall back to the summary's first sentence) | Human oversight: the reviewer reads it first |
+| `summary` | At most three sentences that add to the headline | Human oversight |
 | `overall_status` | `on_track` · `needs_attention` · `blocked` (code raises, never lowers) | Human oversight |
 | `declared_verdict`, `agrees_with_rule_engine`, `disagreement_rationale` | The agent's verdict per key, and whether it agrees with the rule engine | RAIA reconciliation channel; conflicts reach a human |
 | `findings[]` | `title`, `statement`, `principle`, `nist_category`, `magnitude`, `likelihood`, `placement_rationale`, `stakeholders`, `citations`, `links`; computed: `risk_level`, `priority`, `blocking`, `priority_basis` | Seven principles; NIST AI RMF categories; NIST AI RMF MAP 5 (likelihood and magnitude) |
@@ -94,10 +95,16 @@ Each agent's extension is shaped by what its normative source produces.
 | Field | Content |
 |---|---|
 | `stories[]` | Exactly one entry per story id |
-| `stories[].eccola_cards`, `card_discussion` | Selected cards only, and their questions answered for the story |
-| `stories[].criteria[]` | `AC-<story>-<n>`: `ms_goal`, `stakeholder_group`, measurable `condition` with threshold, `evidence_artifact`, `owner_role`, `evr_ids` |
-| `stories[].no_impact_reason` | For stories with no ethical impact |
-| `sprint_ethics_log` | Decisions and rationales (ECCOLA's documentation step) |
+| `stories[].eccola_cards`, `card_discussion` | Cards in scope for that story only, and their questions answered for it in two or three sentences |
+| `stories[].criteria[]` | New criteria only, `AC-<story>-<n>`: `ms_goal`, `stakeholder_group`, measurable `condition` with threshold, `evidence_artifact`, `owner_role`, `evr_ids` |
+| `stories[].conflicts[]` | An existing criterion of the story (`<story>-E<n>`) that conflicts with an approved requirement or a card in scope: `conflicts_with`, `problem`, `suggested_rewrite`. Code opens one `value_tradeoff` issue per conflict for the product owner |
+| `stories[].no_impact_reason` | For stories with no ethical impact, one line |
+| `sprint_ethics_log[]` | Up to five decisions, one sentence each with its reason (ECCOLA's documentation step) |
+
+Stories are entered one by one — id, title, description, existing acceptance
+criteria and the capabilities the story touches — so ECCOLA cards are selected
+per story and existing criteria have ids a conflict can point at. Existing
+criteria stay the team's: RAIA never rewrites them, it flags them.
 
 ### Auditor — Microsoft RAI Standard v2 (accountability), NIST AI RMF GOVERN
 
@@ -208,19 +215,44 @@ high, and `blocked` when anything is blocking.
 | Obligation | `eu.*`, `br.*` codes | Risk Classifier rule engine |
 | Issue in the project register | `ISSUE-<n>` | register |
 
-## 8. The one layout
+## 8. The one layout: summary, actions, deep dive
 
-Every artifact is rendered in this order:
+RAIA is a work tool: people read a record between other work, so every record
+reads top to bottom and can be put down at any point. The screen
+(`raia/ui/record_view.py`) and the Markdown document (`raia/contract/render.py`)
+both draw one digest (`raia/contract/digest.py`), so they cannot disagree.
 
-1. **Summary** — status, bottom line, computed-versus-declared verdict table, agreement
-2. **Findings** — one table on the shared scales, then the detail of each finding
-3. **The agent's own sections** (section 4)
-4. **Action Plan**
-5. **Open Issues**
-6. **Not Grounded in Retrieved Excerpts**
-7. **Declared Coverage**
+**Summary**
 
-followed by the machine block (`schema`, `verdict.*`, `coverage.*`).
+1. **Summary** — status, headline, summary; four figures (risks identified by
+   priority, actions to take and how many are urgent, decisions needed and how
+   many block, one figure specific to the stage); the three main issues
+   (blocking first, then by priority); the principles the findings touch.
+
+**What to do**
+
+2. **Action Plan** — actions grouped by computed priority: *Do now* (critical,
+   high), *Plan* (medium), *Track* (low). Each names its owner, when it happens,
+   what shows it is done, and the findings it answers. On screen a filter shows
+   one owner's share.
+3. **Open Issues** — the decisions only a person can take, with their options.
+
+**Deep dive** (on screen, behind a dropdown; one tab per section)
+
+4. **Findings** — each finding with who is affected, why this priority and, when
+   a floor raised it, why.
+5. **The agent's own sections** (section 4).
+6. **Not Grounded in Retrieved Excerpts**, **Declared Coverage**, **Verdict
+   Reconciliation** — the traceability appendix.
+
+Every deep-dive section opens with a one-line **conclusion**. Conclusions are
+computed from the record (counts, tiers, the most pressing finding) or are the
+first sentence of the field they summarise, which is why the contract asks the
+model to lead every free-text field with its conclusion.
+
+The document ends with the machine block (`schema`, `verdict.*`, `coverage.*`).
+The User Story Refiner also offers the refined stories as plain text, ready to
+paste into the team's tracker.
 
 ## 9. Parsing, repair and fallback
 
@@ -258,7 +290,7 @@ Checks inform and never block; the person at the gate decides.
 
 ## 11. Editing at the approval gate
 
-A reviewer edits the record's fields — the summary, a finding's placement on
+A reviewer edits the record's fields — the headline and summary, a finding's placement on
 the scales, an action's owner or response, the agent's own issues, the
 extension — not the rendered prose. On approval the record is finalised again,
 so priorities are recomputed and engine issues re-inserted, then re-rendered and
@@ -275,7 +307,9 @@ included in the project download.
 
 ## 13. Versioning
 
-`raia-record/<major>.<minor>`. Adding an optional field is a minor change;
+`raia-record/<major>.<minor>`. Adding an optional field is a minor change
+(1.1 added `headline` and the Story Refiner's `conflicts`, and shortened the
+free-text caps);
 removing or renaming a field, or changing a vocabulary or the matrix, is a major
 change. Records keep the version they were written with. After any change run
 `python -m raia.contract.export_schema` and commit `docs/schema/`.

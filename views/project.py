@@ -4,6 +4,7 @@ import json
 
 import streamlit as st
 
+from raia.agents import AGENTS
 from raia.contract import actions as action_plan
 from raia.contract import vocab as V
 from raia.export import bundle_name, session_bundle
@@ -12,6 +13,7 @@ from raia.repository import ACCEPTED, ARTIFACT_FILES, OPEN, RESOLVED
 from raia.ui import routes
 from raia.ui.components import (artifact_body, empty_state, page_header, risk_md, role_badge,
                                 role_label, role_md, stage_tracker, stat_tiles)
+from raia.ui.record_view import record_from_data, record_view
 from raia.ui.state import current_user, flash, get_service, open_project, pkey, show_flash
 from raia.ui.theme import I
 
@@ -106,6 +108,8 @@ with tab_overview:
 
 # ---- Documents ---------------------------------------------------------------------
 
+ARTIFACT_AGENT = {a.spec.output_key: k for k, a in AGENTS.items()}
+
 with tab_docs:
     c1, c2 = st.columns([4, 1.4], vertical_alignment="center")
     c1.caption("Approved artifacts with their provenance. The project download contains "
@@ -139,7 +143,9 @@ with tab_docs:
                     f"prompt `{prov.get('prompt_sha256_16', '?')}` · "
                     f"engine `{prov.get('rationale_engine') or 'none'}`"
                 )
-            st.markdown(artifact_body(content))
+            record, computed = record_from_data(data)
+            record_view(ARTIFACT_AGENT.get(key, ""), record, computed, key=pkey("doc", key), nested=True,
+                        fallback_markdown=artifact_body(content))
             d1, d2, _ = st.columns([1, 1, 2])
             d1.download_button("Markdown", content, file_name=ARTIFACT_FILES[key],
                                mime="text/markdown", key=pkey("dl", key), icon=I.DOWNLOAD)

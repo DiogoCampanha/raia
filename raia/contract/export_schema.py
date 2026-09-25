@@ -4,7 +4,8 @@ Write the published JSON Schemas of the RAIA record to ``docs/schema/``.
     python -m raia.contract.export_schema
 
 One file per agent (the full record, computed fields included and marked
-``"computed": true``). Tools outside RAIA validate exports against these files;
+``"computed": true``; fields the model must fill but older records may lack
+are marked ``"model_required": true``). Tools outside RAIA validate exports against these files;
 ``tests/test_contract.py`` fails when they fall out of date.
 """
 
