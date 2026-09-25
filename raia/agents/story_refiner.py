@@ -5,7 +5,9 @@ RAIA agent specification:
   Inputs   : the sprint's user stories — each with its description, existing
              acceptance criteria and the capabilities it touches — and the
              approved risk classification and ethical requirements
-  Outputs  : refined stories with verifiable ethical acceptance criteria
+  Outputs  : refined stories with verifiable ethical acceptance criteria — shown
+             first, one story at a time with its changes marked and a copy of
+             its new version; the risks and actions behind them come second
   Grounding: ECCOLA cards; Microsoft RAI Standard v2 verifiable requirements
 
 ECCOLA's own method is that relevant cards are selected per sprint. That
@@ -46,7 +48,8 @@ class UserStoryRefinerAgent(BaseAgent):
             "ethical themes apply is computed per story from those answers and the approved "
             "classification. Every story comes back either with new ethical criteria or with a "
             "one-line reason it needs none; existing criteria that conflict are flagged for you "
-            "to decide."
+            "to decide. The result is the stories themselves, each with its changes marked and "
+            "ready to copy back to your tracker."
         ),
         grounding_sources=["eccola", "ms_rai_v2"],
         upstream_keys=["risk_classification", "requirements_review"],
@@ -93,8 +96,13 @@ class UserStoryRefinerAgent(BaseAgent):
             "sentence and suggest a rewrite; the team decides. A story with no ethical impact has "
             "no criteria and a one-line `no_impact_reason`. `sprint_ethics_log` lists up to five "
             "decisions taken and why, one sentence each.\n\n"
-            "Findings are the ethical risks this sprint introduces, linked to story and card ids. "
-            "Actions are what the team does about them in this sprint or later."
+            "The refined stories are the output the team uses: they are read first and copied back "
+            "to the tracker, so put the substance in the criteria. `card_discussion` is ONE "
+            "sentence saying why this story got its criteria. Findings and actions only explain "
+            "the changes: at most three findings — the ethical risks the new criteria answer, "
+            "linked to story and card ids — and one action per finding, which may simply be to "
+            "build and verify the criteria that answer it (name their ids). Add an action beyond "
+            "that only for work no criterion captures, such as a decision or a shared component."
         ),
     )
 

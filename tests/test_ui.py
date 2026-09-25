@@ -395,6 +395,59 @@ def main() -> None:
     prov = (repo2.read_data("requirements_review").get("provenance") or {})
     check(bool((prov.get("intake_origin") or {}).get("adopted")), "…and in the draft's provenance")
 
+    print("== 5c. The Story Refiner leads with the stories; the Auditor reads as an audit report ==")
+    sr = "story_refiner"
+    goto(at, "stage", project=pid2, agent=sr)
+    ok(at.run(), "the Story Refiner opens")
+    button(at, f"{pid2}::ex::{sr}").click()
+    ok(at.run(), "its stories are filled")
+    button(at, f"{pid2}::run::{sr}").click()
+    ok(at.run(), "it runs to the gate")
+    body = text(at)
+    check('class="rv-story ' in body and "Refined stories" in body and "stories changed" in body,
+          "the draft leads with the refined stories and how many changed")
+    check('class="crit new"' in body and 'class="crit conflict"' in body and "<del>" in body,
+          "…each criterion marked new or in conflict, the original struck through")
+    check("Risks identified" not in body and "Why these changes" in str(at._tree),
+          "the risks and actions are secondary, behind Why these changes")
+    choice = next(r for r in at.radio if r.key and "::copy::" in r.key)
+    codes = [c.value for c in at.code]
+    check(any("[MOCK MODE] Placeholder rewrite." in c for c in codes), "the copy of a story uses the rewrite by default")
+    choice.set_value("keep")
+    ok(at.run(), "the person keeps the original instead")
+    check(not any("[MOCK MODE] Placeholder rewrite." in c for c in at.code), "…and every copy follows that choice")
+    button(at, f"{pid2}::approve::{sr}").click()
+    ok(at.run(), "the refined stories are approved")
+
+    au = "auditor"
+    goto(at, "stage", project=pid2, agent=au)
+    ok(at.run(), "the Auditor opens")
+    button(at, f"{pid2}::ex::{au}").click()
+    ok(at.run(), "its answers are filled")
+    button(at, f"{pid2}::run::{au}").click()
+    ok(at.run(), "it runs to the gate")
+    body = text(at)
+    check('class="rv-report ' in body and "Audit report" in body and "Ethical requirements audit" in body,
+          "the draft reads as an audit report, with its header")
+    check(all(h in body for h in ("Audit opinion", "Strengths", "Risks", "Opportunities", "Pathway forward")),
+          "…opinion, strengths, risks, opportunities and pathway forward, in order")
+    check(body.index("Audit opinion") < body.index("Strengths") < body.index("Opportunities") < body.index("Pathway forward"),
+          "…in that order")
+    check('class="rv-seal"' in body and "Rated by code" in body, "the opinion is a rating code computed")
+    check("Appendices" in str(at._tree), "the registers and traceability are appendices")
+    button(at, f"{pid2}::approve::{au}").click()
+    ok(at.run(), "the audit is approved")
+    goto(at, "stage", project=pid2, agent=au)
+    ok(at.run(), "the approved audit reopens")
+    check('class="rv-report ' in text(at), "…still as a report")
+    goto(at, "project", id=pid2)
+    ok(at.run(), "the project page shows both records among its documents")
+    toggles = [t for t in at.toggle if t.key and (t.key.endswith("::why") or t.key.endswith("::appx"))]
+    check(len(toggles) >= 2, "…each with its secondary part behind a toggle, inside the document's dropdown")
+    for t in toggles:
+        t.set_value(True)
+    ok(at.run(), "the secondary parts open without an error")
+
     print("== 6. Invite a reviewer ==")
     goto(at, "project", id=pid1)
     ok(at.run(), "the first project opens")

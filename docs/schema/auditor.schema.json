@@ -1,5 +1,5 @@
 {
-  "$id": "raia-record/1.1/auditor",
+  "$id": "raia-record/1.2/auditor",
   "title": "AuditorRecord",
   "$defs": {
     "Action": {
@@ -222,6 +222,45 @@
           },
           "title": "Upcoming Checkpoints",
           "type": "array"
+        },
+        "strengths": {
+          "description": "Up to three strengths, each resting on verified evidence or an approval on record.",
+          "items": {
+            "$ref": "#/$defs/Strength"
+          },
+          "maxItems": 3,
+          "title": "Strengths",
+          "type": "array"
+        },
+        "opportunities": {
+          "description": "Up to three opportunities for improvement.",
+          "items": {
+            "$ref": "#/$defs/Opportunity"
+          },
+          "maxItems": 3,
+          "title": "Opportunities",
+          "type": "array"
+        },
+        "pathway_summary": {
+          "default": "",
+          "description": "One sentence: the way forward, in the order the team should take it.",
+          "maxLength": 250,
+          "title": "Pathway Summary",
+          "type": "string"
+        },
+        "opinion": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "computed": true,
+          "default": null,
+          "title": "Opinion"
         }
       },
       "title": "AuditReportExt",
@@ -586,6 +625,66 @@
         "decision_owner"
       ],
       "title": "OpenIssue",
+      "type": "object"
+    },
+    "Opportunity": {
+      "properties": {
+        "statement": {
+          "description": "One sentence: an improvement beyond closing the gaps — something that would make the next audits cheaper or the controls stronger.",
+          "maxLength": 200,
+          "title": "Statement",
+          "type": "string"
+        },
+        "refs": {
+          "description": "Item ids or principle keys it concerns.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Refs",
+          "type": "array"
+        },
+        "benefit": {
+          "default": "",
+          "description": "What it would change, in one line.",
+          "maxLength": 200,
+          "title": "Benefit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "statement"
+      ],
+      "title": "Opportunity",
+      "type": "object"
+    },
+    "Strength": {
+      "properties": {
+        "statement": {
+          "description": "One sentence: what is working, specific to this product.",
+          "maxLength": 200,
+          "title": "Statement",
+          "type": "string"
+        },
+        "refs": {
+          "description": "What shows it: ids of items whose verdict is satisfied or partially_satisfied, or the key of an approved upstream artifact (e.g. requirements_review) whose approval record shows it. A strength resting on anything else is removed by code.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Refs",
+          "type": "array"
+        },
+        "evidence": {
+          "default": "",
+          "description": "The evidence, quoted or named in one line.",
+          "maxLength": 200,
+          "title": "Evidence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "statement"
+      ],
+      "title": "Strength",
       "type": "object"
     }
   },

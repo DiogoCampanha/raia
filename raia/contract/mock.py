@@ -116,6 +116,12 @@ def build(prompt: str) -> Dict[str, Any]:
             "accountability_log": [{"decision": MOCK_NOTE, "decided_by": "reviewer", "artifact": "risk_classification"}],
             "upcoming_checkpoints": [{"checkpoint": MOCK_NOTE, "triggered_by": "planned epics",
                                       "item_ids": list(items)[:1], "lifecycle_stage": "verify_and_validate"}],
+            "strengths": [{"statement": "[MOCK MODE] Placeholder strength resting on an approval on record.",
+                           "refs": list(ids.get("approved_artifacts") or [])[:1],
+                           "evidence": "[MOCK MODE] Placeholder evidence."}] if ids.get("approved_artifacts") else [],
+            "opportunities": [{"statement": "[MOCK MODE] Placeholder opportunity.", "refs": list(items)[:1],
+                               "benefit": "[MOCK MODE] Placeholder benefit."}],
+            "pathway_summary": "[MOCK MODE] Placeholder pathway: close the unverified items, then plan the next checkpoint.",
         }
     elif key == "drift_monitor":
         sev = ids.get("breach_severities") or {}

@@ -331,10 +331,34 @@ class Checkpoint(_Model):
     lifecycle_stage: Lifecycle
 
 
+class Strength(_Model):
+    statement: str = Field(max_length=200, description="One sentence: what is working, specific to this product.")
+    refs: List[str] = Field(default_factory=list, description=(
+        "What shows it: ids of items whose verdict is satisfied or partially_satisfied, or the key of "
+        "an approved upstream artifact (e.g. requirements_review) whose approval record shows it. "
+        "A strength resting on anything else is removed by code."))
+    evidence: str = Field(default="", max_length=200, description="The evidence, quoted or named in one line.")
+
+
+class Opportunity(_Model):
+    statement: str = Field(max_length=200, description=(
+        "One sentence: an improvement beyond closing the gaps — something that would make the next "
+        "audits cheaper or the controls stronger."))
+    refs: List[str] = Field(default_factory=list, description="Item ids or principle keys it concerns.")
+    benefit: str = Field(default="", max_length=200, description="What it would change, in one line.")
+
+
 class AuditReportExt(_Model):
     items: List[AuditItem] = Field(default_factory=list, description="One entry per computed audit item.")
     accountability_log: List[DecisionEntry] = Field(default_factory=list, description="Who decided what, from the upstream approval headers (NIST AI RMF GOVERN 2).")
     upcoming_checkpoints: List[Checkpoint] = Field(default_factory=list, description="Ethical checkpoints the planned work will hit.")
+    strengths: List[Strength] = Field(default_factory=list, max_length=3, description=(
+        "Up to three strengths, each resting on verified evidence or an approval on record."))
+    opportunities: List[Opportunity] = Field(default_factory=list, max_length=3, description=(
+        "Up to three opportunities for improvement."))
+    pathway_summary: str = Field(default="", max_length=250, description=(
+        "One sentence: the way forward, in the order the team should take it."))
+    opinion: Optional[Dict[str, Any]] = computed()
 
 
 # ---------------------------------------------------------------------------

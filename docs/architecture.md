@@ -112,9 +112,10 @@ validated against the agent's schema (`raia/contract/`): a shared core —
 summary, findings placed on likelihood and magnitude, actions, typed open
 issues, declared coverage — and an extension shaped by the agent's normative
 source. Code assigns the identifiers, computes risk level and priority,
-carries the engine's issues forward, and renders the one layout every artifact
-follows — summary, then what to do, then the deep dive, on screen and in the
-document alike (`raia/contract/digest.py`). A reviewer edits the record's fields at the gate, never its prose.
+carries the engine's issues forward, and renders each artifact's layout —
+summary, then what to do, then the deep dive; the refined stories first for the
+User Story Refiner; an audit report, rated by code, for the Auditor — on screen
+and in the document alike (`raia/contract/digest.py`). A reviewer edits the record's fields at the gate, never its prose.
 The standard is specified in `docs/output-contract.md`.
 
 ```mermaid

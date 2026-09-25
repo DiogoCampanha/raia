@@ -195,8 +195,11 @@ def test_render_and_schema() -> None:
         dumped = json.dumps(schema)
         check('"priority"' not in dumped and '"risk_level"' not in dumped and '"computed"' not in dumped,
               f"{key}: computed fields are hidden from the model")
-        check(render.required_sections(key)[:4] == ["Summary", "Action Plan", "Open Issues", "Findings"]
-              and render.required_sections(key)[-3:] == render.COMMON_TAIL, f"{key}: shared frame around its own sections")
+        sections = render.required_sections(key)
+        check(all(s in sections for s in render.SHARED_SECTIONS) and sections[-3:] == render.COMMON_TAIL
+              and len(sections) == len(set(sections)), f"{key}: its own layout keeps the shared sections, traceability last")
+        if key not in ("story_refiner", "auditor"):
+            check(sections[:4] == render.COMMON_HEAD, f"{key}: summary, action plan and open issues lead")
         check(AGENTS[key].spec.required_sections == render.required_sections(key), f"{key}: the spec uses the contract's layout")
     r = _rationale("risk_classifier")
     r.checklist = [ChecklistItem("tier_eu", "x")]
@@ -335,7 +338,8 @@ def test_story_conflicts() -> None:
     check(not any("S2-E1" in (i.get("links") or []) for i in after["open_issues"]),
           "a conflict a reviewer removes no longer opens a decision")
     paste = digest.build("story_refiner", rec, rationale.data)["paste"]
-    check("[REVIEW" in paste and "S1 — Ranked shortlist" in paste, "the paste-ready stories mark the conflict for review")
+    check("Reject only after a recruiter confirms." in paste and "S1 — Ranked shortlist" in paste,
+          "the copy of every story carries the suggested rewrite by default")
 
 
 def test_signatures() -> None:
@@ -385,10 +389,148 @@ def test_signatures() -> None:
           "no computed facts, no picture: nothing is drawn from the model's prose")
 
 
+def test_refined_stories_lead() -> None:
+    print("== the Story Refiner leads with the refined stories, changes marked ==")
+    from raia.rationale import story_map
+
+    rationale = story_map.run(EXAMPLES["story_refiner"], {"requirements_review": {"data": {"evr_ids": ["EVR-1"]}}})
+    ids = rationale.verdict["story_ids"]
+    stories = [{"story_id": sid, "no_impact_reason": "Internal refactor only."} for sid in ids]
+    stories[1] = {"story_id": ids[1], "eccola_cards": ["#10"], "card_discussion": "Rejections need a person. More detail.",
+                  "criteria": [{"id": f"AC-{ids[1]}-1", "ms_goal": "A5", "stakeholder_group": "applicants",
+                                "condition": "Every rejection is confirmed by a recruiter.",
+                                "evidence_artifact": "audit-log sample", "owner_role": "product", "evr_ids": ["EVR-1"]}],
+                  "conflicts": [{"criterion_id": f"{ids[1]}-E1", "conflicts_with": ["EVR-1"], "problem": "Rejects with no review.",
+                                 "suggested_rewrite": "Reject only after a recruiter confirms."}]}
+    base = {"headline": "Two stories need ethical criteria.", "summary": "s", "overall_status": "needs_attention",
+            "declared_verdict": {}, "agrees_with_rule_engine": True, "findings": [], "actions": [], "open_issues": [],
+            "coverage": [], "extension": {"stories": stories, "sprint_ethics_log": ["Kept the ranking; added review."]}}
+    rec = assemble.finalize("story_refiner", base, rationale, [], AGENTS["story_refiner"].spec)
+    dg = digest.build("story_refiner", rec, rationale.data)
+    views = dg["stories"]
+    check(views[0]["id"] == ids[1] and views[0]["changed"] and not any(v["changed"] for v in views[1:]),
+          "the changed story comes first, the unchanged ones after it")
+    kinds = [l["kind"] for l in views[0]["lines"]]
+    check(kinds.count("conflict") == 1 and kinds.count("new") == 1 and kinds[-1] == "new",
+          "each criterion is marked kept, in conflict or new, the new ones last")
+    conflict = next(l for l in views[0]["lines"] if l["kind"] == "conflict")
+    check(conflict["decision"].startswith("SR-I") and conflict["rewrite"] == "Reject only after a recruiter confirms.",
+          "a conflict carries its suggested rewrite and the decision it opened")
+    check(views[0]["why"] == "Rejections need a person.", "the reason for the change is one sentence")
+    rewritten = digest.story_text(views[0])
+    kept = digest.story_text(views[0], {conflict["id"]: "keep"})
+    check("Reject only after a recruiter confirms." in rewritten and conflict["text"] not in rewritten,
+          "the copy uses the suggested rewrite by default")
+    check(conflict["text"] in kept and "Reject only after" not in kept, "…and the original when the person keeps it")
+    check(f"(ethics AC-{ids[1]}-1; evidence: audit-log sample)" in rewritten,
+          "a new criterion keeps its id in the copy, so the Auditor finds it again")
+    check(dg["story_counts"] == {"total": len(ids), "changed": 1, "new": 1, "conflicts": 1},
+          "the counts are the stories' counts")
+    md = render.render("story_refiner", rec, rationale.data, rationale.checklist_keys())
+    order = [md.index(f"## {t}") for t in render.required_sections("story_refiner")]
+    check(order == sorted(order) and md.index("## Refined Stories") < md.index("## Findings") < md.index("## Action Plan"),
+          "the document leads with the stories; the risks and actions follow as the reasons")
+    check("**[NEW] AC-" in md and "**[REVIEW]**" in md and "~~" in md, "…with the same marks as the screen")
+    check("1 of 3 stories changed · 1 new criterion · 1 conflict to decide" in md, "…and the same counts")
+
+
+def test_audit_report() -> None:
+    print("== the Auditor reads as an audit report, rated by code ==")
+    from raia.rationale import traceability as T
+
+    check(T.OPINIONS == V.AUDIT_OPINIONS and T.SATISFIED_SHARE == V.AUDIT_SATISFIED_SHARE,
+          "the engine and the vocabulary share one opinion scale")
+    check(T.rate(0, 0, evidence_declared=True)[0] == "not_rated", "nothing to audit: not rated")
+    check(T.rate(4, 4, evidence_declared=False)[0] == "not_effective", "no evidence declared: not effective")
+    check(T.rate(4, 0, evidence_declared=True)[0] == "not_effective", "nothing satisfied: not effective")
+    check(T.rate(4, 4, evidence_declared=True, blocking=1)[0] == "not_effective", "a blocking decision: not effective")
+    check(T.rate(5, 2, evidence_declared=True)[0] == "needs_improvement", "under 60% satisfied: needs improvement")
+    check(T.rate(5, 4, evidence_declared=True, at_risk=1)[0] == "needs_improvement", "an item at risk: needs improvement")
+    check(T.rate(5, 5, evidence_declared=True, critical=1)[0] == "needs_improvement", "a critical finding: needs improvement")
+    check(T.rate(5, 3, evidence_declared=True)[0] == "effective_with_observations", "60% satisfied: effective with observations")
+    check(T.rate(5, 5, evidence_declared=True, high=1)[0] == "effective_with_observations",
+          "a high finding keeps it at effective with observations")
+    check(T.rate(5, 5, evidence_declared=True)[0] == "effective", "everything satisfied, nothing high: effective")
+    check(T.at_most("effective", "needs_improvement") == "needs_improvement" and T.at_most("not_effective", "effective") == "not_effective",
+          "a rating never rises above its ceiling")
+
+    upstream = {
+        "requirements_review": {"data": {"evr_ids": ["EVR-1", "EVR-2"], "evrs": [
+            {"id": "EVR-1", "statement": "Every rejection is reviewed by a recruiter.", "fit_criterion": "100% reviewed"},
+            {"id": "EVR-2", "statement": "Selection rates are monitored per group.", "fit_criterion": "ratio above 0.8"}]},
+            "provenance": {"approval": {"approved_by": "Ana", "approved_at": "2026-09-20T10:00:00"}}}}
+    inputs = {"sprint_id": "Sprint 7", "sprint_outcomes": "EVR-1 shipped: every rejection is reviewed by a recruiter.",
+              "evidence_types": ["audit_log"], "planned_epics": ""}
+    r = T.run(inputs, upstream)
+    check(r.verdict["opinion_ceiling"] == "needs_improvement", "the engine sets the best rating the evidence allows (1 of 2)")
+    check(r.data["baseline"][0] == {"artifact": "requirements_review", "label": "Ethical requirements",
+                                    "approved_by": "Ana", "approved_at": "2026-09-20"},
+          "the baseline is read from the approval records")
+    items = [{"item_id": "EVR-1", "verdict": "satisfied", "evidence": "Shipped with review."},
+             {"item_id": "EVR-2", "verdict": "satisfied", "evidence": "trust me"}]
+    rec = _record(extension={"items": items, "accountability_log": [], "upcoming_checkpoints": [
+                                 {"checkpoint": "Fairness review", "triggered_by": "Epic 9", "item_ids": ["EVR-2"],
+                                  "lifecycle_stage": "verify_and_validate"}],
+                             "strengths": [{"statement": "Reviews are logged.", "refs": ["EVR-1"]},
+                                           {"statement": "Monitoring is in place.", "refs": ["EVR-2"]},
+                                           {"statement": "Requirements were approved by a named owner.", "refs": ["requirements_review"]}],
+                             "opportunities": [{"statement": "Export the audit-log sample every sprint.", "refs": ["EVR-1"]}],
+                             "pathway_summary": "Evidence EVR-2 first, then plan the fairness review."},
+                  declared_verdict={})
+    rec["findings"][0]["links"] = ["EVR-2"]
+    fin = assemble.finalize("auditor", rec, r, EVIDENCE, AGENTS["auditor"].spec)
+    ext = fin["extension"]
+    check([i["verdict"] for i in ext["items"]] == ["satisfied", "not_verified"], "the unevidenced upgrade is still restored")
+    check([x["refs"] for x in ext["strengths"]] == [["EVR-1"], ["requirements_review"]],
+          "a strength resting on an unverified item is removed; one on an approval stays")
+    check(any(i.code == "strengths.unsupported" for i in checks.check_corrections(fin)), "…and the reviewer is told")
+    check(ext["opinion"]["rating"] == "needs_improvement" and "1 of 2 items satisfied" in ext["opinion"]["reasons"][0],
+          "the opinion is computed from the final verdicts, and says why")
+    capped = json.loads(json.dumps(rec))
+    capped["extension"]["items"] = [{"item_id": "EVR-1", "verdict": "satisfied", "evidence": "x"},
+                                    {"item_id": "EVR-2", "verdict": "satisfied", "evidence": "x"}]
+    capped["findings"], capped["actions"] = [], []
+    lenient = RationaleResult(engine="t", verdict={**r.verdict, "not_verified": []}, data=r.data)
+    top = assemble.finalize("auditor", capped, lenient, EVIDENCE, AGENTS["auditor"].spec)["extension"]["opinion"]
+    check(top["rating"] == "needs_improvement" and top["ceiling"] == "needs_improvement"
+          and "capped" in top["reasons"][-1], "…and never above the best the declared evidence allows")
+    again = assemble.finalize("auditor", fin, r, EVIDENCE, AGENTS["auditor"].spec)
+    check(again["extension"]["opinion"] == ext["opinion"] and again["extension"]["strengths"] == ext["strengths"],
+          "finalising twice changes nothing")
+
+    dg = digest.build("auditor", fin, r.data)
+    rp = dg["report"]
+    check(rp["header"]["title"] == "Ethical requirements audit — Sprint 7"
+          and dict(rp["header"]["fields"])["Evidence declared"] == "Audit-log sample showing the behaviour",
+          "the report header states the sprint and the evidence basis")
+    risk = next(x for x in rp["risks"] if x["required"])
+    check(risk["required"][0][0] == "EVR-2" and "monitored per group" in risk["required"][0][1] and risk["recommendation"],
+          "a risk states what was required, from the approved wording, and the recommendation")
+    phases = [p["key"] for p in rp["pathway"]["phases"]]
+    check(phases == ["decide", "now", "next", "release"],
+          "the pathway reads decisions, this sprint, next sprints, before release — empty phases left out")
+    check(sum(len(p["entries"]) for p in rp["pathway"]["phases"])
+          == len(fin["open_issues"]) + len(fin["actions"]) + len(ext["upcoming_checkpoints"]),
+          "every action, decision and checkpoint appears once on the pathway")
+    check(not any(sec["key"] == "findings" for sec in dg["deep"]), "the risks are the report's, not a second findings list")
+    md = render.render("auditor", fin, r.data, r.checklist_keys())
+    order = [md.index(f"## {t}") for t in render.required_sections("auditor")]
+    check(order == sorted(order) and md.index("## Audit Opinion") < md.index("## Open Issues"),
+          "the document reads opinion, strengths, risks, opportunities, pathway, then the appendices")
+    check(f"**Opinion: {V.AUDIT_OPINION_LABELS[ext['opinion']['rating']]}**" in md and "_Rated by code._" in md,
+          "the document states the opinion and that code rated it")
+    older = json.loads(json.dumps(fin))
+    for k in ("strengths", "opportunities", "pathway_summary", "opinion"):
+        older["extension"].pop(k)
+    old_md = render.render("auditor", older, r.data, r.checklist_keys())
+    check("Not assessed in this record version" in old_md, "an audit approved before the report still renders, and says so")
+
+
 def main() -> None:
     for fn in (test_vocabularies_come_from_the_corpus, test_rubric, test_parse_and_fallback,
                test_finalize, test_render_and_schema, test_published_schemas_are_current, test_action_plan,
-               test_reading_order, test_length_overflow, test_story_conflicts, test_signatures):
+               test_reading_order, test_length_overflow, test_story_conflicts, test_signatures,
+               test_refined_stories_lead, test_audit_report):
         fn()
     print()
     if FAILURES:

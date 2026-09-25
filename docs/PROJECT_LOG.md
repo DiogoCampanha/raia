@@ -128,6 +128,10 @@ Recorded so the log stays honest about its own errors.
 | D38 | After an approval the stage page says where to go next and takes you there; every stage page keeps the five stages in view and ends with Previous and Next. "Next" is derived: stages the approval flagged for review first, then later stages that are open, then earlier ones. | Testers finished a stage and found no way forward except back through the project page. The order puts re-checking flagged work before moving on, so navigation never hides the consequences of a revision; it only points, and never runs anything. |
 | D39 | Each agent has its own identity — colour, icon, the question it answers, a header pattern — used only for chrome (header, stage rail, navigation, primary button, the summary picture's frame). Inside a record, colour keeps its shared meaning, and no agent colour is close to a meaning colour. | Every stage looked the same, so people lost track of which agent they were using. Colour that means "critical" or "on track" must mean it on every page, so identity stays out of the content; the icon and name always accompany the colour. |
 | D40 | Every summary opens with one picture only that agent draws — the risk tier on each legal scale, coverage per principle, how each story came out, what the audit verified, the parity gap per window against its threshold — built in the digest from computed facts, on screen and in the exported document alike. | The agents answer different questions; the first thing a person sees should be the shape of that answer. Drawing only computed facts keeps the picture from restating model prose as if it were measured. |
+| D41 | The User Story Refiner leads with the refined stories: one card per story with each criterion marked kept, in conflict or new, a copy of the story's new version, and the stories needing no change listed after them. The risks, actions and decisions behind the changes move behind "Why these changes"; the stories replace the summary picture and figures. The model is asked for at most three findings and one action per finding. | The stories are what a team takes back to its tracker; the analytics came first and the stories last, so the output read as a risk report about stories rather than the stories. The shared record is unchanged, so the Auditor and the action plan read it as before. |
+| D42 | The copy of a story uses the suggested rewrite of a conflicting criterion by default; the person can keep the original per conflict. The record keeps the criterion as entered and the decision open until someone takes it. | The recommendations are the point of the refinement, so they belong in the copy; D36 still holds because the rewrite enters the tracker only through a person's copy, one click from the original, and the decision stays on the register. |
+| D43 | The Auditor reads as an audit report: a header (sprint, scope, evidence declared, approved baseline and approvers), the opinion, strengths, risks as observations (found, required, affects, recommendation), opportunities and a pathway forward ordered decisions → this sprint → next sprints → before release → ongoing; the decisions, verdict register, accountability documentation and traceability are appendices. | The audit shared the other agents' layout, so it did not read like the end of an audit process. Every part is a view of fields the record already holds or of two short model lists (strengths, opportunities) and one sentence (pathway), so the report stays short. |
+| D44 | The audit opinion is rated by code on RAIA's own five-step scale (not rated, not effective, needs improvement, effective with observations, effective) over the declared evidence, the share of items satisfied (60% threshold), items at risk, finding priorities and blocking decisions. The engine sets the best rating the evidence allows before the model is called (a reconciled verdict key); the final rating never rises above it. A strength must rest on a satisfied or partially satisfied item or an approval on record, or code removes it. | An opinion is the most-read line of an audit, so it must not vary with the model's mood; the ceiling carries the anti-ethics-washing rule to the rating, and the strength rule carries it to praise. No external audit standard is used: the scale operationalises the Microsoft RAI Standard v2 accountability goals and NIST AI RMF GOVERN and MEASURE, and is stated as RAIA's rule. |
 
 ---
 
@@ -136,6 +140,83 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-25 — Refined stories first, and an audit report (branch `refiner-auditor-outputs`)
+
+Decisions D41–D44.
+
+#### What was wrong
+
+- **TST-12** The User Story Refiner's draft opened with risk figures, main
+  issues and action cards; the refined stories — the thing a team uses — were
+  a deep-dive tab and a paste box at the end of the actions.
+- **TST-13** The Auditor's draft looked like every other agent's. Nothing
+  stated an overall opinion, what was working or what could improve, and the
+  way forward was split across action cards and a checkpoints table.
+
+#### What changed
+
+- `raia/contract/digest.py` — `story_views` (each story with its criteria
+  marked kept / conflict / new, the decision a conflict opened, the one-line
+  reason and the cards), `story_text` (a story's new version, the suggested
+  rewrite by default or the original per conflict), `story_counts`;
+  `audit_report` (header, opinion, strengths, risks as observations,
+  opportunities, pathway phases). The Auditor's deep dive is its verdict
+  register and accountability documentation; its risks are the report's.
+- `raia/contract/render.py` — per-agent layouts (`layout`,
+  `required_sections`): the Story Refiner's document leads with Summary,
+  Refined Stories and Stories Without Ethical Impact, then "why these
+  changes"; the Auditor's reads Audit Opinion, Strengths, Risks,
+  Opportunities, Pathway Forward, then appendices. Every layout keeps Open
+  Issues and the traceability appendix.
+- `raia/ui/record_view.py`, `raia/ui/theme.css` — the story cards (changes
+  marked, a choice per conflict, *Copy* per story and *Copy all stories*,
+  "Why these changes" behind a dropdown) and the audit report (report header,
+  numbered sections, the opinion as a seal, strengths and opportunities lists,
+  observation cards, the pathway as a timeline, appendices behind a dropdown).
+  A reply that could not be read as a record still falls back to the shared
+  layout.
+- `raia/contract/schema.py`, `vocab.py` — `raia-record/1.2`: the Auditor's
+  `strengths[]`, `opportunities[]`, `pathway_summary` and computed `opinion`;
+  the opinion scale and its rules.
+- `raia/rationale/traceability.py` — `rate` and `at_most`; the engine computes
+  `opinion_ceiling` (a verdict key), the approved baseline with approvers, each
+  item's subject and the declared evidence labels.
+- `raia/contract/assemble.py`, `checks.py` — code holds strengths to the
+  evidence (removing unsupported ones, reported as *Evidence discipline*) and
+  rates the audit, capped at the ceiling; idempotent.
+- `raia/agents/story_refiner.py`, `auditor.py`, `raia/contract/prompt.py`,
+  `mock.py` — prompts for the new emphasis; the Auditor is told the approved
+  artifacts a strength may rest on.
+- Guide, `docs/TESTERS.md`, agent cards, `docs/schema/`,
+  `docs/output-contract.md` (section 8 now describes the three layouts),
+  `docs/architecture.md` and the README updated or regenerated.
+
+#### Tests
+
+- `tests/test_contract.py` — every layout keeps the shared sections and ends
+  with traceability; the changed story comes first, each criterion is marked,
+  a conflict carries its rewrite and decision, the copy uses the rewrite by
+  default and the original when kept, new criteria keep their ids; the
+  document leads with the stories. The opinion scale is shared by engine and
+  vocabulary; each rule of the scale; the ceiling from the evidence, the
+  baseline from approval records; an unsupported strength is removed and
+  reported; the rating is computed, capped and stable on re-finalising; risks
+  state the approved wording and recommendation; every action, decision and
+  checkpoint appears once on the pathway; an audit approved before 1.2 still
+  renders and says what it lacks.
+- `tests/test_ui.py` section 5c — the Story Refiner's draft leads with story
+  cards, marks new and conflicting criteria, keeps the analysis behind "Why
+  these changes", and the copy follows the conflict choice; the Auditor's draft
+  reads as a report in order, rated by code, with appendices, before and
+  after approval.
+
+#### Still open, by decision
+
+- The conflict choice shapes the copy only; the decision itself is still taken
+  on the register (D42).
+- The 60% threshold and the scale are a first operationalisation to be
+  checked with the expert panel (D44).
+
 ### 2026-09-25 — Continue to the next agent, and agents you can tell apart (branch `agent-identity-nav`)
 
 Decisions D38–D40.

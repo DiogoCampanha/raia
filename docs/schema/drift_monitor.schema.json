@@ -1,5 +1,5 @@
 {
-  "$id": "raia-record/1.1/drift_monitor",
+  "$id": "raia-record/1.2/drift_monitor",
   "title": "DriftMonitorRecord",
   "$defs": {
     "Action": {

@@ -30,6 +30,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from pydantic import ValidationError
 
 from .. import config
+from ..rationale import traceability
 from ..rationale.types import RationaleResult
 from . import rubric
 from . import vocab as V
@@ -307,6 +308,54 @@ def _engine_issues(rationale: RationaleResult) -> List[Dict[str, Any]]:
     ]
 
 
+def _audit_opinion(ext: Dict[str, Any], rationale: RationaleResult, findings: Sequence[Dict[str, Any]],
+                   issues: Sequence[Dict[str, Any]], notes: List[str]) -> None:
+    """Hold strengths to the evidence and rate the audit — both by code.
+
+    The rule against ethics-washing covers praise too: a strength must rest on
+    an item whose final verdict is satisfied or partially satisfied, or on the
+    approval record of an upstream artifact. Anything else is removed. The
+    opinion follows :func:`raia.rationale.traceability.rate` over the final
+    verdicts, the computed priorities and the open decisions, and never rises
+    above the ceiling the engine set before the model was asked anything.
+    """
+    data = rationale.data or {}
+    items = ext.get("items") or []
+    verified = {str(i.get("item_id")) for i in items if i.get("verdict") in ("satisfied", "partially_satisfied")}
+    approved = {str(b.get("artifact")) for b in data.get("baseline") or []}
+    kept = []
+    for strength in ext.get("strengths") or []:
+        refs = [str(r) for r in strength.get("refs") or []]
+        good = [r for r in refs if r in verified or r in approved]
+        text = str(strength.get("statement") or "")[:90]
+        if not good:
+            notes.append(f"STRENGTH: removed “{text}” — it rests on no satisfied item and no approval on record.")
+            continue
+        if len(good) < len(refs):
+            notes.append(f"STRENGTH: “{text}” kept without {', '.join(r for r in refs if r not in good)}, "
+                         "which are not verified.")
+        strength["refs"] = good
+        kept.append(strength)
+    ext["strengths"] = kept
+
+    audited = data.get("audited_items") or []
+    total = len(audited) or len(items)
+    count = lambda v: sum(1 for i in items if i.get("verdict") == v)  # noqa: E731
+    rating, reasons = traceability.rate(
+        total, count("satisfied"),
+        evidence_declared=bool((rationale.verdict or {}).get("evidence_declared", bool(data.get("evidence_types")))),
+        at_risk=count("at_risk"),
+        critical=sum(1 for f in findings if f.get("priority") == "critical"),
+        high=sum(1 for f in findings if f.get("priority") == "high"),
+        blocking=sum(1 for i in issues if i.get("blocking")) + sum(1 for f in findings if f.get("blocking")),
+    )
+    ceiling = (rationale.verdict or {}).get("opinion_ceiling") or traceability.OPINIONS[-1]
+    final = traceability.at_most(rating, ceiling)
+    if final != rating:
+        reasons = reasons + [f"capped at the best the declared evidence allows ({ceiling.replace('_', ' ')})"]
+    ext["opinion"] = {"rating": final, "reasons": reasons, "ceiling": ceiling}
+
+
 def finalize(
     agent_key: str,
     record: Dict[str, Any],
@@ -431,6 +480,8 @@ def finalize(
                 item["downgrade_reason"] = ("Restored to not_verified by code: no evidence was found "
                                             "for this item. A verdict may be downgraded, never upgraded.")
                 item["verdict"] = "not_verified"
+    if agent_key == "auditor" and isinstance(rec.get("extension"), dict):
+        _audit_opinion(ext, rationale, findings, issues, notes)
     if agent_key == "drift_monitor":
         severities = drift_severities(rationale)
         for alert in ext.get("alerts") or []:

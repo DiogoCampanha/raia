@@ -4,7 +4,7 @@
 
 ## 1. Purpose
 
-Audits sprint progress against the approved ethical requirements and produces accountability documentation grounded in versioned evidence.
+Audits sprint progress against the approved ethical requirements and reports it as an audit: an opinion, strengths, risks, opportunities and the way forward, grounded in versioned evidence.
 
 ## 2. Place in the lifecycle
 
@@ -37,6 +37,7 @@ Audits sprint progress against the approved ethical requirements and produces ac
 
 - Reads the register of approved requirements and acceptance criteria and matches each one to the evidence the sprint produced.
 - Refuses to mark anything verified without evidence: an item with no evidence is not verified, whatever the narrative says.
+- Rates the audit — not effective, needs improvement, effective with observations or effective — from the final verdicts, priorities and open decisions, never above what the declared evidence allows; removes any strength the evidence does not support.
 
 Checklist the record must declare:
 
@@ -44,6 +45,8 @@ Checklist the record must declare:
 - `not_verified` — Explain what evidence each NOT VERIFIED item would need
 - `accountability` — Record who decided what, from the upstream approval headers
 - `upcoming` — Flag the ethical checkpoints the planned work will hit
+- `strengths` — State the strengths the evidence supports, and nothing it does not
+- `pathway` — Recommend the way forward, in order
 - `open_issues` — Carry forward every open issue raised here, plus any you add
 
 Excerpts pinned for the canonical scenario:
@@ -55,12 +58,13 @@ Excerpts pinned for the canonical scenario:
 ## 6. What a person decides
 
 - Whether the evidence is sufficient for an accountability record.
+- The decisions the pathway forward opens with, and who carries each recommendation.
 - What becomes an ethical checkpoint for the next iteration.
 - Every open issue the record raises, and whether to approve, edit or reject the record.
 
 ## 7. The record it produces
 
-Schema `raia-record/1.1` — `docs/schema/auditor.schema.json`. Identifier prefix `AU`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.2` — `docs/schema/auditor.schema.json`. Identifier prefix `AU`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
@@ -81,10 +85,19 @@ Schema `raia-record/1.1` — `docs/schema/auditor.schema.json`. Identifier prefi
 | `upcoming_checkpoints[].triggered_by` | The planned epic or event that reaches it. |
 | `upcoming_checkpoints[].item_ids` | — |
 | `upcoming_checkpoints[].lifecycle_stage` | — |
+| `strengths` | Up to three strengths, each resting on verified evidence or an approval on record. |
+| `strengths[].statement` | One sentence: what is working, specific to this product. |
+| `strengths[].refs` | What shows it: ids of items whose verdict is satisfied or partially_satisfied, or the key of an approved upstream artifact (e.g. requirements_review) whose approval record shows it. A strength resting on anything else is removed by code. |
+| `strengths[].evidence` | The evidence, quoted or named in one line. |
+| `opportunities` | Up to three opportunities for improvement. |
+| `opportunities[].statement` | One sentence: an improvement beyond closing the gaps — something that would make the next audits cheaper or the controls stronger. |
+| `opportunities[].refs` | Item ids or principle keys it concerns. |
+| `opportunities[].benefit` | What it would change, in one line. |
+| `pathway_summary` | One sentence: the way forward, in the order the team should take it. |
 
-Rendered sections: Summary → Action Plan → Open Issues → Findings → Progress Audit → Accountability Documentation → Upcoming Ethical Checkpoints → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
+Rendered sections: Audit Opinion → Strengths → Risks → Opportunities → Pathway Forward → Open Issues → Verdict Register → Accountability Documentation → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
 
-Verdict keys the agent declares: `items_audited`.
+Verdict keys the agent declares: `items_audited`, `opinion_ceiling`.
 
 ## 8. Checks
 
@@ -95,8 +108,11 @@ Verdict keys the agent declares: `items_audited`.
 - The rule engine's issues are carried forward; the verdict is reconciled
 - Every computed item has a verdict
 - An unevidenced item is never upgraded (restored by code)
+- A strength rests on a satisfied item or an approval on record (anything else removed by code)
+- The opinion is rated by code and never rises above the best the declared evidence allows
 
 ## 9. Limitations
 
 - The normative corpus is a set of curated summaries prepared for the project; a citation resolves to a section of a summary, not to official wording.
 - Evidence matching is lexical and conservative: an item lands in NOT VERIFIED when in doubt, and a match is only a reason to assess, not proof.
+- The opinion follows a fixed RAIA rule over counts (share satisfied, items at risk, finding priorities, blocking decisions); it rates the evidence the sprint produced, not the quality of the controls themselves.

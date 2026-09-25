@@ -19,7 +19,7 @@ from ..examples import EXAMPLES
 from ..repository import ARTIFACT_FILES
 from . import vocab as V
 from .assemble import PREFIX, RECORD_TYPES
-from .render import AGENT_SECTIONS, COMMON_HEAD, COMMON_TAIL
+from .render import required_sections
 from .schema import EXTENSIONS
 
 OUT = Path(__file__).resolve().parents[2] / "docs" / "agents"
@@ -43,13 +43,17 @@ LIMITATIONS: Dict[str, List[str]] = {
     "story_refiner": [
         "Card selection follows each story's declared capabilities and the upstream answers; a "
         "capability not declared does not select its cards.",
-        "A conflict is flagged by the agent and settled by a person; an existing criterion is never "
-        "changed by RAIA.",
+        "A conflict is flagged by the agent and settled by a person. The copy of a story offers the "
+        "suggested rewrite, and the person can keep the original instead; the record keeps the "
+        "criterion as entered and the decision open until someone takes it.",
         "Acceptance criteria are checked for form, not for whether the threshold is right.",
     ],
     "auditor": [
         "Evidence matching is lexical and conservative: an item lands in NOT VERIFIED when in doubt, "
         "and a match is only a reason to assess, not proof.",
+        "The opinion follows a fixed RAIA rule over counts (share satisfied, items at risk, finding "
+        "priorities, blocking decisions); it rates the evidence the sprint produced, not the quality "
+        "of the controls themselves.",
     ],
     "drift_monitor": [
         "Metrics are computed from the telemetry supplied; the Ops layer is a demonstrable prototype.",
@@ -66,7 +70,9 @@ CHECKS: Dict[str, List[str]] = {
     "story_refiner": ["Every story id has an entry", "Only cards in scope for each story and approved EVR ids are used",
                       "Criteria are labelled AC-<story>-<n>",
                       "A conflict names an existing criterion of its own story, and opens a decision (by code)"],
-    "auditor": ["Every computed item has a verdict", "An unevidenced item is never upgraded (restored by code)"],
+    "auditor": ["Every computed item has a verdict", "An unevidenced item is never upgraded (restored by code)",
+                "A strength rests on a satisfied item or an approval on record (anything else removed by code)",
+                "The opinion is rated by code and never rises above the best the declared evidence allows"],
     "drift_monitor": ["One alert per computed breach, with the computed severity (restored by code)",
                       "Every figure in the prose is in the computed set"],
 }
@@ -174,7 +180,7 @@ def card(key: str) -> str:
         "| Field | Content |", "|---|---|",
         *_fields(EXTENSIONS[key]),
         "",
-        "Rendered sections: " + " → ".join(COMMON_HEAD + AGENT_SECTIONS[key] + COMMON_TAIL) + ".",
+        "Rendered sections: " + " → ".join(required_sections(key)) + ".",
         "",
         f"Verdict keys the agent declares: {', '.join(f'`{k}`' for k in spec.verdict_keys) or '—'}.",
         "",

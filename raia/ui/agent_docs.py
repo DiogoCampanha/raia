@@ -64,10 +64,13 @@ DOCS: Dict[str, Dict[str, object]] = {
             "requirements and what that story touches, and records why each one applies.",
             "Traces every new acceptance criterion back to an approved requirement.",
             "Turns every existing criterion the agent flags as conflicting into a decision.",
+            "Shows each story's new version with its changes marked, ready to copy back to your "
+            "tracker; the risks and actions behind the changes come second.",
         ],
         "you": [
             "Whether each acceptance criterion is testable in your context.",
-            "Whether a conflicting existing criterion is rewritten or kept, and why.",
+            "Whether a conflicting existing criterion is rewritten or kept, and why — the copy "
+            "of the story follows your choice.",
             "Which stories carry no ethical impact and can move on unchanged.",
         ],
     },
@@ -78,9 +81,13 @@ DOCS: Dict[str, Dict[str, object]] = {
             "each one to the evidence the sprint produced.",
             "Refuses to mark anything verified without evidence: an item with no evidence is "
             "not verified, whatever the narrative says.",
+            "Rates the audit — not effective, needs improvement, effective with observations or "
+            "effective — from the final verdicts, priorities and open decisions, never above "
+            "what the declared evidence allows; removes any strength the evidence does not support.",
         ],
         "you": [
             "Whether the evidence is sufficient for an accountability record.",
+            "The decisions the pathway forward opens with, and who carries each recommendation.",
             "What becomes an ethical checkpoint for the next iteration.",
         ],
     },
