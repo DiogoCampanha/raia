@@ -33,7 +33,7 @@ from typing import Dict, List, Tuple
 
 from ..rationale.principles import PRINCIPLES
 
-SCHEMA_VERSION = "raia-record/1.1"
+SCHEMA_VERSION = "raia-record/1.2"
 
 # -- The seven principles -----------------------------------------------------
 
@@ -196,6 +196,33 @@ AUDIT_VERDICT_LABELS: Dict[str, str] = {
     "satisfied": "Satisfied", "partially_satisfied": "Partially satisfied",
     "at_risk": "At risk", "not_verified": "Not verified",
 }
+
+# -- Audit opinion (computed by code) -------------------------------------------
+# The overall rating of an audit, from the weakest to the strongest. It is a
+# RAIA rule over facts code holds — declared evidence, the final verdicts, the
+# computed priorities and the open decisions — applied to the accountability
+# goals of the Microsoft RAI Standard v2 and NIST AI RMF GOVERN and MEASURE.
+# The engine sets the best rating the evidence allows before the model is asked
+# anything; the final verdicts and findings can only lower it.
+
+AUDIT_OPINIONS: Tuple[str, ...] = ("not_rated", "not_effective", "needs_improvement",
+                                   "effective_with_observations", "effective")
+AUDIT_OPINION_LABELS: Dict[str, str] = {
+    "not_rated": "Not rated",
+    "not_effective": "Not effective",
+    "needs_improvement": "Needs improvement",
+    "effective_with_observations": "Effective with observations",
+    "effective": "Effective",
+}
+AUDIT_OPINION_RULES: Dict[str, str] = {
+    "not_rated": "There was nothing to audit: no approved requirement or criterion register.",
+    "not_effective": "No evidence was declared, nothing was satisfied, or a blocking decision is open.",
+    "needs_improvement": "Under 60% of items satisfied, an item at risk, or a critical finding.",
+    "effective_with_observations": "60% or more satisfied, with high findings or unverified items remaining.",
+    "effective": "Every item satisfied and no high or critical finding.",
+}
+#: Share of items that must be satisfied for a rating above "needs improvement".
+AUDIT_SATISFIED_SHARE = 0.6
 
 # -- Open issues ----------------------------------------------------------------
 

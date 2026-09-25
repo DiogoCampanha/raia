@@ -33,9 +33,12 @@ the **Open Issues** register rather than averaged away.
 summary, findings placed on likelihood and magnitude, actions with a response,
 owner, lifecycle stage, review cadence, verification method and evidence
 artifact, typed open issues, declared coverage — plus an extension shaped by
-the norm the agent operationalises. Every record reads the same way: a summary
-with the figures that matter, then what to do, then a deep dive for whoever
-wants the analysis behind it. All vocabularies come from the project's
+the norm the agent operationalises. Every record leads with what to act on and
+keeps the analysis for whoever wants it: most stages read as a summary with the
+figures that matter, then what to do, then a deep dive; the User Story Refiner
+leads with the refined stories, each with its changes marked and ready to copy;
+the Auditor reads as an audit report — an opinion rated by code, strengths,
+risks, opportunities and the pathway forward. All vocabularies come from the project's
 normative sources only. See [`docs/output-contract.md`](docs/output-contract.md),
 the agent cards in [`docs/agents/`](docs/agents/) and the JSON Schemas in
 [`docs/schema/`](docs/schema/).
@@ -198,8 +201,8 @@ raia/
 │   │   ├── schema.py          #   shared core + one extension per agent
 │   │   ├── prompt.py          #   the contract as the model sees it
 │   │   ├── assemble.py        #   parse, repair, finalise, fallback
-│   │   ├── digest.py          #   the reading order: summary, actions, deep dive
-│   │   ├── render.py          #   the one Markdown layout, written from the digest
+│   │   ├── digest.py          #   the reading order of each record, the refined stories, the audit report
+│   │   ├── render.py          #   the Markdown layouts, written from the digest
 │   │   ├── checks.py          #   record-level checks
 │   │   ├── actions.py         #   project action plan and its exports
 │   │   ├── export_schema.py   #   writes docs/schema/

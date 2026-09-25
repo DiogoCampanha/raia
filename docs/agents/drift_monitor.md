@@ -58,7 +58,7 @@ Excerpts pinned for the canonical scenario:
 
 ## 7. The record it produces
 
-Schema `raia-record/1.1` — `docs/schema/drift_monitor.schema.json`. Identifier prefix `DM`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.2` — `docs/schema/drift_monitor.schema.json`. Identifier prefix `DM`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|

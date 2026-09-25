@@ -16,6 +16,18 @@ any point:
 3. **Deep dive** — behind a dropdown, one tab per topic, each opening with its
    conclusion; the traceability appendix last.
 
+Two agents lead with what their users take away instead:
+
+- **User Story Refiner** — the refined stories first, one card per story with
+  its changes marked (kept, in conflict with the suggested rewrite, new), a
+  choice per conflict and a copy of the story's new version; then the stories
+  that need no change; the risks, actions and decisions behind the changes sit
+  in "Why these changes", closed until wanted.
+- **Auditor** — an audit report: header (scope, evidence, baseline), the
+  opinion code rated, strengths, risks as audit observations, opportunities
+  and the pathway forward; the decisions register, verdict register,
+  accountability documentation and traceability are appendices.
+
 The content comes from :func:`raia.contract.digest.build`, the same digest the
 exported Markdown is written from, so the screen and the document agree.
 Static parts are drawn as HTML with the classes in ``theme.css``; everything a
@@ -237,11 +249,6 @@ def _actions(dg: Dict[str, Any], key: str) -> None:
                             len(decisions))
                 + '<div class="rv-cards">' + "".join(_decision_card(d) for d in decisions) + "</div>")
 
-    if dg.get("paste"):
-        with st.popover("Updated stories, ready to paste", icon=":material/content_copy:"):
-            st.caption("Each story with its own criteria, conflicts marked for review, and the new "
-                       "ethical criteria added. Use the copy button in the corner.")
-            st.code(dg["paste"], language=None, wrap_lines=True)
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +338,288 @@ def _deep_dive(dg: Dict[str, Any], key: str, nested: bool) -> None:
 
 
 # ---------------------------------------------------------------------------
+# User Story Refiner — the refined stories first
+# ---------------------------------------------------------------------------
+
+
+def _counts_strip(dg: Dict[str, Any]) -> str:
+    c = dg["story_counts"]
+    status = dg["status"]
+    tags = [chip(f"{c.get('changed', 0)} of {c.get('total', 0)} stories changed", "neutral", quiet=True),
+            chip(D.plural(c.get("new", 0), "new criterion", "new criteria"), "ok" if c.get("new") else "neutral", quiet=True)]
+    if c.get("conflicts"):
+        tags.append(chip(D.plural(c["conflicts"], "conflict") + " to decide", "high"))
+    return (f'<div class="rv rv-status tone-{status["tone"]}">' + chip(status["label"], status["tone"])
+            + (f'<p class="rv-headline">{esc(dg["headline"])}</p>' if dg["headline"] else "")
+            + '<div class="rv-tags">' + "".join(tags) + "</div></div>")
+
+
+def _criterion(l: Dict[str, Any]) -> str:
+    if l["kind"] == "kept":
+        return (f'<li class="crit kept"><span class="mark" aria-hidden="true"></span>'
+                f'<span class="cid">{esc(l["id"])}</span><span class="txt">{esc(l["text"])}</span></li>')
+    if l["kind"] == "conflict":
+        against = ", ".join(l["conflicts_with"]) or "an ethical requirement"
+        return ('<li class="crit conflict"><span class="mark" aria-hidden="true">!</span>'
+                f'<span class="cid">{esc(l["id"])}</span><span class="txt">'
+                + (f'<del>{esc(l["text"])}</del>' if l["text"] else '<span class="rv-muted">Criterion not found</span>')
+                + (f'<span class="rewrite"><b>Suggested</b> {esc(l["rewrite"])}</span>' if l["rewrite"] else "")
+                + f'<span class="why">Conflicts with {esc(against)}: {esc(l["problem"] or "no reason given")}'
+                + (f' · decision {esc(l["decision"])}' if l.get("decision") else "") + "</span></span></li>")
+    meta = " · ".join(x for x in (f"Evidence: {l['evidence']}" if l["evidence"] else "", l["owner"], l["goal"],
+                                  f"implements {', '.join(l['evr_ids'])}" if l["evr_ids"] else "") if x)
+    return ('<li class="crit new"><span class="mark" aria-hidden="true">+</span>'
+            f'<span class="cid">{esc(l["id"])}</span><span class="txt">{esc(l["text"])}'
+            f'<span class="why">{esc(meta)}</span></span></li>')
+
+
+def _story_card(v: Dict[str, Any]) -> str:
+    tags = []
+    if v["n_conflicts"]:
+        tags.append(chip(D.plural(v["n_conflicts"], "conflict"), "high"))
+    if v["n_new"]:
+        tags.append(chip(D.plural(v["n_new"], "new criterion", "new criteria"), "ok"))
+    cards = "".join(chip(f"{c} {n}".strip(), "neutral", quiet=True) for c, n in v["cards"])
+    return (
+        f'<div class="rv-story tone-{esc(v["tone"])}">'
+        '<div class="rv-story-head">'
+        f'<span class="rv-story-id">{esc(v["id"])}</span>'
+        f'<span class="rv-story-title">{esc(v["title"] or D.first_sentence(v["description"]) or v["id"])}</span>'
+        + "".join(tags) + "</div>"
+        + (f'<p class="rv-story-desc">{esc(v["description"])}</p>' if v["description"] else "")
+        + '<div class="rv-story-lbl">Acceptance criteria</div>'
+        + '<ul class="rv-crits">' + "".join(_criterion(l) for l in v["lines"]) + "</ul>"
+        + (f'<div class="rv-story-why"><b>Why</b> {esc(v["why"])}</div>' if v["why"] else "")
+        + (f'<div class="rv-tags">{cards}</div>' if cards else "")
+        + "</div>"
+    )
+
+
+def _story_choices(v: Dict[str, Any], key: str) -> Dict[str, str]:
+    """One choice per conflict that has a rewrite: which version goes in the copy."""
+    choices: Dict[str, str] = {}
+    for l in v["lines"]:
+        if l["kind"] != "conflict" or not l["rewrite"]:
+            continue
+        picked = st.radio(
+            f"In the copy, {l['id']} reads", ["rewrite", "keep"], horizontal=True,
+            format_func=lambda o: "The suggested rewrite" if o == "rewrite" else "The original",
+            key=f"{key}::copy::{v['id']}::{l['id']}",
+        )
+        choices[l["id"]] = picked or "rewrite"
+    return choices
+
+
+def _why(dg: Dict[str, Any], key: str) -> None:
+    """The risks, actions and decisions behind the changes — secondary, on request."""
+    if dg["summary"]:
+        st.html(f'<div class="rv-text">{_lead_split(dg["summary"])}</div>')
+    if dg["top_issues"]:
+        st.html('<div class="rv-h"><h4>Main risks the new criteria answer</h4></div><div class="rv-issues">'
+                + "".join(
+                    f'<div class="rv-issue tone-{D.tone_of_priority(f.get("priority"))}">'
+                    + chip(V.PRIORITY_LABELS.get(f.get("priority"), D.label(f.get("priority"))), D.tone_of_priority(f.get("priority")))
+                    + f'<span class="t">{esc(str(f.get("title") or "").rstrip("."))}</span>'
+                    + chip(D.principle_name(f.get("principle")), "neutral", quiet=True)
+                    + f'<span class="rv-id">{esc(f.get("id"))}</span></div>' for f in dg["top_issues"])
+                + "</div>")
+    _actions(dg, key)
+    log = next((sec for sec in dg["deep"] if sec.get("key") == "log"), None)
+    if log and log["blocks"] and log["blocks"][0].get("type") == "bullets":
+        st.html('<div class="rv-h"><h4>Sprint ethics log</h4></div>')
+        _blocks(log["blocks"])
+    st.html('<div class="rv-h"><h4>The analysis</h4><span class="rv-muted">Each risk in full, and the traceability '
+            'behind the record</span></div>')
+    _deep({**dg, "deep": [sec for sec in dg["deep"] if sec.get("key") not in ("log", "no_impact")]})
+
+
+def _story_layout(dg: Dict[str, Any], key: str, nested: bool) -> None:
+    st.html(_counts_strip(dg))
+    changed = [v for v in dg["stories"] if v["changed"]]
+    plain = [v for v in dg["stories"] if not v["changed"]]
+    st.html('<div class="rv-h"><h4>Refined stories</h4><span class="rv-muted">Changes marked; copy each '
+            'new version back to your tracker</span></div>')
+    if not changed:
+        st.html('<div class="rv-empty">No story needed changes.</div>')
+    all_choices: Dict[str, Dict[str, str]] = {}
+    for v in changed:
+        with st.container(border=True):
+            st.html(_story_card(v))
+            left, right = st.columns([3, 1], vertical_alignment="bottom")
+            with left:
+                all_choices[v["id"]] = _story_choices(v, key)
+            with right:
+                with st.popover(f"Copy {v['id']}", icon=":material/content_copy:", width="stretch"):
+                    st.caption("The story's new version. Use the copy button in the corner.")
+                    st.code(D.story_text(v, all_choices[v["id"]]), language=None, wrap_lines=True)
+    if plain:
+        st.html('<div class="rv-h"><h4>No changes needed</h4></div><ul class="rv-plain">'
+                + "".join(f'<li><span class="rv-story-id">{esc(v["id"])}</span>'
+                          f'<b>{esc(v["title"] or D.first_sentence(v["description"]))}</b>'
+                          + (f' <span class="rv-muted">— {esc(v["no_impact_reason"])}</span>' if v["no_impact_reason"] else "")
+                          + "</li>" for v in plain) + "</ul>")
+    if dg["stories"]:
+        with st.popover("Copy all stories", icon=":material/content_copy:"):
+            st.caption("Every story's new version, with your choices for each conflict.")
+            st.code("\n\n".join(D.story_text(v, all_choices.get(v["id"])) for v in dg["stories"]),
+                    language=None, wrap_lines=True)
+
+    label = "Why these changes — the risks, actions and decisions behind them"
+    if nested:
+        if st.toggle(label, key=f"{key}::why"):
+            _why(dg, key)
+        return
+    with st.expander(label, icon=":material/help:", expanded=False):
+        _why(dg, key)
+
+
+# ---------------------------------------------------------------------------
+# Auditor — the audit report
+# ---------------------------------------------------------------------------
+
+
+def _sec(num: int, title: str, hint: str = "") -> str:
+    return (f'<div class="rv-sec"><span class="num">{num}</span><h4>{esc(title)}</h4>'
+            + (f'<span class="rv-muted">{esc(hint)}</span>' if hint else "") + "</div>")
+
+
+def _report_html(dg: Dict[str, Any]) -> str:
+    rp = dg["report"]
+    op = rp["opinion"]
+    out = ['<div class="rv-report look-auditor">',
+           '<div class="rv-report-head"><div class="eyebrow">'
+           f'<span class="raia-icon" aria-hidden="true">{esc(look("auditor").icon)}</span>Audit report</div>'
+           f'<div class="title">{esc(rp["header"]["title"])}</div>'
+           '<dl class="rv-report-meta">'
+           + "".join(f"<dt>{esc(k)}</dt><dd>{esc(v)}</dd>" for k, v in rp["header"]["fields"])
+           + "</dl></div>"]
+
+    # 1. Opinion
+    out.append(_sec(1, "Audit opinion", "Rated by code from the evidence"))
+    out.append(f'<div class="rv-opinion tone-{esc(op["tone"])}">'
+               f'<div class="rv-seal"><span class="k">Opinion</span><span class="v">{esc(op["label"])}</span></div>'
+               '<div class="body">'
+               + (f'<p class="rv-headline">{esc(dg["headline"])}</p>' if dg["headline"] else "")
+               + (f'<p class="rv-summary">{esc(dg["summary"])}</p>' if dg["summary"] else "")
+               + (f'<p class="rv-rule"><b>Why this rating</b> {esc("; ".join(op["reasons"]))}. '
+                  f'<span class="rv-muted">{esc(op["rule"])}</span></p>' if op["computed"] else "")
+               + "</div></div>")
+    out.append(_signature(dg))
+
+    # 2. Strengths
+    out.append(_sec(2, "Strengths", "Each rests on verified evidence or an approval on record"))
+    if rp["strengths"]:
+        out.append('<ul class="rv-points ok">' + "".join(
+            f'<li><span class="raia-icon" aria-hidden="true">check_circle</span><div><b>{esc(x["statement"])}</b>'
+            + (f'<span class="rv-muted"> {esc(x["evidence"])}</span>' if x["evidence"] else "")
+            + (f' <span class="rv-id">{esc(", ".join(x["refs"]))}</span>' if x["refs"] else "") + "</div></li>"
+            for x in rp["strengths"]) + "</ul>")
+    else:
+        out.append('<div class="rv-empty">' + ("None the evidence supports yet: a strength needs a satisfied item or an "
+                                                "approval on record." if rp["has_strength_field"]
+                                                else "Not assessed in this record version.") + "</div>")
+
+    # 3. Risks
+    out.append(_sec(3, "Risks", "What the audit found, and what to do about it"))
+    if rp["risks"]:
+        cards = []
+        for r in rp["risks"]:
+            required = "".join(f'<div class="ln"><b>{esc(i)}</b> {esc(t)}' + (f' <span class="rv-muted">({esc(v.lower())})</span>' if v else "")
+                               + "</div>" for i, t, v in r["required"])
+            recs = "".join(f'<div class="ln"><b>{esc(a["id"])}</b> {esc(a["text"])} <span class="rv-muted">— {esc(a["owner"])}, '
+                           f'{esc(a["when"])}</span></div>' for a in r["recommendation"])
+            cards.append(
+                f'<div class="rv-obs tone-{esc(r["tone"])}"><div class="rv-card-top">'
+                + chip(V.PRIORITY_LABELS.get(r["priority"], D.label(r["priority"])), r["tone"])
+                + (chip("Blocking", "critical") if r["blocking"] else "")
+                + chip(r["principle"], "neutral", quiet=True) + f'<span class="rv-id">{esc(r["id"])}</span></div>'
+                f'<div class="rv-card-title">{esc(r["title"])}</div><dl class="rv-meta">'
+                f'<dt>Found</dt><dd>{esc(r["found"])}</dd>'
+                + (f"<dt>Required</dt><dd>{required}</dd>" if required else "")
+                + (f'<dt>Affects</dt><dd>{esc(r["matters"])}</dd>' if r["matters"] else "")
+                + (f"<dt>Recommendation</dt><dd>{recs}</dd>" if recs else
+                   "<dt>Recommendation</dt><dd>Decided by a person — see Decisions required.</dd>")
+                + "</dl>" + (f'<div class="rv-card-foot">{_cites(r["cites"])}</div>' if r["cites"] else "") + "</div>")
+        out.append('<div class="rv-cards one">' + "".join(cards) + "</div>")
+    else:
+        out.append('<div class="rv-empty">No risks were identified.</div>')
+
+    # 4. Opportunities
+    out.append(_sec(4, "Opportunities", "Improvements beyond closing the gaps"))
+    if rp["opportunities"]:
+        out.append('<ul class="rv-points idea">' + "".join(
+            f'<li><span class="raia-icon" aria-hidden="true">lightbulb</span><div><b>{esc(x["statement"])}</b>'
+            + (f'<span class="rv-muted"> {esc(x["benefit"])}</span>' if x["benefit"] else "")
+            + (f' <span class="rv-id">{esc(", ".join(x["refs"]))}</span>' if x["refs"] else "") + "</div></li>"
+            for x in rp["opportunities"]) + "</ul>")
+    else:
+        out.append('<div class="rv-empty">' + ("None stated." if rp["has_strength_field"]
+                                                else "Not assessed in this record version.") + "</div>")
+
+    # 5. Pathway
+    pw = rp["pathway"]
+    out.append(_sec(5, "Pathway forward", "In the order to take it"))
+    if pw["summary"]:
+        out.append(f'<p class="rv-path-sum">{esc(pw["summary"])}</p>')
+    if pw["phases"]:
+        out.append('<ol class="rv-path">')
+        for ph in pw["phases"]:
+            entries = "".join(
+                '<li class="e">' + (f'<span class="rv-id">{esc(e["id"])}</span>' if e["id"] else "")
+                + f'<span class="t">{esc(e["text"])}</span>'
+                + '<span class="m">' + esc(" · ".join(x for x in (e["owner"], e["when"]) if x))
+                + (f' · done when {esc(e["done"])}' if e["done"] and e["kind"] == "action" else "")
+                + (f' · options: {esc(e["done"])}' if e["done"] and e["kind"] == "decision" else "")
+                + (f' · {esc(e["done"])}' if e["done"] and e["kind"] == "checkpoint" else "")
+                + "</span></li>" for e in ph["entries"])
+            out.append(f'<li class="phase tone-{esc(ph["tone"])}"><div class="ph"><span class="dot"></span>'
+                       f'<span class="name">{esc(ph["title"])}</span>'
+                       f'<span class="rv-chip quiet tone-{esc(ph["tone"])}">{len(ph["entries"])}</span>'
+                       f'<span class="rv-muted">{esc(ph["hint"])}</span></div><ul>{entries}</ul></li>')
+        out.append("</ol>")
+    else:
+        out.append('<div class="rv-empty">Nothing to do: the audit found no gap.</div>')
+    out.append("</div>")
+    return "".join(out)
+
+
+def _appendices(dg: Dict[str, Any]) -> None:
+    by_key = {sec["key"]: sec for sec in dg["deep"]}
+    tabs = st.tabs(["Decisions", "Verdict register", "Accountability", "Traceability"])
+    with tabs[0]:
+        if dg["decisions"]:
+            st.html('<div class="rv-cards one">' + "".join(_decision_card(d) for d in dg["decisions"]) + "</div>")
+        else:
+            st.html('<div class="rv-empty">No decision is open.</div>')
+    for tab, k in ((tabs[1], "register"), (tabs[2], "accountability")):
+        with tab:
+            if k in by_key:
+                _section(by_key[k])
+    with tabs[3]:
+        st.caption("What the retrieved norms do not support, what was declared covered, and whether "
+                   "the agent agrees with the rule engine.")
+        for sec in dg["deep"]:
+            if sec.get("group") == "trace":
+                st.markdown(f"**{sec['title']}**")
+                _section(sec)
+    if dg.get("unparsed"):
+        with st.container(border=True):
+            st.markdown("**Unparsed model reply**")
+            st.code(dg["unparsed"][:6000], language=None, wrap_lines=True)
+
+
+def _audit_layout(dg: Dict[str, Any], key: str, nested: bool) -> None:
+    st.html(_report_html(dg))
+    label = "Appendices — decisions, verdict register, accountability, traceability"
+    if nested:
+        if st.toggle(label, key=f"{key}::appx"):
+            _appendices(dg)
+        return
+    with st.expander(label, icon=":material/folder_open:", expanded=False):
+        _appendices(dg)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -345,6 +634,14 @@ def record_view(agent_key: str, record: Dict[str, Any], computed_data: Optional[
     dg = D.build(agent_key, record, computed_data or {})
     for n in dg["notices"]:
         st.html(f'<div class="rv-notice">{esc(n)}</div>')
+    # A reply that could not be read as a record has no stories and no report to
+    # lead with: it is shown in the shared layout, with the notice above.
+    if agent_key == "story_refiner" and not record.get("schema_errors"):
+        _story_layout(dg, key, nested)
+        return
+    if agent_key == "auditor" and not record.get("schema_errors"):
+        _audit_layout(dg, key, nested)
+        return
     _summary(dg)
     _actions(dg, key)
     _deep_dive(dg, key, nested)

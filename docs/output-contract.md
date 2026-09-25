@@ -1,4 +1,4 @@
-# The RAIA Output Contract (`raia-record/1.1`)
+# The RAIA Output Contract (`raia-record/1.2`)
 
 Every RAIA agent answers in the same standard record. Two projects that go
 through the same stage answer the same questions, on the same scales, with the
@@ -104,7 +104,10 @@ Each agent's extension is shaped by what its normative source produces.
 Stories are entered one by one — id, title, description, existing acceptance
 criteria and the capabilities the story touches — so ECCOLA cards are selected
 per story and existing criteria have ids a conflict can point at. Existing
-criteria stay the team's: RAIA never rewrites them, it flags them.
+criteria stay the team's: RAIA never rewrites them in the record, it flags them.
+The copy of a story offers the suggested rewrite in place of the conflicting
+criterion; the person can keep the original instead, and the decision stays
+open in the record until someone takes it.
 
 ### Auditor — Microsoft RAI Standard v2 (accountability), NIST AI RMF GOVERN
 
@@ -113,9 +116,33 @@ criteria stay the team's: RAIA never rewrites them, it flags them.
 | `items[]` | One per computed item: `verdict` (`satisfied` · `partially_satisfied` · `at_risk` · `not_verified`), `evidence`, `evidence_needed`, `downgrade_reason`; computed: `computed_verdict` |
 | `accountability_log[]` | `decision`, `decided_by`, `artifact`, `reference` |
 | `upcoming_checkpoints[]` | `checkpoint`, `triggered_by`, `item_ids`, `lifecycle_stage` |
+| `strengths[]` | Up to three: `statement`, `refs` (satisfied or partially satisfied item ids, or the key of an approved upstream artifact), `evidence` |
+| `opportunities[]` | Up to three improvements beyond closing the gaps: `statement`, `refs`, `benefit` |
+| `pathway_summary` | The way forward in one sentence, in order |
+| `opinion` | Computed: `rating`, `reasons`, `ceiling` |
 
 A verdict may be downgraded, never upgraded: an item with no evidence reported
 as satisfied is restored to `not_verified` by code, and the attempt fails a check.
+The same holds for praise: a strength that rests on no satisfied item and no
+approval on record is removed by code, and the reviewer is told.
+
+The **audit opinion** is rated by code, never by the model. The rule engine
+sets the best rating the declared evidence allows (`opinion_ceiling`, a verdict
+key the agent reconciles); after the model replies, code rates the audit from
+the final verdicts, the computed priorities and the open decisions, and the
+rating never rises above that ceiling. Checked from the weakest rating up:
+
+| Rating | When |
+|---|---|
+| Not rated | There is no approved requirement or criterion register to audit |
+| Not effective | No evidence declared, nothing satisfied, or a blocking decision open |
+| Needs improvement | Under 60% of items satisfied, an item at risk, or a critical finding |
+| Effective with observations | 60% or more satisfied, with high findings or unverified items remaining |
+| Effective | Every item satisfied and no high or critical finding |
+
+The scale is RAIA's own rule over the accountability goals of the Microsoft RAI
+Standard v2 and NIST AI RMF GOVERN and MEASURE; it rates the evidence the
+sprint produced, not the quality of the controls themselves.
 
 ### Drift Monitor — NIST AI RMF MEASURE and MANAGE
 
@@ -215,19 +242,25 @@ high, and `blocked` when anything is blocking.
 | Obligation | `eu.*`, `br.*` codes | Risk Classifier rule engine |
 | Issue in the project register | `ISSUE-<n>` | register |
 
-## 8. The one layout: summary, actions, deep dive
+## 8. The layouts: what to act on first, the analysis behind it
 
 RAIA is a work tool: people read a record between other work, so every record
 reads top to bottom and can be put down at any point. The screen
 (`raia/ui/record_view.py`) and the Markdown document (`raia/contract/render.py`)
-both draw one digest (`raia/contract/digest.py`), so they cannot disagree.
+both draw one digest (`raia/contract/digest.py`), so they cannot disagree. Every
+layout keeps an **Open Issues** section (the project's register is read from
+it) and ends with the traceability appendix and the machine block (`schema`,
+`verdict.*`, `coverage.*`).
+
+### Summary, actions, deep dive — Risk Classifier, Requirements Reviewer, Drift Monitor
 
 **Summary**
 
-1. **Summary** — status, headline, summary; four figures (risks identified by
-   priority, actions to take and how many are urgent, decisions needed and how
-   many block, one figure specific to the stage); the three main issues
-   (blocking first, then by priority); the principles the findings touch.
+1. **Summary** — status, headline, summary; the stage's own picture; four
+   figures (risks identified by priority, actions to take and how many are
+   urgent, decisions needed and how many block, one figure specific to the
+   stage); the three main issues (blocking first, then by priority); the
+   principles the findings touch.
 
 **What to do**
 
@@ -250,9 +283,45 @@ computed from the record (counts, tiers, the most pressing finding) or are the
 first sentence of the field they summarise, which is why the contract asks the
 model to lead every free-text field with its conclusion.
 
-The document ends with the machine block (`schema`, `verdict.*`, `coverage.*`).
-The User Story Refiner also offers the refined stories as plain text, ready to
-paste into the team's tracker.
+### The refined stories first — User Story Refiner
+
+The output a team uses is the stories themselves, so they lead.
+
+1. **Summary** — status, headline and one line of counts (stories changed, new
+   criteria, conflicts to decide).
+2. **Refined Stories** — one card per changed story, conflicts first: the story
+   as entered, then every acceptance criterion marked *kept*, *in conflict*
+   (the original struck through, the suggested rewrite beneath it, why it
+   conflicts and the decision it opened) or *new* (with its evidence, owner,
+   Microsoft RAI Standard v2 goal and the requirements it implements); one line
+   on why the story changed and the ECCOLA cards behind it. On screen each card
+   has a choice per conflict (the suggested rewrite, by default, or the
+   original) and a copy of the story's new version; *Copy all stories* gives
+   every story at once.
+3. **Stories Without Ethical Impact** — each with its one-line reason.
+
+**Why these changes** (on screen, behind a dropdown): the summary, the main
+risks, the Action Plan and Open Issues, the Sprint Ethics Log and the Findings;
+then the traceability appendix.
+
+### An audit report — Auditor
+
+1. **Audit Opinion** — the report header (sprint, scope, evidence declared, the
+   approved baseline and who approved it, frameworks), the rating code
+   computed with its reasons, the headline and summary as the opinion
+   statement, and what the evidence verifies.
+2. **Strengths** — up to three, each shown with what supports it.
+3. **Risks** — the findings as audit observations: what was found, what was
+   required (the approved wording of the linked requirement or criterion, and
+   its verdict), who it affects, and the recommendation (the linked actions).
+4. **Opportunities** — up to three.
+5. **Pathway Forward** — one sentence, then the way forward in order:
+   *Decisions required*, *This sprint* (critical and high), *Next sprints*
+   (medium), *Before release* (checkpoints), *Ongoing* (low).
+
+**Appendices** (on screen, behind a dropdown): Open Issues, Verdict Register
+(every item with its requirement, verdict and evidence), Accountability
+Documentation; then the traceability appendix.
 
 ## 9. Parsing, repair and fallback
 
@@ -314,7 +383,8 @@ included in the project download.
 
 `raia-record/<major>.<minor>`. Adding an optional field is a minor change
 (1.1 added `headline` and the Story Refiner's `conflicts`, and shortened the
-free-text caps);
+free-text caps; 1.2 added the Auditor's `strengths`, `opportunities`,
+`pathway_summary` and computed `opinion`);
 removing or renaming a field, or changing a vocabulary or the matrix, is a major
 change. Records keep the version they were written with. After any change run
 `python -m raia.contract.export_schema` and commit `docs/schema/`.

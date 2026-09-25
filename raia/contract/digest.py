@@ -18,7 +18,15 @@ way, top to bottom, and can be put down at any point:
    opening with its conclusion. Last comes the traceability appendix
    (grounding gaps, declared coverage, verdict reconciliation).
 
-This module builds that view as plain data. It does not call a model and does
+Two agents lead with what their users take away instead. The User Story
+Refiner's output is the stories themselves (:func:`story_views`): each with
+its criteria marked kept, in conflict or new, and a copy of its new version
+(:func:`story_text`); the risks, actions and decisions behind the changes come
+second. The Auditor's record reads as an audit report (:func:`audit_report`):
+header, the opinion code rated, strengths, risks as observations,
+opportunities and the pathway forward, with the registers as appendices.
+
+This module builds these views as plain data. It does not call a model and does
 not touch Streamlit: the screen (:mod:`raia.ui.record_view`) and the Markdown
 document (:mod:`raia.contract.render`) both draw the same digest, so the
 exported document reads exactly like the screen. Nothing here decides
@@ -404,61 +412,128 @@ def _requirements(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, A
     return sections, kpi
 
 
-def _stories(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, Any]):
+def story_views(record: Dict[str, Any], data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Each story as the team will use it: its criteria marked kept, in conflict or new.
+
+    The Story Refiner's output is the stories themselves. Each view carries the
+    story as entered, every acceptance criterion with what happened to it, the
+    one-line reason it changed and the cards behind it. Changed stories come
+    first, those with a conflict to settle before the rest; stories with no
+    ethical impact come last. Nothing here decides anything: the lines are read
+    off the record and the stories as the engine numbered them.
+    """
     given = {s.get("id"): s for s in data.get("stories") or []}
-    entries = ext.get("stories") or []
-    refined = [s for s in entries if s.get("criteria") or s.get("conflicts")]
-    plain = [s for s in entries if not (s.get("criteria") or s.get("conflicts"))]
-    n_criteria = sum(len(s.get("criteria") or []) for s in entries)
-    n_conflicts = sum(len(s.get("conflicts") or []) for s in entries)
-    issue_by_criterion = {}
+    decision_of: Dict[str, str] = {}
     for i in record.get("open_issues") or []:
         for link in i.get("links") or []:
-            issue_by_criterion.setdefault(link, i.get("id"))
-
-    cards = []
-    for s in refined:
-        sid = s.get("story_id", "")
+            decision_of.setdefault(str(link), i.get("id"))
+    views = []
+    for pos, entry in enumerate((record.get("extension") or {}).get("stories") or []):
+        sid = str(entry.get("story_id") or "")
         src = given.get(sid) or {}
-        conflicts = {c.get("criterion_id"): c for c in s.get("conflicts") or []}
-        existing = []
+        conflicts = {str(c.get("criterion_id")): c for c in entry.get("conflicts") or []}
+        lines: List[Dict[str, Any]] = []
         for c in src.get("criteria") or []:
-            flag = conflicts.get(c.get("id"))
-            existing.append(f"{c.get('id')}: {c.get('text')}" + (
-                f" — CONFLICT ({', '.join(flag.get('conflicts_with') or [])}): {flag.get('problem', '')}"
-                + (f" Suggested: {flag.get('suggested_rewrite')}" if flag.get("suggested_rewrite") else "")
-                + (f" [decision {issue_by_criterion[c.get('id')]}]" if issue_by_criterion.get(c.get("id")) else "")
-                if flag else ""))
+            cid = str(c.get("id") or "")
+            flag = conflicts.get(cid)
+            if flag:
+                lines.append({"kind": "conflict", "id": cid, "text": str(c.get("text") or ""),
+                              "rewrite": str(flag.get("suggested_rewrite") or "").strip(),
+                              "problem": str(flag.get("problem") or "").strip(),
+                              "conflicts_with": [str(x) for x in flag.get("conflicts_with") or []],
+                              "decision": decision_of.get(cid, "")})
+            else:
+                lines.append({"kind": "kept", "id": cid, "text": str(c.get("text") or "")})
+        known = {l["id"] for l in lines}
         for cid, flag in conflicts.items():
-            if cid not in {c.get("id") for c in src.get("criteria") or []}:
-                existing.append(f"{cid}: CONFLICT — {flag.get('problem', '')}")
-        new = [f"{c.get('id')}: {c.get('condition')} (evidence: {c.get('evidence_artifact')}; "
-               f"owner: {V.OWNER_LABELS.get(c.get('owner_role'), label(c.get('owner_role')))}; "
-               f"{c.get('ms_goal')} {V.MS_GOALS.get(c.get('ms_goal'), '')}"
-               + (f"; implements {', '.join(c.get('evr_ids'))}" if c.get("evr_ids") else "") + ")"
-               for c in s.get("criteria") or []]
-        tags = [tag(f"{plural(len(s.get('criteria') or []), 'new criterion', 'new criteria')}", "ok")]
-        if s.get("conflicts"):
-            tags.append(tag(plural(len(s["conflicts"]), "conflict"), "high"))
-        tags += [tag(f"{c} {V.ECCOLA_CARDS.get(c, '')}".strip()) for c in s.get("eccola_cards") or []]
-        cards.append(card(
-            id=sid, title=src.get("title") or first_sentence(src.get("text")) or sid,
-            tone="high" if s.get("conflicts") else "ok", tags=tags,
-            body=str(s.get("card_discussion") or ""),
-            fields=[("Story", src.get("description") or src.get("text") or ""),
-                    ("Existing acceptance criteria", existing),
-                    ("New ethical acceptance criteria", new)],
-        ))
+            if cid not in known:
+                # A conflict on a criterion the engine never numbered: shown, never dropped.
+                lines.append({"kind": "conflict", "id": cid, "text": "",
+                              "rewrite": str(flag.get("suggested_rewrite") or "").strip(),
+                              "problem": str(flag.get("problem") or "").strip(),
+                              "conflicts_with": [str(x) for x in flag.get("conflicts_with") or []],
+                              "decision": decision_of.get(cid, "")})
+        for c in entry.get("criteria") or []:
+            owner = V.OWNER_LABELS.get(c.get("owner_role"), label(c.get("owner_role")))
+            goal = str(c.get("ms_goal") or "")
+            lines.append({"kind": "new", "id": str(c.get("id") or ""), "text": str(c.get("condition") or ""),
+                          "evidence": str(c.get("evidence_artifact") or ""), "owner": owner,
+                          "goal": f"{goal} {V.MS_GOALS.get(goal, '')}".strip(),
+                          "stakeholder": str(c.get("stakeholder_group") or ""),
+                          "evr_ids": [str(x) for x in c.get("evr_ids") or []]})
+        n_new = sum(1 for l in lines if l["kind"] == "new")
+        n_conf = sum(1 for l in lines if l["kind"] == "conflict")
+        views.append({
+            "id": sid, "title": str(src.get("title") or ""), "description": str(src.get("description") or src.get("text") or ""),
+            "lines": lines, "n_new": n_new, "n_conflicts": n_conf, "changed": bool(n_new or n_conf),
+            "why": first_sentence(entry.get("card_discussion")),
+            "cards": [(str(c), V.ECCOLA_CARDS.get(c, "")) for c in entry.get("eccola_cards") or []],
+            "no_impact_reason": str(entry.get("no_impact_reason") or "").strip(),
+            "tone": "high" if n_conf else ("ok" if n_new else "neutral"),
+            "_pos": pos,
+        })
+    views.sort(key=lambda v: (0 if v["n_conflicts"] else 1 if v["n_new"] else 2, v["_pos"]))
+    for v in views:
+        v.pop("_pos")
+    return views
+
+
+def story_text(view: Dict[str, Any], choices: Optional[Dict[str, str]] = None) -> str:
+    """One story's new version as plain text, ready to paste back into the tracker.
+
+    ``choices`` maps a conflicting criterion's id to ``"rewrite"`` or
+    ``"keep"``. The suggested rewrite is used unless the person keeps the
+    original, and only when there is a rewrite to use. New ethical criteria keep
+    their identifiers so the Auditor can find them again.
+    """
+    choices = choices or {}
+    head = f"{view['id']} — {view['title']}" if view.get("title") else str(view["id"])
+    out = [head]
+    if view.get("description"):
+        out.append(view["description"])
+    out += ["", "Acceptance criteria:"]
+    for l in view["lines"]:
+        if l["kind"] == "kept":
+            out.append(f"- {l['text']}")
+        elif l["kind"] == "conflict":
+            use_rewrite = l["rewrite"] and choices.get(l["id"], "rewrite") == "rewrite"
+            text = l["rewrite"] if use_rewrite else l["text"]
+            if text:
+                out.append(f"- {text}")
+        else:
+            out.append(f"- {l['text']} (ethics {l['id']}; evidence: {l['evidence']})")
+    if not view["lines"]:
+        out.append("- (none)")
+    return "\n".join(out)
+
+
+def stories_paste(record: Dict[str, Any], data: Dict[str, Any]) -> str:
+    """Every story's new version, with the suggested rewrites in place."""
+    return "\n\n".join(story_text(v) for v in story_views(record, data))
+
+
+def story_counts(views: Sequence[Dict[str, Any]]) -> Dict[str, int]:
+    return {"total": len(views), "changed": sum(1 for v in views if v["changed"]),
+            "new": sum(v["n_new"] for v in views), "conflicts": sum(v["n_conflicts"] for v in views)}
+
+
+def story_counts_line(c: Dict[str, int]) -> str:
+    """'3 of 5 stories changed · 6 new criteria · 1 conflict to decide'."""
+    parts = [f"{c['changed']} of {plural(c['total'], 'story', 'stories')} changed",
+             plural(c["new"], "new criterion", "new criteria")]
+    if c["conflicts"]:
+        parts.append(plural(c["conflicts"], "conflict") + " to decide")
+    return " · ".join(parts)
+
+
+def _stories(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, Any]):
+    entries = ext.get("stories") or []
+    plain = [s for s in entries if not (s.get("criteria") or s.get("conflicts"))]
     log = ext.get("sprint_ethics_log") or []
     if isinstance(log, str):
         log = [log] if log.strip() else []
+    counts = story_counts(story_views(record, data))
     sections = [
-        {"key": "refined", "title": "Refined stories", "md_title": "Refined Stories",
-         "conclusion": (f"{len(refined)} of {plural(len(entries), 'story', 'stories')} need ethical criteria: "
-                        f"{plural(n_criteria, 'criterion', 'criteria')} added"
-                        + (f", {plural(n_conflicts, 'existing criterion', 'existing criteria')} in conflict." if n_conflicts else "."))
-                       if entries else "No stories were refined.",
-         "blocks": [{"type": "cards", "items": cards}] if cards else [{"type": "note", "text": "None."}]},
         {"key": "no_impact", "title": "No ethical impact", "md_title": "Stories Without Ethical Impact",
          "conclusion": (f"{plural(len(plain), 'story', 'stories')} need no ethical criteria."
                         if plain else "Every story needs ethical criteria."),
@@ -468,88 +543,152 @@ def _stories(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, Any]):
          "conclusion": f"{plural(len(log), 'decision')} recorded this sprint." if log else "No decisions recorded.",
          "blocks": [{"type": "bullets", "items": [str(x) for x in log]}] if log else [{"type": "note", "text": "None."}]},
     ]
-    kpi = {"label": "Stories refined", "value": f"{len(refined)} / {len(entries)}",
-           "hint": f"{plural(n_criteria, 'new criterion', 'new criteria')}"
-                   + (f", {plural(n_conflicts, 'conflict')}" if n_conflicts else ""),
-           "tone": "high" if n_conflicts else "neutral"}
+    kpi = {"label": "Stories refined", "value": f"{counts['changed']} / {counts['total']}",
+           "hint": plural(counts["new"], "new criterion", "new criteria")
+                   + (f", {plural(counts['conflicts'], 'conflict')}" if counts["conflicts"] else ""),
+           "tone": "high" if counts["conflicts"] else "neutral"}
     return sections, kpi
-
-
-def stories_paste(record: Dict[str, Any], data: Dict[str, Any]) -> str:
-    """The refined stories as plain text, ready to paste back into the team's tracker.
-
-    Each story keeps its own acceptance criteria; a conflicting one is marked
-    for review with the suggested rewrite; the new ethical criteria follow,
-    with their identifiers so the Auditor can find them again.
-    """
-    given = {s.get("id"): s for s in data.get("stories") or []}
-    out: List[str] = []
-    for entry in (record.get("extension") or {}).get("stories") or []:
-        sid = entry.get("story_id", "")
-        src = given.get(sid) or {}
-        conflicts = {c.get("criterion_id"): c for c in entry.get("conflicts") or []}
-        lines = [f"{sid} — {src.get('title')}" if src.get("title") else str(sid)]
-        if src.get("description") or src.get("text"):
-            lines.append(str(src.get("description") or src.get("text")))
-        lines += ["", "Acceptance criteria:"]
-        for c in src.get("criteria") or []:
-            flag = conflicts.get(c.get("id"))
-            if flag:
-                lines.append(f"- [REVIEW — conflicts with {', '.join(flag.get('conflicts_with') or []) or 'an ethical requirement'}] "
-                             f"{c.get('text')}" + (f" → suggested: {flag.get('suggested_rewrite')}" if flag.get("suggested_rewrite") else ""))
-            else:
-                lines.append(f"- {c.get('text')}")
-        for c in entry.get("criteria") or []:
-            lines.append(f"- {c.get('condition')} (ethics {c.get('id')}; evidence: {c.get('evidence_artifact')})")
-        if not (src.get("criteria") or entry.get("criteria")):
-            lines.append("- (none)")
-        if entry.get("no_impact_reason") and not entry.get("criteria"):
-            lines.append(f"No ethical criteria needed: {entry.get('no_impact_reason')}")
-        out.append("\n".join(lines))
-    return "\n\n".join(out)
 
 
 VERDICT_TONE = {"satisfied": "ok", "partially_satisfied": "medium", "at_risk": "high", "not_verified": "critical"}
 
 
 def _audit(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, Any]):
+    """The appendices of the audit report; the report itself is :func:`audit_report`."""
     items = ext.get("items") or []
     counts = _count_by(items, "verdict", V.AUDIT_VERDICTS)
     order = ["not_verified", "at_risk", "partially_satisfied", "satisfied"]
-    cards = [card(
-        id=str(i.get("item_id", "")), title=V.AUDIT_VERDICT_LABELS.get(i.get("verdict"), label(i.get("verdict"))),
-        tone=VERDICT_TONE.get(i.get("verdict"), "neutral"),
-        tags=[tag("Computed: " + label(i.get("computed_verdict")))] if i.get("computed_verdict") else [],
-        body=str(i.get("evidence") or ""),
-        fields=[("Evidence needed", i.get("evidence_needed")), ("Downgrade reason", i.get("downgrade_reason"))],
-        cites=i.get("citations") or [])
-        for i in sorted(items, key=lambda x: order.index(x.get("verdict")) if x.get("verdict") in order else 9)]
-    checkpoints = ext.get("upcoming_checkpoints") or []
+    subject = {str(i.get("id")): (i.get("subject") or "", i.get("kind") or "") for i in data.get("audited_items") or []}
+    rows = []
+    for i in sorted(items, key=lambda x: order.index(x.get("verdict")) if x.get("verdict") in order else 9):
+        iid = str(i.get("item_id", ""))
+        subj, kind = subject.get(iid, ("", ""))
+        shown = str(i.get("evidence") or "").strip() or (f"Needed: {i.get('evidence_needed')}" if i.get("evidence_needed") else "")
+        if i.get("downgrade_reason"):
+            shown = (shown + " " if shown else "") + f"Downgraded: {i.get('downgrade_reason')}"
+        rows.append([iid, kind or "—", subj[:90] if subj else "—",
+                     V.AUDIT_VERDICT_LABELS.get(i.get("verdict"), label(i.get("verdict"))), shown])
     log = ext.get("accountability_log") or []
     sections = [
-        {"key": "audit", "title": "Progress audit", "md_title": "Progress Audit",
+        {"key": "register", "title": "Verdict register", "md_title": "Verdict Register",
          "conclusion": (f"{counts['satisfied']} of {len(items)} items satisfied"
                         + (f"; {_breakdown({k: counts[k] for k in order[:3]}, order[:3])}." if len(items) - counts["satisfied"] else "."))
                        if items else "No items were audited.",
-         "blocks": [{"type": "cards", "items": cards}] if cards else [{"type": "note", "text": "None."}]},
+         "blocks": [{"type": "table", "headers": ["Item", "Kind", "Requirement", "Verdict", "Evidence"], "rows": rows}]},
         {"key": "accountability", "title": "Accountability", "md_title": "Accountability Documentation",
          "conclusion": f"{plural(len(log), 'decision')} on record, each traced to an approved artifact." if log
                        else "No decisions on record.",
          "blocks": [{"type": "table", "headers": ["Decision", "Decided by", "Artifact", "Reference"],
                      "rows": [[d.get("decision"), d.get("decided_by"), d.get("artifact"), d.get("reference")] for d in log]}]},
-        {"key": "checkpoints", "title": "Next checkpoints", "md_title": "Upcoming Ethical Checkpoints",
-         "conclusion": (f"Next: {str(checkpoints[0].get('checkpoint') or '').rstrip('.')}." if checkpoints
-                        else "No upcoming checkpoints."),
-         "blocks": [{"type": "table", "headers": ["Checkpoint", "Triggered by", "Items", "Lifecycle stage"],
-                     "rows": [[c.get("checkpoint"), c.get("triggered_by"), ", ".join(c.get("item_ids") or []),
-                               V.LIFECYCLE_LABELS.get(c.get("lifecycle_stage"), label(c.get("lifecycle_stage")))]
-                              for c in checkpoints]}]},
     ]
     weak = counts["not_verified"] + counts["at_risk"]
     kpi = {"label": "Items verified", "value": f"{counts['satisfied']} / {len(items)}",
            "hint": f"{counts['at_risk']} at risk, {counts['not_verified']} not verified",
            "tone": "high" if weak else "ok"}
     return sections, kpi
+
+
+OPINION_TONE = {"not_rated": "neutral", "not_effective": "critical", "needs_improvement": "high",
+                "effective_with_observations": "medium", "effective": "ok"}
+
+#: The pathway forward, in the order the team takes it. Actions fall in by their
+#: computed priority; decisions come first, because the rest may depend on them.
+PATHWAY_PHASES = (
+    ("decide", "Decisions required", "Only a person can take these; the rest may depend on them", "decision"),
+    ("now", "This sprint", "Critical and high priority", "high"),
+    ("next", "Next sprints", "Medium priority: schedule it", "medium"),
+    ("release", "Before release", "Ethical checkpoints the planned work will reach", "low"),
+    ("ongoing", "Ongoing", "Low priority: keep an eye on it", "low"),
+)
+
+
+def audit_report(record: Dict[str, Any], data: Dict[str, Any], actions: Sequence[Dict[str, Any]],
+                 decisions: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """The Auditor's record read as an audit report.
+
+    Header (scope, evidence basis, baseline), the opinion code computed, the
+    strengths code kept, the risks as audit observations — what was found,
+    what was required, why it matters and the recommendation — the
+    opportunities, and the pathway forward built from the actions, decisions
+    and checkpoints by their computed priority and stage.
+    """
+    ext = record.get("extension") or {}
+    items = ext.get("items") or []
+    audited = data.get("audited_items") or []
+    subject = {str(i.get("id")): i.get("subject") or "" for i in audited}
+    kinds = _count_by([{"k": i.get("kind")} for i in audited], "k",
+                      ("ethical value requirement", "acceptance criterion"))
+    sprint = str(data.get("sprint_id") or "").strip()
+    scope_bits = [plural(kinds["ethical value requirement"], "ethical value requirement"),
+                  plural(kinds["acceptance criterion"], "acceptance criterion", "acceptance criteria")]
+    baseline = [f"{b.get('label')}" + (f", approved by {b['approved_by']}" if b.get("approved_by") else "")
+                + (f" on {b['approved_at']}" if b.get("approved_at") else "") for b in data.get("baseline") or []]
+    header = {
+        "title": "Ethical requirements audit" + (f" — {sprint}" if sprint and sprint != "this sprint" else ""),
+        "fields": [
+            ("Scope", " and ".join(scope_bits) + " from the approved artifacts" if audited else "No register was available"),
+            ("Evidence declared", ", ".join(data.get("evidence_labels") or data.get("evidence_types") or []) or "None"),
+            ("Baseline", "; ".join(baseline) or "—"),
+            ("Frameworks", "; ".join(f.get("name", "") for f in (record.get("meta") or {}).get("frameworks") or []) or "—"),
+        ],
+    }
+
+    op = ext.get("opinion") or {}
+    rating = op.get("rating") or ""
+    opinion = {
+        "rating": rating, "label": V.AUDIT_OPINION_LABELS.get(rating, "Not rated"),
+        "tone": OPINION_TONE.get(rating, "neutral"), "rule": V.AUDIT_OPINION_RULES.get(rating, ""),
+        "reasons": [str(r) for r in op.get("reasons") or []],
+        "computed": bool(op),
+    }
+
+    approvals = {str(b.get("artifact")): f"{b.get('label')} approval" for b in data.get("baseline") or []}
+    strengths = [{"statement": str(x.get("statement") or ""), "refs": [approvals.get(str(r), str(r)) for r in x.get("refs") or []],
+                  "evidence": str(x.get("evidence") or "")} for x in ext.get("strengths") or []]
+    opportunities = [{"statement": str(x.get("statement") or ""), "refs": [str(r) for r in x.get("refs") or []],
+                      "benefit": str(x.get("benefit") or "")} for x in ext.get("opportunities") or []]
+
+    by_finding: Dict[str, List[Dict[str, Any]]] = {}
+    for a in actions:
+        for fid in a["findings"]:
+            by_finding.setdefault(fid, []).append(a)
+    verdict_of = {str(i.get("item_id")): i.get("verdict") for i in items}
+    risks = []
+    for f in _findings_sorted(record.get("findings") or []):
+        req = [(l, subject[l], V.AUDIT_VERDICT_LABELS.get(verdict_of.get(l), "")) for l in f.get("links") or [] if l in subject]
+        risks.append({
+            "id": f.get("id", ""), "title": str(f.get("title") or "").rstrip("."),
+            "priority": f.get("priority"), "tone": tone_of_priority(f.get("priority")), "blocking": bool(f.get("blocking")),
+            "principle": principle_name(f.get("principle")),
+            "found": str(f.get("statement") or ""),
+            "required": req,
+            "matters": ", ".join(f.get("stakeholders") or []),
+            "recommendation": [{"id": a["id"], "text": a["text"], "owner": a["owner_label"], "when": a["when"]}
+                               for a in by_finding.get(f.get("id"), [])],
+            "cites": list(f.get("citations") or []),
+        })
+
+    def entry(kind, id_, text, owner="", when="", done=""):
+        return {"kind": kind, "id": id_, "text": text, "owner": owner, "when": when, "done": done}
+
+    phases = {k: [] for k, *_ in PATHWAY_PHASES}
+    for d in decisions:
+        phases["decide"].append(entry("decision", d["id"], d["text"], d["owner_label"], "Before the dependent work",
+                                      "; ".join(d["options"])))
+    for a in actions:
+        key = "now" if a["priority"] in ("critical", "high") else "next" if a["priority"] == "medium" else "ongoing"
+        phases[key].append(entry("action", a["id"], a["text"], a["owner_label"], a["when"], a["done_when"]))
+    for c in ext.get("upcoming_checkpoints") or []:
+        phases["release"].append(entry(
+            "checkpoint", ", ".join(c.get("item_ids") or []), str(c.get("checkpoint") or "").rstrip("."), "",
+            V.LIFECYCLE_LABELS.get(c.get("lifecycle_stage"), label(c.get("lifecycle_stage"))),
+            f"Reached by {c.get('triggered_by')}" if c.get("triggered_by") else ""))
+    pathway = {"summary": str(ext.get("pathway_summary") or "").strip(),
+               "phases": [{"key": k, "title": t, "hint": h, "tone": tone, "entries": phases[k]}
+                          for k, t, h, tone in PATHWAY_PHASES if phases[k]]}
+    return {"header": header, "opinion": opinion, "strengths": strengths, "risks": risks,
+            "opportunities": opportunities, "pathway": pathway,
+            "has_strength_field": "strengths" in ext}
 
 
 def _drift(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, Any]):
@@ -603,7 +742,8 @@ AGENT_MD_SECTIONS: Dict[str, List[str]] = {
     "requirements_reviewer": ["Context of Use and Stakeholders", "Value Register", "Gap Analysis",
                               "Ethical Value Requirements", "Impact Assessment"],
     "story_refiner": ["Refined Stories", "Stories Without Ethical Impact", "Sprint Ethics Log"],
-    "auditor": ["Progress Audit", "Accountability Documentation", "Upcoming Ethical Checkpoints"],
+    "auditor": ["Audit Opinion", "Strengths", "Risks", "Opportunities", "Pathway Forward",
+                "Verdict Register", "Accountability Documentation"],
     "drift_monitor": ["Drift Alerts", "Fairness & Representativeness Analysis", "Response Plan"],
 }
 
@@ -813,6 +953,7 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
     if not record.get("headline") and summary.startswith(headline):
         summary = summary[len(headline):].strip()
 
+    stories = story_views(record, data) if agent_key == "story_refiner" else []
     agent_sections, agent_kpi = AGENT_SECTIONS.get(agent_key, lambda e, d, r: ([], None))(
         record.get("extension") or {}, data, record)
     for s in agent_sections:
@@ -854,10 +995,14 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
         "actions": actions,
         "decisions": decisions,
         "owners": owners,
-        "deep": [_findings_section(findings)] + agent_sections + _trace_sections(record, data),
+        "deep": ([] if agent_key == "auditor" else [_findings_section(findings)])
+                + agent_sections + _trace_sections(record, data),
         "notices": notices,
         "unparsed": record.get("unparsed_response") or "",
         "paste": stories_paste(record, data) if agent_key == "story_refiner" else "",
+        "stories": stories,
+        "story_counts": story_counts(stories) if agent_key == "story_refiner" else {},
+        "report": audit_report(record, data, actions, decisions) if agent_key == "auditor" else {},
     }
 
 

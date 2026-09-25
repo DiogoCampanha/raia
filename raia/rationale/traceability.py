@@ -77,6 +77,68 @@ def _evidence_for(item_id: str, text: str, evidence_blob: str) -> Tuple[bool, st
     return False, "no mention of this item, or of its distinctive terms, in the sprint outcomes"
 
 
+#: The opinion scale, weakest first, and the rule that places an audit on it.
+#: Kept here, beside the evidence matching, so the one rule serves both the
+#: engine's ceiling (before the model) and the final rating (after it).
+OPINIONS = ("not_rated", "not_effective", "needs_improvement", "effective_with_observations", "effective")
+SATISFIED_SHARE = 0.6
+
+
+def rate(items: int, satisfied: int, *, evidence_declared: bool, at_risk: int = 0,
+         critical: int = 0, high: int = 0, blocking: int = 0) -> Tuple[str, List[str]]:
+    """(rating, reasons): the audit opinion, and why, from facts code holds."""
+    if items <= 0:
+        return "not_rated", ["no approved requirement or criterion register to audit"]
+    share = satisfied / items
+    pct = f"{satisfied} of {items} items satisfied ({share:.0%})"
+    worst: List[str] = []
+    if not evidence_declared:
+        worst.append("no evidence artifact was declared for the sprint")
+    if satisfied == 0:
+        worst.append("no item is satisfied")
+    if blocking:
+        worst.append(f"{blocking} blocking decision(s) open")
+    if worst:
+        return "not_effective", worst + ([pct] if satisfied else [])
+    weak: List[str] = []
+    if share < SATISFIED_SHARE:
+        weak.append(f"{pct}, under {SATISFIED_SHARE:.0%}")
+    if at_risk:
+        weak.append(f"{at_risk} item(s) at risk")
+    if critical:
+        weak.append(f"{critical} critical finding(s)")
+    if weak:
+        return "needs_improvement", weak
+    if satisfied == items and not high:
+        return "effective", [pct, "no high or critical finding"]
+    rest = []
+    if satisfied < items:
+        rest.append(f"{items - satisfied} item(s) not yet satisfied")
+    if high:
+        rest.append(f"{high} high finding(s)")
+    return "effective_with_observations", [pct] + rest
+
+
+def at_most(rating: str, ceiling: str) -> str:
+    """The lower of two ratings: a rating never rises above its ceiling."""
+    return rating if OPINIONS.index(rating) <= OPINIONS.index(ceiling) else ceiling
+
+
+def _baseline(upstream: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Which approved versions the audit is against, from their approval records."""
+    names = {"risk_classification": "Risk classification", "requirements_review": "Ethical requirements",
+             "refined_stories": "Refined stories"}
+    out = []
+    for key, label in names.items():
+        art = upstream.get(key)
+        if not art:
+            continue
+        approval = (art.get("provenance") or {}).get("approval") or {}
+        out.append({"artifact": key, "label": label, "approved_by": str(approval.get("approved_by") or ""),
+                    "approved_at": str(approval.get("approved_at") or "")[:10]})
+    return out
+
+
 def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
     r = RationaleResult(engine="audit_traceability")
 
@@ -105,15 +167,18 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
     rows: List[List[str]] = []
     not_verified: List[str] = []
     assessable: List[str] = []
+    subjects: Dict[str, str] = {}
 
     def assess(item_id: str, subject: str, kind: str) -> None:
         found, why = _evidence_for(item_id, subject, outcomes)
         if found and evidence_types:
             rows.append([item_id, kind, subject[:70], EVIDENCE_FOUND, why])
+            subjects[item_id] = subject
             assessable.append(item_id)
         else:
             reason = why if evidence_types else "no evidence artifact of any kind was declared for this sprint"
             rows.append([item_id, kind, subject[:70], NOT_VERIFIED, reason])
+            subjects[item_id] = subject
             not_verified.append(item_id)
 
     for eid in evr_ids:
@@ -182,11 +247,23 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
         ChecklistItem("not_verified", "Explain what evidence each NOT VERIFIED item would need"),
         ChecklistItem("accountability", "Record who decided what, from the upstream approval headers"),
         ChecklistItem("upcoming", "Flag the ethical checkpoints the planned work will hit"),
+        ChecklistItem("strengths", "State the strengths the evidence supports, and nothing it does not"),
+        ChecklistItem("pathway", "Recommend the way forward, in order"),
         ChecklistItem("open_issues", "Carry forward every open issue raised here, plus any you add"),
     ]
 
+    # The best opinion the evidence allows: every item with evidence satisfied,
+    # nothing at risk, no finding. The final verdicts and findings only lower it.
+    ceiling, ceiling_reasons = rate(len(rows), len(assessable), evidence_declared=bool(evidence_types))
+    r.findings.append(
+        Finding("audit.opinion_ceiling", "Best audit opinion the evidence allows",
+                f"{ceiling.replace('_', ' ')} — " + "; ".join(ceiling_reasons)
+                + ". The final verdicts and findings can only lower it.")
+    )
+
     r.verdict = {
         "items_audited": len(rows),
+        "opinion_ceiling": ceiling,
         "not_verified": not_verified,
         "assessable": assessable,
         "evidence_declared": bool(evidence_types),
@@ -200,12 +277,17 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
         {
             "sprint_id": sprint_id,
             "evidence_types": evidence_types,
+            "evidence_labels": [next((o.label for o in EVIDENCE_OPTIONS if o.value == e), e) for e in evidence_types],
             "audited_items": [
-                {"id": row[0], "kind": row[1], "computed_verdict": row[3], "basis": row[4]}
+                {"id": row[0], "kind": row[1], "subject": subjects.get(row[0], ""),
+                 "computed_verdict": row[3], "basis": row[4]}
                 for row in rows
             ],
             "not_verified": not_verified,
             "high_risk": high_risk,
+            "subjects": subjects,
+            "baseline": _baseline(upstream),
+            "opinion_ceiling": {"rating": ceiling, "reasons": ceiling_reasons},
         }
     )
     return r

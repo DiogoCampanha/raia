@@ -37,6 +37,7 @@ Selects the ethical themes that actually apply to each story and adds verifiable
 - Selects the ECCOLA themes relevant to each story from the approved risk tier, requirements and what that story touches, and records why each one applies.
 - Traces every new acceptance criterion back to an approved requirement.
 - Turns every existing criterion the agent flags as conflicting into a decision.
+- Shows each story's new version with its changes marked, ready to copy back to your tracker; the risks and actions behind the changes come second.
 
 Checklist the record must declare:
 
@@ -62,13 +63,13 @@ Excerpts pinned for the canonical scenario:
 ## 6. What a person decides
 
 - Whether each acceptance criterion is testable in your context.
-- Whether a conflicting existing criterion is rewritten or kept, and why.
+- Whether a conflicting existing criterion is rewritten or kept, and why — the copy of the story follows your choice.
 - Which stories carry no ethical impact and can move on unchanged.
 - Every open issue the record raises, and whether to approve, edit or reject the record.
 
 ## 7. The record it produces
 
-Schema `raia-record/1.1` — `docs/schema/story_refiner.schema.json`. Identifier prefix `SR`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.2` — `docs/schema/story_refiner.schema.json`. Identifier prefix `SR`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
@@ -92,7 +93,7 @@ Schema `raia-record/1.1` — `docs/schema/story_refiner.schema.json`. Identifier
 | `stories[].no_impact_reason` | Only for a story with no ethical impact: one line. |
 | `sprint_ethics_log` | Up to five decisions taken this sprint, one sentence each with its reason (ECCOLA documentation step). |
 
-Rendered sections: Summary → Action Plan → Open Issues → Findings → Refined Stories → Stories Without Ethical Impact → Sprint Ethics Log → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
+Rendered sections: Summary → Refined Stories → Stories Without Ethical Impact → Findings → Action Plan → Open Issues → Sprint Ethics Log → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
 
 Verdict keys the agent declares: `story_count`.
 
@@ -112,5 +113,5 @@ Verdict keys the agent declares: `story_count`.
 
 - The normative corpus is a set of curated summaries prepared for the project; a citation resolves to a section of a summary, not to official wording.
 - Card selection follows each story's declared capabilities and the upstream answers; a capability not declared does not select its cards.
-- A conflict is flagged by the agent and settled by a person; an existing criterion is never changed by RAIA.
+- A conflict is flagged by the agent and settled by a person. The copy of a story offers the suggested rewrite, and the person can keep the original instead; the record keeps the criterion as entered and the decision open until someone takes it.
 - Acceptance criteria are checked for form, not for whether the threshold is right.

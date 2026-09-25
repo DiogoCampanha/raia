@@ -48,6 +48,7 @@ def hints(agent_key: str, verdict_keys: List[str], rationale: RationaleResult,
         ids["audit_items"] = {str(i.get("id")): i.get("computed_verdict")
                               for i in data.get("audited_items") or []}
         ids["not_verified"] = list(verdict.get("not_verified") or [])
+        ids["approved_artifacts"] = [b.get("artifact") for b in data.get("baseline") or []]
     if agent_key == "drift_monitor":
         ids["breach_severities"] = drift_severities(rationale)
     return {

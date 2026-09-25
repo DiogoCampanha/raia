@@ -88,11 +88,13 @@ STEPS: List[Step] = [
         "Run the agent and read the draft",
         "Press **Run Risk Classifier**. After a short wait the draft appears under **Human "
         "review required**, with four tabs:\n\n"
-        "- **Draft** — the result, read the same way at every stage: a **summary** (status, "
+        "- **Draft** — the result. The Risk Classifier, Requirements Reviewer and Drift Monitor "
+        "read the same way: a **summary** (status, "
         "headline, the risks found, actions to take, decisions needed, the main issues), then "
         "**What to do** (action cards grouped *Do now*, *Plan* and *Track*, and the decisions only "
         "a person can take; filter them by owner), then a **Deep dive** you open only when you "
-        "want the analysis behind each point.\n"
+        "want the analysis behind each point. The User Story Refiner and the Auditor lead with "
+        "what you take away instead (see below).\n"
         "- **Edit the record** — change the record's fields (the headline, a finding's placement, "
         "an action's owner). The software recomputes priorities and redraws the draft.\n"
         "- **Evidence** — the norm excerpts that were actually retrieved. Pick a citation in "
@@ -127,8 +129,16 @@ STEPS: List[Step] = [
         "In the **User Story Refiner**, add each story on its own card with its acceptance "
         "criteria and what it touches (or paste several at once and check the cards). RAIA adds "
         "ethical criteria per story and flags any existing criterion that conflicts; each "
-        "conflict becomes a decision for you. **Updated stories, ready to paste** gives the "
-        "result in a form you can copy back to your tracker.",
+        "conflict becomes a decision for you. The result leads with the stories themselves: each "
+        "one with its criteria marked kept, in conflict (the original struck through, the "
+        "suggested rewrite beneath) or new. Choose per conflict whether the copy uses the "
+        "rewrite or keeps the original, then **Copy** the story (or **Copy all stories**) back "
+        "to your tracker. **Why these changes** holds the risks, actions and decisions behind "
+        "them.\n\n"
+        "The **Auditor** reads as an audit report: an opinion the software rates from the "
+        "evidence, the strengths the evidence supports, the risks with a recommendation each, "
+        "opportunities, and the pathway forward in order. The registers behind it are in "
+        "**Appendices**.",
     ),
     Step(
         "Revise a stage and re-check what depends on it",
@@ -194,7 +204,7 @@ LOOK_FOR: List[Tuple[str, str]] = [
     ("Every stage answers in the same standard record.",
      "Findings are placed on likelihood and magnitude, and the software, not the model, computes "
      "their priority. Every action names an owner, when it happens and what shows it is done. "
-     "Every stage reads summary first, then what to do, then the deep dive. You edit fields, "
+     "Every stage leads with what to act on and keeps the analysis for when you want it. You edit fields, "
      "not prose."),
     ("Disagreement is escalated, not resolved.",
      "When a rule and an agent disagree, two norms of equal authority conflict, or your answers "
