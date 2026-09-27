@@ -214,6 +214,15 @@ def main() -> None:
     B.resolve_review(bl, target["id"], "obsolete", "test")
     check(B.story(bl, target["id"])["status"] == B.OBSOLETE, "a person confirms it")
 
+    print("== 8b. Requirement recommendations start short and grow on request ==")
+    r1 = svc.recommend_requirements(ana, p.id, "requirements_reviewer", EXAMPLES["requirements_reviewer"])
+    refs1 = [c["addresses"] for c in r1["candidates"]]
+    r2 = svc.recommend_requirements(ana, p.id, "requirements_reviewer", EXAMPLES["requirements_reviewer"],
+                                    exclude=refs1)
+    refs2 = [c["addresses"] for c in r2["candidates"]]
+    check(0 < len(refs1) <= 5, f"the first list is short ({len(refs1)})")
+    check(not set(refs1) & set(refs2), "'Recommend more' offers only gaps not offered yet")
+
     print("== 9. Rules that never bend ==")
     bl2 = B.empty_backlog()
     check(raises(ValueError, B.add_story, bl2, origin=B.RAI, title="x"), "an RAI story must link a requirement")

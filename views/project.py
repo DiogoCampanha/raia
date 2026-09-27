@@ -4,7 +4,7 @@ import json
 
 import streamlit as st
 
-from raia.agents import AGENTS
+from raia.agents import AGENTS, RUNNABLE
 from raia.contract import actions as action_plan
 from raia.contract import vocab as V
 from raia.export import bundle_name, session_bundle
@@ -12,6 +12,7 @@ from raia.lineage import next_steps
 from raia.projects import EDITOR, OWNER, REVIEWER, ROLE_LABELS
 from raia.repository import ACCEPTED, ARTIFACT_FILES, OPEN, RESOLVED
 from raia.ui import routes
+from raia.ui.board import board_tab, sprint_step
 from raia.ui.components import (artifact_body, empty_state, page_header, risk_md, role_badge,
                                 role_label, role_md, stage_tracker, stat_tiles)
 from raia.ui.record_view import record_from_data, record_view
@@ -44,11 +45,28 @@ st.markdown(f"{risk_md(summary['risk'])} &nbsp; {role_md(proj.role)}")
 show_flash()
 
 # ---- Primary action -------------------------------------------------------------
+#
+# Until the requirements are approved, the next step is the next stage. After
+# that the project runs as sprints over the backlog, and the next step follows
+# the sprint cycle: generate the RAI backlog, plan, start, tick, end, audit.
 
+board_ready = repo.read_artifact("requirements_review") is not None
+board_data = svc.board(user, proj.id) if board_ready else {"ready": False}
+cycle = sprint_step(proj, stages, board_data, repo.pending_agents()) if board_ready else None
 focus = next(iter(next_steps(stages)), None)
 with st.container(border=True):
     c1, c2 = st.columns([4, 1.4], vertical_alignment="center")
-    if focus is None:
+    if cycle is not None:
+        c1.markdown(f"{cycle['icon']} **Next: {cycle['label']}**")
+        c1.caption(cycle["why"])
+        with c2:
+            if st.button(cycle["button"], type="primary", key="cta_cycle", icon=I.OPEN, width="stretch"):
+                if cycle.get("agent"):
+                    routes.go(routes.STAGE, project=proj.id, agent=cycle["agent"])
+                else:
+                    st.session_state[pkey("board_view", proj.id)] = cycle.get("view", "Sprint")
+                    st.rerun()
+    elif focus is None:
         c1.markdown(f"{I.OK} **All five stages are approved.** Revisit any stage from the "
                     "tracker below, or download the project.")
         c2.download_button("Download project", data=_bundle,
@@ -69,7 +87,9 @@ with st.container(border=True):
 
 plan_rows = action_plan.project_actions(repo)
 
-tab_overview, tab_docs, tab_plan, tab_issues, tab_activity, tab_people = st.tabs([
+TAB_BOARD = ":material/view_kanban: Board"
+tab_board, tab_overview, tab_docs, tab_plan, tab_issues, tab_activity, tab_people = st.tabs([
+    TAB_BOARD,
     ":material/dashboard: Overview",
     ":material/description: Documents",
     f":material/checklist: Action plan ({len(plan_rows)})" if plan_rows else ":material/checklist: Action plan",
@@ -77,7 +97,12 @@ tab_overview, tab_docs, tab_plan, tab_issues, tab_activity, tab_people = st.tabs
     else ":material/gavel: Open issues",
     ":material/history: Activity",
     ":material/group: People and settings",
-])
+], default=TAB_BOARD if board_ready else ":material/dashboard: Overview")
+
+# ---- Board -------------------------------------------------------------------------
+
+with tab_board:
+    board_tab(proj, user, svc, board_data)
 
 # ---- Overview ----------------------------------------------------------------------
 
@@ -108,7 +133,7 @@ with tab_overview:
 
 # ---- Documents ---------------------------------------------------------------------
 
-ARTIFACT_AGENT = {a.spec.output_key: k for k, a in AGENTS.items()}
+ARTIFACT_AGENT = {a.spec.output_key: k for k, a in RUNNABLE.items()}
 
 with tab_docs:
     c1, c2 = st.columns([4, 1.4], vertical_alignment="center")

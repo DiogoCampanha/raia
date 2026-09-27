@@ -15,7 +15,7 @@ agents can be checked against a register that actually exists.
 """
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -170,7 +170,8 @@ class RequirementsReviewerAgent(BaseAgent):
 
     # -- Recommendations (candidate requirements a person may adopt) ---------
 
-    def recommend(self, repo: ArtifactRepository, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    def recommend(self, repo: ArtifactRepository, inputs: Dict[str, Any],
+                  exclude: Sequence[str] = ()) -> Dict[str, Any]:
         """Propose a few candidate requirements for the gaps the current answers leave.
 
         The gaps are computed exactly as a run computes them — from the approved
@@ -186,7 +187,10 @@ class RequirementsReviewerAgent(BaseAgent):
         clean = dict(inputs)
         clean.pop(coverage.ORIGIN_KEY, None)
         rationale = coverage.run(clean, upstream)
-        gaps = self._prioritised_gaps(rationale.data.get("gaps") or [], clean)
+        # "Recommend more": the short list grows by the next gaps, never repeating
+        # one already offered, adopted or rejected.
+        skip = set(exclude or ())
+        gaps = self._prioritised_gaps([g for g in rationale.data.get("gaps") or [] if g.get("ref") not in skip], clean)
         if not gaps:
             return {"candidates": [], "dropped": [], "gaps": [],
                     "note": "No gap is left for the current answers: every obligation has a control "

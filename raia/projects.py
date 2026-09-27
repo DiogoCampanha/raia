@@ -523,6 +523,8 @@ class ProjectService:
         from .agents import AGENTS
 
         repo = self.repository(user, project_id, "view")
+        if agent_key not in AGENTS:
+            return []
         return [AGENTS[k].spec.name for k in lineage.revision_impact(repo, agent_key, AGENTS)]
 
     def reconfirm_stage(self, user: User, project_id: str, agent_key: str, note: str = "") -> None:
@@ -599,7 +601,7 @@ class ProjectService:
         return result
 
     def recommend_requirements(self, user: User, project_id: str, agent_key: str,
-                               inputs: Dict[str, Any]) -> Dict[str, Any]:
+                               inputs: Dict[str, Any], exclude: Optional[List[str]] = None) -> Dict[str, Any]:
         """Candidate requirements from the model, checked in code, for a person to adopt or reject."""
         from .agents import AGENTS
 
@@ -608,7 +610,7 @@ class ProjectService:
             raise ValueError("This agent does not recommend requirements.")
         repo = self.repository(user, project_id, "run")
         self._count_model_call(user)
-        result = agent.recommend(repo, inputs)
+        result = agent.recommend(repo, inputs, exclude=exclude or [])
         repo.record_event("requirements_recommended", {
             "agent": agent_key, "user": user.id,
             "offered": [c["addresses"] for c in result.get("candidates") or []],
