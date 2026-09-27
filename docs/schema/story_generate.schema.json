@@ -1,5 +1,5 @@
 {
-  "$id": "raia-record/1.2/story_generate",
+  "$id": "raia-record/1.3/story_generate",
   "title": "StoryGenerateRecord",
   "$defs": {
     "AcceptanceCriterion": {

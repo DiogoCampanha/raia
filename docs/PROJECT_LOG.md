@@ -132,6 +132,12 @@ Recorded so the log stays honest about its own errors.
 | D42 | The copy of a story uses the suggested rewrite of a conflicting criterion by default; the person can keep the original per conflict. The record keeps the criterion as entered and the decision open until someone takes it. | The recommendations are the point of the refinement, so they belong in the copy; D36 still holds because the rewrite enters the tracker only through a person's copy, one click from the original, and the decision stays on the register. |
 | D43 | The Auditor reads as an audit report: a header (sprint, scope, evidence declared, approved baseline and approvers), the opinion, strengths, risks as observations (found, required, affects, recommendation), opportunities and a pathway forward ordered decisions → this sprint → next sprints → before release → ongoing; the decisions, verdict register, accountability documentation and traceability are appendices. | The audit shared the other agents' layout, so it did not read like the end of an audit process. Every part is a view of fields the record already holds or of two short model lists (strengths, opportunities) and one sentence (pathway), so the report stays short. |
 | D44 | The audit opinion is rated by code on RAIA's own five-step scale (not rated, not effective, needs improvement, effective with observations, effective) over the declared evidence, the share of items satisfied (60% threshold), items at risk, finding priorities and blocking decisions. The engine sets the best rating the evidence allows before the model is called (a reconciled verdict key); the final rating never rises above it. A strength must rest on a satisfied or partially satisfied item or an approval on record, or code removes it. | An opinion is the most-read line of an audit, so it must not vary with the model's mood; the ceiling carries the anti-ethics-washing rule to the rating, and the strength rule carries it to praise. No external audit standard is used: the scale operationalises the Microsoft RAI Standard v2 accountability goals and NIST AI RMF GOVERN and MEASURE, and is stated as RAIA's rule. |
+| D45 | A project runs as a loop of sprints over one backlog once its ethical requirements are approved. The backlog and the sprints are registers on the blackboard, not an agent: five agents remain, and people plan the sprints. | Requirements are constants but the work they need is spread over many sprints; a single pass through the stages could not show that work being done, and a sixth agent for bookkeeping and prioritisation would move a person's decision into a model. |
+| D46 | The User Story Refiner has two modes, each with its own record through the same gate: *generate* turns approved requirements without a story into RAI stories (`RAI-n`, at least one requirement each), and *refine* adds ethical criteria to product stories (`US-n`) and writes them back to the backlog. | Turning requirements into stories and adding criteria to stories are both refinement work grounded in the same sources; generated stories are audited later, so they need a gate and provenance rather than a pre-fill. |
+| D47 | Lists start short and grow on request: the generate mode covers the five highest-priority requirements without a story (legal obligations first) unless widened to ten or named; the Requirements Reviewer recommends five candidates and "Recommend more" offers the next; long lists on screen show ten rows with "Show all". | A long list is not read at a gate. A short list a person can review is worth more than a complete one nobody does. |
+| D48 | The sprint suggestion is computed by fixed rules (carried over, legal obligation, the priority of linked findings, oldest), never by a model; stories behind a blocking open issue are shown as blocked. A person accepts all, some or none. | Choosing a sprint's scope is prioritisation, a decision the team owns; rules make the suggestion reproducible and explainable in one line each. |
+| D49 | The Auditor audits the whole project at every sprint close: the sprint's items against evidence, every other requirement where it stands (planned is not NOT VERIFIED), progress and trend computed from the final verdicts, the backlog checked against the ethical risks by code (the model may only lower code's judgement), and the next sprint. Only an approved audit of an ended sprint closes it and sets *verified*. The ceiling falls to *needs improvement* when a high or critical risk has no story, or a legal-obligation requirement has no story in any sprint by the second sprint. | An audit of one sprint alone either failed everything not yet scheduled or said nothing about the project; the Auditor must say where the project stands, whether it is improving and whether the planned work is the work needed. |
+| D50 | Jira is optional. A Jira-ready CSV needs no setup; a person's own Jira Cloud connection pushes a sprint (batches of 50, changed stories updated) and syncs status back. Done in Jira means delivered, never verified; a sync never overwrites a manual change. The token is encrypted with `RAIA_JIRA_KEY` (or kept for the session only) and never reaches the blackboard, downloads or logs. | Teams plan in Jira, so RAIA should meet them there, but the board must work for a team that does not; verification stays with the audit, and credentials stay with the person. |
 
 ---
 
@@ -140,6 +146,69 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-09-27 — Sprints over one backlog, a project-wide audit, optional Jira (branch `backlog-sprints`)
+
+Decisions D45–D50.
+
+#### What was wrong
+
+- **ITR-1** (new prefix: findings about iterative development) Requirements were treated as work done in one pass: the Refiner
+  refined one set of stories and the Auditor audited everything at once, so a
+  requirement not scheduled yet was reported NOT VERIFIED, and nothing tracked
+  the work a requirement needs across sprints.
+- **ITR-2** Story ids restarted on every run (`S1`), so a criterion could not be
+  followed from one sprint to the next.
+- **ITR-3** A revised requirement flagged the whole Refiner and Auditor stages,
+  instead of the stories it actually touches.
+- **ITR-4** The Auditor could not say whether the project was improving, or
+  whether the planned work answered the ethical risks.
+- **ITR-5** Nothing connected RAIA's stories to the tracker a team plans in.
+
+#### What changed
+
+- `raia/backlog.py` — the backlog and sprints registers (`08_backlog`,
+  `09_sprints`, Markdown + JSON sidecar, one commit per change): stable ids
+  (`RAI-n`, `US-n`, `SPR-n`), statuses, sprint lifecycle, manual ticks, what
+  each approval changes (`apply_generation`, `apply_refinement`,
+  `apply_audit`), and requirements change control.
+- `raia/roadmap.py` — the computed roadmap (state per requirement, series,
+  trend, sprints-left estimate) and the rule-based sprint suggestion.
+- `raia/agents/story_generate.py`, `raia/rationale/story_seed.py` — the
+  Refiner's generate mode, its own record (`raia-record/1.3`, prefix `SG`).
+  `AgentSpec.parent` / `mode_label`; `agents.MODES`, `RUNNABLE`, `get_agent`.
+- `raia/rationale/traceability.py`, `raia/rationale/backlog_coverage.py`,
+  `raia/contract/assemble.py` — the project-wide audit: sprint items, project
+  state, progress and trend from the final verdicts, backlog judgement held to
+  code's, the new ceiling rules. `digest.project_sections` and the four report
+  sections on screen and in the document.
+- `raia/pipeline.py` — `_board_effects`: an approval's register changes and its
+  per-sprint copy travel in the same commit as the artifact.
+- `raia/lineage.py` — `CYCLIC`: the sprint-cycle stages are never flagged
+  wholesale.
+- `raia/ui/board.py`, `views/project.py`, `views/stage.py` — the Board (Sprint,
+  Backlog, Roadmap), the sprint-cycle next step, the Refiner's mode switch, and
+  forms filled from the sprint. `raia/ui/gate.py` — leave out generated stories
+  at the gate; "Recommend more".
+- `raia/jira.py`, `raia/ui/jira_panel.py`, `views/settings.py` — optional Jira:
+  CSV, push, sync, disagreements settled by a person; `jira_connections` table.
+- `raia/export.py` — `backlog.csv/json`, `sprints.json`, `roadmap.csv` in the
+  project download. Privacy page version 1.1 (the Jira connection).
+
+#### Tests
+
+- `tests/test_backlog.py` — two sprints end to end with no Jira: generation
+  through the gate, the short list, planning by rules, manual ticks, the
+  project-wide audit closing the sprint, carry-over, trend, change control,
+  roles, "Recommend more".
+- `tests/test_jira.py` — CSV format, batches of 50, idempotent push, sync that
+  never verifies and never overrides a person, token privacy.
+- `tests/test_ui.py` §5d — the Board walked through headlessly.
+
+#### Still open, by decision
+
+- Jira Server / Data Center: only Jira Cloud is supported.
+- A live run with a real model of the generate mode and the project-wide audit
+  is still to be done before the panel.
 ### 2026-09-25 — Refined stories first, and an audit report (branch `refiner-auditor-outputs`)
 
 Decisions D41–D44.

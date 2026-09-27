@@ -1,4 +1,4 @@
-# The RAIA Output Contract (`raia-record/1.2`)
+# The RAIA Output Contract (`raia-record/1.3`)
 
 Every RAIA agent answers in the same standard record. Two projects that go
 through the same stage answer the same questions, on the same scales, with the
@@ -99,6 +99,7 @@ Each agent's extension is shaped by what its normative source produces.
 | `stories[].criteria[]` | New criteria only, `AC-<story>-<n>`: `ms_goal`, `stakeholder_group`, measurable `condition` with threshold, `evidence_artifact`, `owner_role`, `evr_ids` |
 | `stories[].conflicts[]` | An existing criterion of the story (`<story>-E<n>`) that conflicts with an approved requirement or a card in scope: `conflicts_with`, `problem`, `suggested_rewrite`. Code opens one `value_tradeoff` issue per conflict for the product owner |
 | `stories[].no_impact_reason` | For stories with no ethical impact, one line |
+| `stories[].evr_ids` | The approved requirements the story helps implement, if any; they link it to the requirement on the roadmap |
 | `sprint_ethics_log[]` | Up to five decisions, one sentence each with its reason (ECCOLA's documentation step) |
 
 Stories are entered one by one — id, title, description, existing acceptance
@@ -108,6 +109,30 @@ criteria stay the team's: RAIA never rewrites them in the record, it flags them.
 The copy of a story offers the suggested rewrite in place of the conflicting
 criterion; the person can keep the original instead, and the decision stays
 open in the record until someone takes it.
+
+On approval, the refinement is written back to the project's backlog: a story
+already there keeps its id (`US-n` for product stories), a story typed in on
+the spot becomes `US-n`, its new ethical criteria and requirement links are
+kept on the story, and the team's own criteria are kept as written.
+
+### User Story Refiner, generate mode — Microsoft RAI Standard v2 (verifiable requirements), ECCOLA
+
+A mode of the User Story Refiner with its own record (`story_generate`, prefix
+`SG`), not a sixth agent. It turns approved requirements that have no story yet
+into RAI stories for the backlog.
+
+| Field | Content |
+|---|---|
+| `stories[]` | Up to 30: `story_id` (`G1`, `G2`, …), `title`, `description` (a user story), `evr_ids` (at least one requirement in scope), `touches`, `eccola_cards` (only those its touches select), `criteria[]` (`AC-G<n>-<k>`, the same criterion shape as the refine mode) |
+| `not_story[]` | A requirement in scope that needs no story: `evr_id`, `reason` |
+
+The rule engine (`story_seed`) fixes the scope before the model is asked
+anything: requirements with no live RAI story, the five with the highest
+priority by default (legal obligations first), up to ten on request, or the
+ones a person names. Every requirement in scope comes back covered by a story
+or justified; every story links a requirement; at most three stories per
+requirement. On approval each story enters the backlog as `RAI-n`, and its
+criteria are renamed `AC-RAI-n-<k>`.
 
 ### Auditor — Microsoft RAI Standard v2 (accountability), NIST AI RMF GOVERN
 
@@ -120,6 +145,23 @@ open in the record until someone takes it.
 | `opportunities[]` | Up to three improvements beyond closing the gaps: `statement`, `refs`, `benefit` |
 | `pathway_summary` | The way forward in one sentence, in order |
 | `opinion` | Computed: `rating`, `reasons`, `ceiling` |
+| `backlog_assessment[]` | One per requirement the backlog covers (computed list): `ref`, `judgement` (`covered` · `weakly_covered` · `not_covered`), `reason`; computed: `computed` |
+| `trajectory_comment` | One or two sentences on the progress across sprints (the trend itself is computed) |
+| `next_focus` | One sentence: what the next sprint should tackle first |
+| `project_state` | Computed: every approved requirement with its stories and state (no story, planned, in sprint, delivered, verified, at risk) |
+| `progress` | Computed: the per-sprint series (requirements verified, stories verified, carried over), the trend and the estimate of sprints left |
+
+Once a project has a backlog, the audit is **project-wide**. This sprint's
+work is audited item by item (the ethical criteria of the sprint's stories, and
+the requirements whose stories the sprint completes); everything else is
+reported where it stands. A requirement not scheduled yet is *planned*, not
+NOT VERIFIED. Code computes whether the backlog is enough (every requirement
+and every high or critical risk has a story, every legal-obligation requirement
+has one, every criterion names its evidence, no sensitive story is waved
+through as having no ethical impact, every ECCOLA theme in scope has a story);
+the model may lower code's judgement of a covered requirement, never raise
+it. An approved audit of a sprint that has ended closes it: a delivered story
+whose criteria are all satisfied is verified, the rest are carried over.
 
 A verdict may be downgraded, never upgraded: an item with no evidence reported
 as satisfied is restored to `not_verified` by code, and the attempt fails a check.
@@ -134,11 +176,15 @@ rating never rises above that ceiling. Checked from the weakest rating up:
 
 | Rating | When |
 |---|---|
-| Not rated | There is no approved requirement or criterion register to audit |
+| Not rated | There is no approved requirement or criterion register to audit (or, in a project run in sprints, no item in the sprint) |
 | Not effective | No evidence declared, nothing satisfied, or a blocking decision open |
 | Needs improvement | Under 60% of items satisfied, an item at risk, or a critical finding |
 | Effective with observations | 60% or more satisfied, with high findings or unverified items remaining |
 | Effective | Every item satisfied and no high or critical finding |
+
+In a project with a backlog, the ceiling is also lowered to *Needs improvement*
+when a high or critical risk has no story, or when a legal-obligation
+requirement has had no story in any sprint by the second sprint.
 
 The scale is RAIA's own rule over the accountability goals of the Microsoft RAI
 Standard v2 and NIST AI RMF GOVERN and MEASURE; it rates the evidence the
@@ -236,7 +282,9 @@ high, and `blocked` when anything is blocking.
 |---|---|---|
 | Finding, action, issue in a record | `<agent prefix>-F<n>`, `-A<n>`, `-I<n>` with prefixes `RC`, `RR`, `SR`, `AU`, `DM` | code |
 | Ethical value requirement | `EVR-<n>` | Requirements Reviewer rule engine |
-| Story | as given, or `S<n>` | User Story Refiner rule engine |
+| Story in a record | as given, or `S<n>`; `G<n>` in the generate mode | User Story Refiner rule engine |
+| Story in the backlog | `RAI-<n>` (from requirements), `US-<n>` (product) — stable for the project | backlog register |
+| Sprint | `SPR-<n>` | sprints register |
 | Acceptance criterion | `AC-<story>-<n>` | the agent, checked by code |
 | ECCOLA card | `#0`–`#20` | ECCOLA |
 | Obligation | `eu.*`, `br.*` codes | Risk Classifier rule engine |
@@ -310,6 +358,9 @@ then the traceability appendix.
    approved baseline and who approved it, frameworks), the rating code
    computed with its reasons, the headline and summary as the opinion
    statement, and what the evidence verifies.
+   Then, in a project with a backlog: **Where the Project Stands**, **Progress
+   Across Sprints**, **Is the Backlog Enough** and **What Comes Next**, each a
+   one-line conclusion over a short table (ten rows, the rest in the download).
 2. **Strengths** — up to three, each shown with what supports it.
 3. **Risks** — the findings as audit observations: what was found, what was
    required (the approved wording of the linked requirement or criterion, and
@@ -384,7 +435,9 @@ included in the project download.
 `raia-record/<major>.<minor>`. Adding an optional field is a minor change
 (1.1 added `headline` and the Story Refiner's `conflicts`, and shortened the
 free-text caps; 1.2 added the Auditor's `strengths`, `opportunities`,
-`pathway_summary` and computed `opinion`);
+`pathway_summary` and computed `opinion`; 1.3 added the generate mode's record,
+the refine mode's `evr_ids`, and the Auditor's `backlog_assessment`,
+`trajectory_comment`, `next_focus` and computed `project_state` and `progress`);
 removing or renaming a field, or changing a vocabulary or the matrix, is a major
 change. Records keep the version they were written with. After any change run
 `python -m raia.contract.export_schema` and commit `docs/schema/`.

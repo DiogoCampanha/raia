@@ -749,13 +749,16 @@ def audit_report(record: Dict[str, Any], data: Dict[str, Any], actions: Sequence
                   plural(kinds["acceptance criterion"], "acceptance criterion", "acceptance criteria")]
     baseline = [f"{b.get('label')}" + (f", approved by {b['approved_by']}" if b.get("approved_by") else "")
                 + (f" on {b['approved_at']}" if b.get("approved_at") else "") for b in data.get("baseline") or []]
+    scope_text = " and ".join(scope_bits) + " from the approved artifacts" if audited else "No register was available"
     if data.get("project_mode"):
-        scope_bits = ["the whole project"] + [x for x in scope_bits if not x.startswith("0 ")]
+        here = [x for x in scope_bits if not x.startswith("0 ")]
+        scope_text = "The whole project" + (f"; audited this sprint: {' and '.join(here)}" if here
+                                            else "; no item was audited this sprint")
     header = {
         "title": ("Project audit" if data.get("project_mode") else "Ethical requirements audit")
                  + (f" — {sprint}" if sprint and sprint != "this sprint" else ""),
         "fields": [
-            ("Scope", " and ".join(scope_bits) + " from the approved artifacts" if audited else "No register was available"),
+            ("Scope", scope_text),
             ("Evidence declared", ", ".join(data.get("evidence_labels") or data.get("evidence_types") or []) or "None"),
             ("Baseline", "; ".join(baseline) or "—"),
             ("Frameworks", "; ".join(f.get("name", "") for f in (record.get("meta") or {}).get("frameworks") or []) or "—"),

@@ -4,7 +4,7 @@
 
 ## 1. Purpose
 
-Audits sprint progress against the approved ethical requirements and reports it as an audit: an opinion, strengths, risks, opportunities and the way forward, grounded in versioned evidence.
+Audits the whole project at each sprint close: the sprint's work against the evidence, where every requirement stands, the progress across sprints and whether the backlog is enough — reported as an audit with an opinion, strengths, risks, opportunities and the way forward.
 
 ## 2. Place in the lifecycle
 
@@ -67,7 +67,7 @@ Excerpts pinned for the canonical scenario:
 
 ## 7. The record it produces
 
-Schema `raia-record/1.2` — `docs/schema/auditor.schema.json`. Identifier prefix `AU`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.3` — `docs/schema/auditor.schema.json`. Identifier prefix `AU`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|

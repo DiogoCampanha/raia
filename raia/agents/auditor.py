@@ -40,9 +40,10 @@ class AuditorAgent(BaseAgent):
         layer="Dev",
         sdlc_phase="Development and validation",
         description=(
-            "Audits sprint progress against the approved ethical requirements and "
-            "reports it as an audit: an opinion, strengths, risks, opportunities and the way "
-            "forward, grounded in versioned evidence."
+            "Audits the whole project at each sprint close: the sprint's work against the evidence, "
+            "where every requirement stands, the progress across sprints and whether the backlog is "
+            "enough — reported as an audit with an opinion, strengths, risks, opportunities and the "
+            "way forward."
         ),
         intro=(
             "Verdicts are pre-assigned by code: anything with no trace in the sprint outcomes "

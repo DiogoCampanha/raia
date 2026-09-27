@@ -49,9 +49,18 @@ the agent cards in [`docs/agents/`](docs/agents/) and the JSON Schemas in
 |---|---|---|---|
 | **Risk Classifier** | 🟦 Product | Prohibited-practice screen, high-risk area match for both regimes, AI-system definition check, transparency duties implied by how the AI works, narrow-task exemption handling, role-dependent obligation assembly | EU AI Act, PL 2338/2023 |
 | **Requirements Reviewer** | 🟦 Product | Obligation × principle coverage matrix against stated requirements and existing controls; assigns the requirement register; on request, recommends candidate requirements a person adopts or rejects | IEEE 7000, MS RAI v2 |
-| **User Story Refiner** | 🟩 Dev | ECCOLA card selection from risk tier, data categories and sprint capabilities; story register as a counted invariant | ECCOLA, MS RAI v2 |
-| **Auditor** | 🟩 Dev | Evidence matching against the approved register; items with no evidence are marked NOT VERIFIED by code | MS RAI v2, NIST AI RMF |
+| **User Story Refiner** | 🟩 Dev | Two modes. *Generate*: approved requirements without a story (a short list, legal obligations first) become RAI stories for the backlog, every requirement covered or justified. *Refine*: ECCOLA card selection per story from risk tier, data categories and capabilities; story register as a counted invariant; criteria written back to the backlog | ECCOLA, MS RAI v2 |
+| **Auditor** | 🟩 Dev | Project-wide at each sprint close: the sprint's items matched against evidence (no evidence → NOT VERIFIED by code), where every requirement stands, progress and trend, whether the backlog covers the ethical risks, and what comes next | MS RAI v2, NIST AI RMF |
 | **Drift Monitor** | 🟧 Ops | Fairness metrics, thresholds parsed from approved artifacts, breach and trend detection, sample-adequacy flags | NIST AI RMF |
+
+**Sprints over one backlog.** Once the requirements are approved, the project
+page opens on a **Board**: the backlog (RAI stories generated from the
+requirements, product stories from product work), the open sprint and a
+computed roadmap. People plan each sprint with a rule-based suggestion, tick
+stories done and end the sprint; the Auditor's approved audit closes it,
+verifying only what the evidence supports. Jira is optional: a Jira-ready CSV
+needs no setup, and a person's own Jira Cloud connection pushes a sprint and
+syncs its status back. See the sprint cycle in [`docs/architecture.md`](docs/architecture.md).
 
 ## Quick Start
 
@@ -214,13 +223,16 @@ raia/
 │   ├── db.py                  # SQLite locally, PostgreSQL hosted — one SQL dialect
 │   ├── projects.py            # people, projects, roles, invitations, authorization
 │   ├── lineage.py             # stage dependencies and the derived "needs review" flag
+│   ├── backlog.py             # the backlog and sprints registers, and what approvals change
+│   ├── roadmap.py             # computed roadmap, progress, trend, rule-based sprint suggestion
+│   ├── jira.py                # optional: Jira CSV, push and sync (httpx)
 │   ├── ui/                    # routes, theme (CSS + icons), components, approval gate,
 │   │                          #   record view, agent docs, tester guide, assessment, legal page
 │   ├── auth.py                # Google sign-in via Streamlit, or a local dev identity
 │   ├── pipeline.py            # the graph: generate → human gate → persist
 │   ├── sanitize.py            # injection screening (EN + PT), flag-never-delete
 │   ├── export.py              # one-zip project export
-│   └── agents/                # the five agent specifications
+│   └── agents/                # the five agent specifications (and the Refiner's generate mode)
 ├── corpus/                    # curated normative summaries (extensible)
 ├── docs/
 │   ├── architecture.md        # diagrams and the traceability table
@@ -237,6 +249,8 @@ raia/
     ├── test_contract.py       # the output contract: vocabularies, rubric, records, layout
     ├── consistency_check.py   # run-to-run agreement of records (use a real model)
     ├── test_projects.py       # isolation, roles, durability, tamper evidence
+    ├── test_backlog.py        # the sprint cycle: generate, plan, tick, audit, close, change control
+    ├── test_jira.py           # optional Jira: CSV, push, sync, token privacy (mock Jira)
     └── test_ui.py             # headless walkthrough of the project-based UI
 ```
 
@@ -319,6 +333,8 @@ RAIA_LLM_PROVIDER=mock RAIA_FAKE_EMBED=1 python tests/smoke_test.py
 python tests/test_projects.py                      # git blackboards + SQLite
 RAIA_STORE=database python tests/test_projects.py  # database blackboard on SQLite
 RAIA_DATABASE_URL=postgresql://... python tests/test_projects.py   # on PostgreSQL
+python tests/test_backlog.py                       # the sprint cycle (also with RAIA_STORE=database)
+python tests/test_jira.py                          # optional Jira, against a mock Jira Cloud
 python tests/test_ui.py                            # headless UI walkthrough
 python tests/test_contract.py                      # the output contract (also run by the smoke test)
 python tests/consistency_check.py --agent risk_classifier --runs 5   # with a real provider

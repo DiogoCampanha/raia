@@ -14,7 +14,7 @@ The menu at the top of the screen:
 - **Guide** — This walkthrough.
 - **Agents** — How RAIA works: the architecture (select an agent in the diagram to see what it reads and produces) and each agent's documentation.
 - **Assessment** — The evaluation form for this study.
-- **Account** — Settings (profile, your data, delete account), the Privacy Policy and User Agreement, and **Sign out**.
+- **Account** — Settings (profile, the optional Jira connection, your data, delete account), the Privacy Policy and User Agreement, and **Sign out**.
 
 ## Step by step
 
@@ -53,15 +53,27 @@ Right after an approval, **What's next** offers the next stage: press **Continue
 
 In the **Requirements Reviewer**, first tick the controls you already have, then press **Recommend ethical requirements**. RAIA pre-fills the stakeholder and principle questions you left empty from the approved classification (each value says why) and proposes a few candidate requirements for the gaps that remain. **Adopt**, edit or **Reject** each one; nothing counts until you adopt it, and before running you confirm that the pre-filled answers reflect your project. The record then says which requirements RAIA recommended and you adopted.
 
-In the **User Story Refiner**, add each story on its own card with its acceptance criteria and what it touches (or paste several at once and check the cards). RAIA adds ethical criteria per story and flags any existing criterion that conflicts; each conflict becomes a decision for you. The result leads with the stories themselves: each one with its criteria marked kept, in conflict (the original struck through, the suggested rewrite beneath) or new. Choose per conflict whether the copy uses the rewrite or keeps the original, then **Copy** the story (or **Copy all stories**) back to your tracker. **Why these changes** holds the risks, actions and decisions behind them.
+Once the requirements are approved, the project page opens on its **Board** (next step). From there the **User Story Refiner** has two modes: **Generate from requirements** turns approved requirements into RAI stories for the backlog, and **Refine sprint stories** adds ethical criteria to your product stories.
 
-The **Auditor** reads as an audit report: an opinion the software rates from the evidence, the strengths the evidence supports, the risks with a recommendation each, opportunities, and the pathway forward in order. The registers behind it are in **Appendices**.
+In the **User Story Refiner**'s refine mode, add each story on its own card with its acceptance criteria and what it touches (or paste several at once and check the cards). RAIA adds ethical criteria per story and flags any existing criterion that conflicts; each conflict becomes a decision for you. The result leads with the stories themselves: each one with its criteria marked kept, in conflict (the original struck through, the suggested rewrite beneath) or new. Choose per conflict whether the copy uses the rewrite or keeps the original, then **Copy** the story (or **Copy all stories**) back to your tracker. **Why these changes** holds the risks, actions and decisions behind them.
 
-### 6. Revise a stage and re-check what depends on it
+The **Auditor** reads as an audit report of the whole project: an opinion the software rates from the evidence, where the project stands, its progress across sprints, whether the backlog is enough for the ethical risks, what comes next, the strengths the evidence supports, the risks with a recommendation each, opportunities, and the pathway forward. The registers behind it are in **Appendices**.
+
+### 6. Run sprints on the Board
+
+With the requirements approved, the project page opens on the **Board**, with three views:
+
+- **Sprint** — press **Generate stories from the requirements** first: RAIA writes RAI stories for the five highest-priority requirements (run it again for more) and you approve them at the gate; they enter the backlog as RAI-1, RAI-2, and so on. Then **Plan the sprint**: RAIA suggests stories by fixed rules (carried-over first, then legal obligations, then priority), each with its reason, and you add the ones you want. **Start** the sprint, tick each story **Done** when it is delivered, **End** the sprint and **Audit** it. The approved audit closes the sprint: it marks verified only what the evidence supports and carries the rest over. A tick means delivered, never verified.
+- **Backlog** — every story, RAI and product, with its requirements and status. Add product stories, and settle any story flagged because a requirement changed.
+- **Roadmap** — where each requirement stands, requirements verified per sprint, and an estimate of the sprints left.
+
+**Jira is optional.** Under **Jira (optional)** you can download a Jira-ready CSV, or, after connecting your Jira Cloud account in **Settings**, push the sprint and sync its status back. A sync never overrides what you ticked on the board; if Jira and the board disagree, the story says so and you pick.
+
+### 7. Revise a stage and re-check what depends on it
 
 Open the **Risk Classifier** again and press **Revise this stage**: change one answer, run and approve. Before you start, RAIA tells you which approved stages depend on it. Afterwards those stages say **Needs review**. They are never re-run automatically: open each one and either **Confirm it still holds** or **Revise it**. Both decisions are recorded under your name.
 
-### 7. Use the results
+### 8. Use the results
 
 The project page has tabs for the work the stages produce:
 
@@ -70,15 +82,15 @@ The project page has tabs for the work the stages produce:
 - **Documents** — each approved artifact with its provenance (model, corpus version, attempt, edits, checks), and **Download project**.
 - **Activity** — the version history and the project log.
 
-### 8. Optional: work with a colleague
+### 9. Optional: work with a colleague
 
 Under **People and settings**, invite a colleague as a **reviewer** by the email they sign in with, and in the project settings tick **Require a second approver**. The person who runs a stage can then no longer approve it.
 
-### 9. Complete the assessment
+### 10. Complete the assessment
 
 Open **Assessment** in the top menu. It asks five required statements (utility, completeness, usability, methodological rigor, generalizability), optional profile questions and per-stage ratings, and three open questions. About ten minutes; you can save a draft and come back. It is the most useful thing you can leave behind.
 
-### 10. Your data, and signing out
+### 11. Your data, and signing out
 
 **Account > Settings** lets you download everything RAIA holds about you, or delete your account. **Account > Sign out** ends your session. Please send the project download and any notes to the study coordinator.
 

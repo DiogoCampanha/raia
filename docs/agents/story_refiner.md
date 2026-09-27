@@ -69,7 +69,7 @@ Excerpts pinned for the canonical scenario:
 
 ## 7. The record it produces
 
-Schema `raia-record/1.2` — `docs/schema/story_refiner.schema.json`. Identifier prefix `SR`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.3` — `docs/schema/story_refiner.schema.json`. Identifier prefix `SR`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|

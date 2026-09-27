@@ -92,10 +92,10 @@ def sprint_step(proj, stages: List[Dict[str, Any]], data: Dict[str, Any], pendin
                 "why": f"{len(data['uncovered'])} approved requirement(s) have no story yet; five at a time."}
     if x is None:
         n = int(data["sprints"].get("counter") or 0) + 1
-        return {"label": f"Plan Sprint {n}", "button": "Open the board", "view": "Sprint", "icon": I.ADD,
+        return {"label": f"Plan Sprint {n}", "button": "Plan it", "view": "Sprint", "icon": I.ADD,
                 "why": "Pick the sprint's stories: the board suggests them by rules, you decide."}
     if x["state"] == B.PLANNING:
-        return {"label": f"Start {x['name']}", "button": "Open the board", "view": "Sprint", "icon": I.RUN,
+        return {"label": f"Start {x['name']}", "button": "Show the sprint", "view": "Sprint", "icon": I.RUN,
                 "why": "Add its stories, then start it."}
     if x["state"] == B.ACTIVE:
         raw = [s for s in B.in_sprint(bl, x["id"]) if s.get("origin") == B.PRODUCT
@@ -104,7 +104,7 @@ def sprint_step(proj, stages: List[Dict[str, Any]], data: Dict[str, Any], pendin
             return {"label": "Refine the product stories", "button": "Refine", "agent": "story_refiner",
                     "icon": I.REVISE,
                     "why": f"{len(raw)} product story(ies) in {x['name']} have no ethical criteria yet."}
-        return {"label": f"Tick stories done, then end {x['name']}", "button": "Open the board",
+        return {"label": f"Tick stories done, then end {x['name']}", "button": "Show the sprint",
                 "view": "Sprint", "icon": I.CONFIRM,
                 "why": "A tick means delivered; the sprint's audit decides what is verified."}
     return {"label": f"Audit {x['name']}", "button": "Audit", "agent": "auditor", "icon": I.SHIELD,
@@ -360,12 +360,12 @@ def _backlog_view(proj, user, svc, data) -> None:
         return
     f1, f2, f3 = st.columns([1, 2, 2])
     origin = f1.selectbox("Origin", ["All", "RAI", "Product"], key=pkey("bl_origin", proj.id))
-    statuses = f2.multiselect("Status", list(B.STATUSES), default=[s for s in B.STATUSES if s != B.OBSOLETE],
-                              format_func=B.STATUS_LABELS.get, key=pkey("bl_status", proj.id))
+    statuses = f2.multiselect("Status", list(B.STATUSES), format_func=B.STATUS_LABELS.get,
+                              key=pkey("bl_status", proj.id), placeholder="All but obsolete")
     query = f3.text_input("Search", key=pkey("bl_q", proj.id), placeholder="Id, title or requirement")
     shown = [s for s in stories
              if (origin == "All" or B.ORIGIN_LABELS.get(s["origin"]) == origin)
-             and (not statuses or s["status"] in statuses)
+             and (s["status"] in statuses if statuses else s["status"] != B.OBSOLETE)
              and (not query or query.lower() in " ".join([s["id"], _title(s), *s.get("evr_ids", [])]).lower())]
     shown.sort(key=lambda s: (list(B.STATUSES).index(s["status"]) if s["status"] in B.STATUSES else 9,
                               0 if s.get("origin") == B.RAI else 1, s.get("created_at") or ""))
@@ -467,6 +467,26 @@ def _story_detail(proj, svc, user, s) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _burnup(series: List[Dict[str, Any]], total: int) -> None:
+    """Requirements verified per sprint, cumulative: one series, integer axis, hover for the numbers."""
+    import altair as alt
+    import pandas as pd
+
+    frame = pd.DataFrame([{"Sprint": x.get("name") or x.get("sprint"), "Order": i,
+                           "Requirements verified": int(x.get("verified_requirements") or 0),
+                           "Stories verified": int(x.get("stories_verified") or 0),
+                           "Carried over": int(x.get("carried_over") or 0)} for i, x in enumerate(series)])
+    x = alt.X("Sprint:N", sort=alt.SortField("Order"), axis=alt.Axis(labelAngle=0, title=None))
+    y = alt.Y("Requirements verified:Q", scale=alt.Scale(domain=[0, max(total, 1)]),
+              axis=alt.Axis(format="d", tickMinStep=1, title=f"Requirements verified (of {total})"))
+    tip = ["Sprint", "Requirements verified", "Stories verified", "Carried over"]
+    base = alt.Chart(frame).encode(x=x, y=y, tooltip=tip)
+    chart = (base.mark_line(strokeWidth=2, color="#2563eb")
+             + base.mark_point(size=80, filled=True, color="#2563eb")).properties(height=220)
+    st.markdown("**Requirements verified, by sprint**")
+    st.altair_chart(chart, width="stretch")
+
+
 def _roadmap_view(proj, data) -> None:
     rm = data["roadmap"]
     if not rm:
@@ -479,17 +499,20 @@ def _roadmap_view(proj, data) -> None:
         ("Stories open", rm["open_stories"], f"{rm['open_rai']} RAI", False),
         ("Sprints closed", rm["closed_sprints"], TREND_LABEL.get(rm["trend"]["direction"], ""),
          rm["trend"]["direction"] == "declining"),
-        ("Sprints left", "—" if left is None else left, "estimate at the pace so far" if left else "", False),
+        ("Sprints left", "—" if left is None else left,
+         ("estimate for the open RAI stories" + (f"; {counts.get('no_story')} requirement(s) have no story yet"
+                                                  if counts.get("no_story") else ""))
+         if left is not None else "", False),
     ])
     series = rm["series"]
-    if series:
-        st.markdown("**Requirements verified, by sprint**")
-        st.line_chart({"Sprint": [x.get("name") or x.get("sprint") for x in series],
-                       "Requirements verified": [x.get("verified_requirements", 0) for x in series]},
-                      x="Sprint", y="Requirements verified", height=220)
+    if len(series) >= 2:
+        _burnup(series, len(rows))
         st.caption(rm["trend"]["reason"])
+    elif series:
+        st.caption(f"{series[0].get('name')} closed with {series[0].get('verified_requirements', 0)} requirement(s) "
+                   "verified. The line appears when a second sprint closes.")
     else:
-        st.caption("The line starts when the first sprint closes on its audit.")
+        st.caption("The line starts when the first sprints close on their audits.")
     st.markdown("**Every requirement, highest priority first**")
     visible = _short_list(rows, pkey("rm_all", proj.id))
     table = [{"Requirement": r["id"], "State": R.REQ_STATE_LABELS[r["state"]],

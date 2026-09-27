@@ -345,7 +345,9 @@ def _deep_dive(dg: Dict[str, Any], key: str, nested: bool) -> None:
 def _counts_strip(dg: Dict[str, Any]) -> str:
     c = dg["story_counts"]
     status = dg["status"]
-    tags = [chip(f"{c.get('changed', 0)} of {c.get('total', 0)} stories changed", "neutral", quiet=True),
+    first = (D.plural(c.get("total", 0), "story", "stories") + " generated" if dg["agent_key"] == "story_generate"
+             else f"{c.get('changed', 0)} of {c.get('total', 0)} stories changed")
+    tags = [chip(first, "neutral", quiet=True),
             chip(D.plural(c.get("new", 0), "new criterion", "new criteria"), "ok" if c.get("new") else "neutral", quiet=True)]
     if c.get("conflicts"):
         tags.append(chip(D.plural(c["conflicts"], "conflict") + " to decide", "high"))
