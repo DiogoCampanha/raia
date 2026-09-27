@@ -31,5 +31,9 @@ psycopg[binary]>=3.2
 psycopg-pool>=3.2
 langgraph-checkpoint-postgres>=2.0
 
+# Optional Jira integration: HTTP client, and encryption of a person's API token
+httpx>=0.27
+cryptography>=42
+
 # Configuration
 python-dotenv>=1.0

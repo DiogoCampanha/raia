@@ -256,6 +256,7 @@ class ProjectService:
             t.execute("DELETE FROM invitations WHERE email = ? OR invited_by = ?", (user.email, user.id))
             t.execute("DELETE FROM experience_ratings WHERE user_id = ?", (user.id,))
             t.execute("DELETE FROM usage_counters WHERE user_id = ?", (user.id,))
+            t.execute("DELETE FROM jira_connections WHERE user_id = ?", (user.id,))
             t.execute("DELETE FROM users WHERE id = ?", (user.id,))
 
     # -- Projects ---------------------------------------------------------------------
@@ -833,6 +834,177 @@ class ProjectService:
             return {"suggested": [], "blocked": [], "waiting": [], "capacity": 0, "unit": unit, "used": 0}
         return R.suggest(bl, sp, self._review_data(repo), repo.open_issues(), cap, unit, exclude=chosen)
 
+    # -- Jira (optional) ---------------------------------------------------------------------
+    #
+    # A person connects their own Jira Cloud account once, in Settings. The token
+    # is encrypted with RAIA_JIRA_KEY; without that key it is never stored and the
+    # caller passes it from the browser session. Tokens never reach a project's
+    # blackboard, its exports or the event log.
+
+    @staticmethod
+    def _cipher():
+        if not config.JIRA_KEY:
+            return None
+        import base64
+
+        from cryptography.fernet import Fernet
+
+        key = base64.urlsafe_b64encode(hashlib.sha256(config.JIRA_KEY.encode("utf-8")).digest())
+        return Fernet(key)
+
+    @staticmethod
+    def jira_can_store_token() -> bool:
+        return bool(config.JIRA_KEY)
+
+    def jira_connection(self, user: User) -> Dict[str, Any]:
+        """The person's Jira settings, without the token."""
+        row = self.db.one("SELECT site, email, project_key, issue_type, updated_at, token_enc FROM jira_connections "
+                          "WHERE user_id = ?", (user.id,))
+        if not row:
+            return {}
+        out = {k: row[k] for k in ("site", "email", "project_key", "issue_type", "updated_at")}
+        out["has_token"] = bool(row.get("token_enc"))
+        return out
+
+    def save_jira_connection(self, user: User, *, site: str, email: str, token: str = "",
+                             project_key: str = "", issue_type: str = "Story") -> Dict[str, Any]:
+        from . import jira as J
+
+        site = J.normalize_site(site)
+        project_key = J.check_project_key(project_key) if project_key else ""
+        email = normalize_email(email)
+        if not EMAIL_RE.match(email):
+            raise ValueError("Use the email address you sign in to Jira with.")
+        existing = self.db.one("SELECT token_enc FROM jira_connections WHERE user_id = ?", (user.id,))
+        cipher = self._cipher()
+        token_enc = (existing or {}).get("token_enc") or ""
+        if token and cipher is not None:
+            token_enc = cipher.encrypt(token.encode("utf-8")).decode("ascii")
+        self.db.execute(
+            "INSERT INTO jira_connections (user_id, site, email, token_enc, project_key, issue_type, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id) DO UPDATE SET site = excluded.site, "
+            "email = excluded.email, token_enc = excluded.token_enc, project_key = excluded.project_key, "
+            "issue_type = excluded.issue_type, updated_at = excluded.updated_at",
+            (user.id, site, email, token_enc, project_key, (issue_type or "Story").strip()[:40], utcnow()),
+        )
+        return self.jira_connection(user)
+
+    def delete_jira_connection(self, user: User) -> None:
+        self.db.execute("DELETE FROM jira_connections WHERE user_id = ?", (user.id,))
+
+    def _jira_client(self, user: User, token: str = ""):
+        from . import jira as J
+
+        row = self.db.one("SELECT site, email, token_enc FROM jira_connections WHERE user_id = ?", (user.id,))
+        if not row:
+            raise ValueError("Connect Jira first, in Settings. Jira is optional: the board works without it.")
+        if not token and row.get("token_enc"):
+            cipher = self._cipher()
+            if cipher is None:
+                raise ValueError("The stored Jira token cannot be read on this deployment; enter it again.")
+            token = cipher.decrypt(row["token_enc"].encode("ascii")).decode("utf-8")
+        if not token:
+            raise ValueError("Enter your Jira API token: this deployment does not store it.")
+        return J.JiraClient(row["site"], row["email"], token)
+
+    def jira_test(self, user: User, token: str = "") -> str:
+        client = self._jira_client(user, token)
+        try:
+            me = client.myself()
+        finally:
+            client.close()
+        return str(me.get("displayName") or me.get("emailAddress") or "your account")
+
+    def jira_csv(self, user: User, project_id: str, scope: str = "sprint", issue_type: str = "Story") -> str:
+        """A Jira-ready CSV of the open sprint (or the live backlog). Needs no connection."""
+        from . import backlog as B
+        from . import jira as J
+
+        project = self.get_project(user, project_id)
+        repo = self.repository(user, project_id, "view")
+        bl, sp = B.load(repo)
+        x = B.open_sprint(sp)
+        stories = B.in_sprint(bl, x["id"]) if (scope == "sprint" and x) else [
+            s for s in B.live(bl) if s["status"] != B.VERIFIED and not s.get("closed_in")]
+        repo.record_event("jira_csv_exported", {"user": user.id, "scope": scope, "stories": len(stories)})
+        return J.to_csv(stories, x["id"] if (scope == "sprint" and x) else "", issue_type, project.name)
+
+    def jira_boards(self, user: User, project_key: str, token: str = "") -> List[Dict[str, Any]]:
+        from . import jira as J
+
+        client = self._jira_client(user, token)
+        try:
+            return [{"id": b.get("id"), "name": b.get("name")} for b in client.boards(J.check_project_key(project_key))]
+        finally:
+            client.close()
+
+    def jira_sprints(self, user: User, board_id: int, token: str = "") -> List[Dict[str, Any]]:
+        client = self._jira_client(user, token)
+        try:
+            return [{"id": s.get("id"), "name": s.get("name"), "state": s.get("state")} for s in client.sprints(board_id)]
+        finally:
+            client.close()
+
+    def jira_push(self, user: User, project_id: str, *, project_key: str, issue_type: str = "Story",
+                  jira_sprint: Optional[int] = None, token: str = "") -> Dict[str, Any]:
+        """Send the open sprint's stories to Jira, and keep their keys on the board."""
+        from . import backlog as B
+        from . import jira as J
+
+        project = self.authorize(user, project_id, "run")
+        repo = open_repository(project_id)
+        bl, sp = B.load(repo)
+        x = B.open_sprint(sp)
+        if not x:
+            raise ValueError("Plan a sprint first: a push sends the open sprint's stories.")
+        client = self._jira_client(user, token)
+        try:
+            result = J.push(client, B.in_sprint(bl, x["id"]), project_key=project_key, issue_type=issue_type,
+                            sprint_id=x["id"], jira_sprint=jira_sprint, project_name=project.name)
+        finally:
+            client.close()
+        J.record_push(bl, result, user.label)
+        sp.setdefault("settings", {})["jira"] = {"project_key": J.check_project_key(project_key),
+                                                 "issue_type": issue_type or "Story"}
+        repo.commit_files(B.register_files(repo, bl, sp),
+                          f"raia(board): {len(result['created'])} story(ies) sent to Jira by {user.label}")
+        repo.record_event("jira_pushed", {"user": user.id, "sprint": x["id"], "created": len(result["created"]),
+                                          "updated": len(result["updated"]), "errors": len(result["errors"])})
+        self.touch(project_id)
+        return result
+
+    def jira_sync(self, user: User, project_id: str, token: str = "") -> Dict[str, Any]:
+        """Read the open sprint's status back from Jira. Never overwrites a manual change; never verifies."""
+        from . import backlog as B
+        from . import jira as J
+
+        self.authorize(user, project_id, "review")
+        repo = open_repository(project_id)
+        bl, sp = B.load(repo)
+        x = B.open_sprint(sp)
+        if not x:
+            raise ValueError("No sprint is open to sync.")
+        client = self._jira_client(user, token)
+        try:
+            statuses = J.fetch_status(client, B.in_sprint(bl, x["id"]))
+        finally:
+            client.close()
+        result = J.apply_sync(bl, sp, statuses, user.label)
+        repo.commit_files(B.register_files(repo, bl, sp), f"raia(board): synced from Jira by {user.label}")
+        repo.record_event("jira_synced", {"user": user.id, "sprint": x["id"], "done": result["done"],
+                                          "disagreements": result["disagreements"],
+                                          "not_found": result["not_found"]})
+        self.touch(project_id)
+        return result
+
+    def jira_resolve(self, user: User, project_id: str, story_id: str, keep: str) -> Dict[str, Any]:
+        from . import jira as J
+
+        return self._board_write(user, project_id, "review",
+                                 lambda bl, sp: J.resolve(bl, sp, story_id, keep, user.label),
+                                 f"{story_id} Jira disagreement settled", "jira_disagreement_settled",
+                                 {"story": story_id, "kept": keep})
+
     # -- Tester assessment -------------------------------------------------------------------
 
     def submit_rating(self, user: User, payload: Dict[str, Any]) -> None:
@@ -901,6 +1073,7 @@ class ProjectService:
             "project_memberships": [dict(m) for m in memberships],
             "invitations": [dict(i) for i in invitations],
             "assessments": self._ratings(user),
+            "jira_connection": {k: v for k, v in self.jira_connection(user).items() if k != "has_token"},
             "note": "Project content (answers, drafts, artifacts) is exported per project from "
                     "the project page, since it belongs to every member of that project.",
         }

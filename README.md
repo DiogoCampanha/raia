@@ -274,6 +274,7 @@ only when its file really is the official wording.
 | `RAIA_AUTH` | `google` if `[auth]` is set, else `dev` | a PostgreSQL deployment never falls back to `dev` |
 | `RAIA_ADMIN_EMAILS` | — | may download the pseudonymized research dataset |
 | `RAIA_PSEUDONYM_KEY` | — | keyed participant codes, stable across exports |
+| `RAIA_JIRA_KEY` | — | optional: encrypts a person's Jira API token; without it the token is kept for the session only |
 | `RAIA_CONTACT_EMAIL` | — | contact shown on the public Privacy & terms page (`/privacy`) |
 | `RAIA_MAX_RUNS_PER_DAY` | `60` | model calls per person per UTC day; `0` = unlimited |
 | `RAIA_CORPUS_DIR` / `RAIA_CHROMA_DIR` | `./corpus` / `./.chroma` | |

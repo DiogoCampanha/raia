@@ -158,7 +158,7 @@ CONTACT_EMAIL: str = os.getenv("RAIA_CONTACT_EMAIL", "")
 #: Effective date of the current Privacy Policy and User Agreement
 #: (docs/legal/PRIVACY_AND_TERMS.md). Anyone who accepted an earlier version is
 #: asked to accept again on their next visit.
-LEGAL_EFFECTIVE: str = "2026-09-17T00:00:00+00:00"
+LEGAL_EFFECTIVE: str = "2026-09-27T00:00:00+00:00"
 
 #: Model calls (runs and regenerations) one person may trigger per UTC day.
 #: Protects the deployment's API key from a runaway session. 0 disables it.
@@ -168,6 +168,11 @@ MAX_RUNS_PER_DAY: int = int(os.getenv("RAIA_MAX_RUNS_PER_DAY", "60"))
 #: pseudonyms are still one-way, but a fixed secret keeps them stable across
 #: exports and prevents anyone re-deriving them from a known email address.
 PSEUDONYM_KEY: str = os.getenv("RAIA_PSEUDONYM_KEY", "")
+
+# Optional Jira integration. A person's Jira API token is stored encrypted with
+# this key; without it the token lives only in the browser session and is asked
+# for again next time. Jira is never required: the board works without it.
+JIRA_KEY: str = os.getenv("RAIA_JIRA_KEY", "")
 
 # ---------------------------------------------------------------------------
 # Analysis thresholds

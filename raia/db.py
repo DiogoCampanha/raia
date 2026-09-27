@@ -117,6 +117,16 @@ SCHEMA: List[str] = [
         kind TEXT NOT NULL,
         payload TEXT NOT NULL
     )""",
+    # -- optional integrations (per person; never on a project's blackboard) --
+    """CREATE TABLE IF NOT EXISTS jira_connections (
+        user_id TEXT PRIMARY KEY,
+        site TEXT NOT NULL,
+        email TEXT NOT NULL,
+        token_enc TEXT NOT NULL,
+        project_key TEXT,
+        issue_type TEXT,
+        updated_at TEXT NOT NULL
+    )""",
     "CREATE INDEX IF NOT EXISTS ix_members_user ON project_members (user_id)",
     "CREATE INDEX IF NOT EXISTS ix_invites_email ON invitations (email, status)",
     "CREATE INDEX IF NOT EXISTS ix_events_project ON project_events (project_id, at)",

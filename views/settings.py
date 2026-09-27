@@ -36,6 +36,52 @@ with st.container(border=True):
                 "terms of use.")
     routes.link(routes.PRIVACY, "Read the Privacy Policy and User Agreement", icon=I.PRIVACY)
 
+st.subheader("Jira connection (optional)", anchor=False)
+with st.container(border=True):
+    st.markdown("RAIA's board runs sprints on its own. If your team plans in Jira, connect your Jira Cloud "
+                "account to push a sprint in one click and read its status back. Nothing else needs it.")
+    conn = svc.jira_connection(user)
+    if conn:
+        st.caption(f"Connected to **{conn['site']}** as {conn['email']}"
+                   + (f" · default project {conn['project_key']}" if conn.get("project_key") else "")
+                   + (" · token stored encrypted" if conn.get("has_token") else " · token asked for each session"))
+    with st.form("jira_connection", border=False):
+        c1, c2 = st.columns(2)
+        site = c1.text_input("Jira site", value=conn.get("site", ""), placeholder="https://your-team.atlassian.net")
+        email = c2.text_input("Your Jira email", value=conn.get("email", ""))
+        token = st.text_input(
+            "API token" + (" (leave empty to keep the stored one)" if conn.get("has_token") else ""),
+            type="password",
+            help="Create one at id.atlassian.com > Security > API tokens. It acts as you in Jira.")
+        c3, c4 = st.columns(2)
+        pkey_ = c3.text_input("Default project key (optional)", value=conn.get("project_key") or "", placeholder="RAIA")
+        itype = c4.text_input("Issue type", value=conn.get("issue_type") or "Story")
+        if not svc.jira_can_store_token():
+            st.caption("This deployment does not store tokens: you will be asked for it when you push or sync.")
+        if st.form_submit_button("Save connection", icon=I.SAVE):
+            try:
+                svc.save_jira_connection(user, site=site, email=email, token=token, project_key=pkey_,
+                                         issue_type=itype)
+                if token and not svc.jira_can_store_token():
+                    st.session_state["jira_session_token"] = token
+                st.session_state["flash"] = "Jira connection saved."
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc), icon=I.WARN)
+    if conn:
+        row = st.container(horizontal=True)
+        if row.button("Test the connection", icon=":material/wifi_tethering:", key="jira_test"):
+            try:
+                who = svc.jira_test(user, token=st.session_state.get("jira_session_token", ""))
+                st.success(f"Connected: Jira knows you as {who}.", icon=I.OK)
+            except Exception as exc:  # noqa: BLE001 - shown to the person
+                st.error(str(exc), icon=I.WARN)
+        if row.button("Disconnect Jira", icon=I.DISCARD, key="jira_delete"):
+            svc.delete_jira_connection(user)
+            st.session_state.pop("jira_session_token", None)
+            st.session_state["flash"] = "Jira disconnected. The stored token was deleted."
+            st.rerun()
+
 st.subheader("Your data", anchor=False)
 with st.container(border=True):
     st.markdown("Download everything RAIA holds about you: account, memberships, invitations "

@@ -476,6 +476,10 @@ def main() -> None:
     ok(at.run(), "the suggested stories go into the sprint")
     button(at, f"{pid2}::start::{pid2}").click()
     ok(at.run(), "the sprint starts")
+    check("Jira (optional)" in str(at._tree),
+          "the Jira actions are there, marked optional, beside the manual controls")
+    check(any("Jira CSV" in str(d.proto.label) for d in at.get("download_button")),
+          "…a Jira-ready CSV can be downloaded with no setup")
     ticks = [c for c in at.checkbox if c.key and f"{pid2}::tick::" in c.key]
     check(len(ticks) > 0, "every sprint story has a Done checkbox")
     ticks[0].check()
@@ -584,6 +588,7 @@ def main() -> None:
     check("Download my data" in "\n".join(str(d.proto.label) for d in at.get("download_button")),
           "personal data can be downloaded")
     check("Delete my account" in text(at), "the account can be deleted")
+    check("Jira connection (optional)" in text(at), "Jira can be connected here, and is optional")
     check(not has_button(at, "logout"), "Settings carries no sign-out button of its own")
     from raia.ui import routes as _routes
 

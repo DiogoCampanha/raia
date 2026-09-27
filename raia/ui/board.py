@@ -309,6 +309,10 @@ def _sprint_row(proj, svc, user, x, s) -> None:
         c1.caption(" · ".join(m for m in meta if m))
         if s.get("needs_review_reason"):
             c1.caption(f"{I.WARN} {s['needs_review_reason']}")
+        with c1:
+            from .jira_panel import disagreement
+
+            disagreement(proj, user, svc, s)
         with c2:
             st.badge(B.STATUS_LABELS[s["status"]], color=STATUS_COLOR.get(s["status"], "gray"))
             jira = s.get("jira") or {}
