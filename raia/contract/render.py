@@ -55,8 +55,13 @@ def layout(agent_key: str) -> List[Tuple[str, List[str]]]:
         return [("", ["Summary", "Refined Stories", "Stories Without Ethical Impact"]),
                 (WHY, ["Findings", "Action Plan", "Open Issues", "Sprint Ethics Log"]),
                 (TRACE, list(COMMON_TAIL))]
+    if agent_key == "story_generate":
+        return [("", ["Summary", "Generated Stories", "Requirements Without a Story"]),
+                (WHY, ["Findings", "Action Plan", "Open Issues"]),
+                (TRACE, list(COMMON_TAIL))]
     if agent_key == "auditor":
-        return [("", ["Audit Opinion", "Strengths", "Risks", "Opportunities", "Pathway Forward"]),
+        return [("", ["Audit Opinion", "Where the Project Stands", "Progress Across Sprints", "Is the Backlog Enough",
+                      "What Comes Next", "Strengths", "Risks", "Opportunities", "Pathway Forward"]),
                 (APPENDICES, ["Open Issues", "Verdict Register", "Accountability Documentation"]),
                 (TRACE, list(COMMON_TAIL))]
     return [("", COMMON_HEAD[:3]), (DEEP_DIVE, ["Findings"] + AGENT_SECTIONS.get(agent_key, [])),
@@ -190,6 +195,8 @@ def _story_block(v: Dict[str, Any]) -> str:
     out = [f"### {v['id']}" + (f" — {v['title']}" if v.get("title") else "")]
     if v.get("description"):
         out += ["", v["description"]]
+    if v.get("evr_ids"):
+        out += ["", "_Implements:_ " + ", ".join(v["evr_ids"])]
     out += ["", "Acceptance criteria:", ""]
     for l in v["lines"]:
         if l["kind"] == "kept":
@@ -229,6 +236,11 @@ def _audit_sections(dg: Dict[str, Any]) -> Dict[str, str]:
     if dg.get("signature"):
         head += ["", D.signature_text(dg["signature"])]
     out["Audit Opinion"] = "\n".join(head).strip()
+
+    for sec in rp.get("project") or []:
+        out[sec["md_title"]] = f"> **Conclusion.** {sec['conclusion']}\n\n{_blocks(sec['blocks'])}".rstrip()
+    for title in ("Where the Project Stands", "Progress Across Sprints", "Is the Backlog Enough", "What Comes Next"):
+        out.setdefault(title, "_Not part of this audit: the project had no backlog yet._")
 
     if rp["strengths"]:
         out["Strengths"] = "\n".join(
@@ -308,6 +320,13 @@ def markdown_from_digest(dg: Dict[str, Any]) -> Dict[str, str]:
     for sec in dg["deep"]:
         sections[sec["md_title"]] = f"> **Conclusion.** {sec['conclusion']}\n\n{_blocks(sec['blocks'])}".rstrip()
 
+    if dg["agent_key"] == "story_generate":
+        n = len(dg["stories"])
+        sections["Summary"] = "\n".join([f"**{dg['status']['label']}** — {dg['headline']}".rstrip(" —"), "",
+                                          D.plural(n, "story", "stories") + " generated."]
+                                         + (["", dg["summary"]] if dg["summary"] else [])
+                                         + (["", D.signature_text(dg["signature"])] if dg.get("signature") else []))
+        sections["Generated Stories"] = "\n\n".join(_story_block(v) for v in dg["stories"]) or "_No stories._"
     if dg["agent_key"] == "story_refiner":
         counts = D.story_counts_line(dg["story_counts"]) if dg["story_counts"].get("total") else "No stories."
         sections["Summary"] = "\n".join([f"**{dg['status']['label']}** — {dg['headline']}".rstrip(" —"), "",

@@ -1,7 +1,86 @@
 {
-  "$id": "raia-record/1.2/auditor",
-  "title": "AuditorRecord",
+  "$id": "raia-record/1.2/story_generate",
+  "title": "StoryGenerateRecord",
   "$defs": {
+    "AcceptanceCriterion": {
+      "properties": {
+        "id": {
+          "description": "AC-<story id>-<n>, e.g. AC-S1-1.",
+          "title": "Id",
+          "type": "string"
+        },
+        "ms_goal": {
+          "description": "The Microsoft RAI Standard v2 goal it serves.",
+          "enum": [
+            "A1",
+            "A2",
+            "A3",
+            "A4",
+            "A5",
+            "T1",
+            "T2",
+            "T3",
+            "F1",
+            "F2",
+            "F3",
+            "RS1",
+            "RS2",
+            "RS3",
+            "PS1",
+            "PS2",
+            "I1"
+          ],
+          "title": "Ms Goal",
+          "type": "string"
+        },
+        "stakeholder_group": {
+          "description": "The affected stakeholder group.",
+          "title": "Stakeholder Group",
+          "type": "string"
+        },
+        "condition": {
+          "description": "Measurable condition with its threshold, written as an acceptance criterion.",
+          "maxLength": 250,
+          "title": "Condition",
+          "type": "string"
+        },
+        "evidence_artifact": {
+          "description": "The artifact that demonstrates compliance.",
+          "title": "Evidence Artifact",
+          "type": "string"
+        },
+        "owner_role": {
+          "enum": [
+            "product",
+            "engineering",
+            "data_science",
+            "legal_compliance",
+            "operations",
+            "leadership"
+          ],
+          "title": "Owner Role",
+          "type": "string"
+        },
+        "evr_ids": {
+          "description": "Approved EVR ids this criterion implements.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Evr Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "ms_goal",
+        "stakeholder_group",
+        "condition",
+        "evidence_artifact",
+        "owner_role"
+      ],
+      "title": "AcceptanceCriterion",
+      "type": "object"
+    },
     "Action": {
       "properties": {
         "id": {
@@ -131,275 +210,6 @@
       "title": "Action",
       "type": "object"
     },
-    "AuditItem": {
-      "properties": {
-        "item_id": {
-          "description": "A computed audit item id, exactly.",
-          "title": "Item Id",
-          "type": "string"
-        },
-        "verdict": {
-          "enum": [
-            "satisfied",
-            "partially_satisfied",
-            "at_risk",
-            "not_verified"
-          ],
-          "title": "Verdict",
-          "type": "string"
-        },
-        "evidence": {
-          "description": "Quoted from the sprint outcomes or an upstream artifact; empty if none.",
-          "maxLength": 350,
-          "title": "Evidence",
-          "type": "string"
-        },
-        "evidence_needed": {
-          "default": "",
-          "description": "What would verify it, when not satisfied.",
-          "maxLength": 250,
-          "title": "Evidence Needed",
-          "type": "string"
-        },
-        "downgrade_reason": {
-          "default": "",
-          "maxLength": 250,
-          "title": "Downgrade Reason",
-          "type": "string"
-        },
-        "citations": {
-          "description": "Citation tags copied exactly from the retrieved excerpts, e.g. \"[Source: ... | authority: legal]\". Never invent one.",
-          "items": {
-            "type": "string"
-          },
-          "title": "Citations",
-          "type": "array"
-        },
-        "computed_verdict": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "computed": true,
-          "default": null,
-          "title": "Computed Verdict"
-        }
-      },
-      "required": [
-        "item_id",
-        "verdict",
-        "evidence"
-      ],
-      "title": "AuditItem",
-      "type": "object"
-    },
-    "AuditReportExt": {
-      "properties": {
-        "items": {
-          "description": "One entry per computed audit item.",
-          "items": {
-            "$ref": "#/$defs/AuditItem"
-          },
-          "title": "Items",
-          "type": "array"
-        },
-        "accountability_log": {
-          "description": "Who decided what, from the upstream approval headers (NIST AI RMF GOVERN 2).",
-          "items": {
-            "$ref": "#/$defs/DecisionEntry"
-          },
-          "title": "Accountability Log",
-          "type": "array"
-        },
-        "upcoming_checkpoints": {
-          "description": "Ethical checkpoints the planned work will hit.",
-          "items": {
-            "$ref": "#/$defs/Checkpoint"
-          },
-          "title": "Upcoming Checkpoints",
-          "type": "array"
-        },
-        "strengths": {
-          "description": "Up to three strengths, each resting on verified evidence or an approval on record.",
-          "items": {
-            "$ref": "#/$defs/Strength"
-          },
-          "maxItems": 3,
-          "title": "Strengths",
-          "type": "array"
-        },
-        "opportunities": {
-          "description": "Up to three opportunities for improvement.",
-          "items": {
-            "$ref": "#/$defs/Opportunity"
-          },
-          "maxItems": 3,
-          "title": "Opportunities",
-          "type": "array"
-        },
-        "pathway_summary": {
-          "default": "",
-          "description": "One sentence: the way forward, in the order the team should take it.",
-          "maxLength": 250,
-          "title": "Pathway Summary",
-          "type": "string"
-        },
-        "backlog_assessment": {
-          "description": "One entry per requirement the backlog covers (computed list): is it covered well enough? You may say weakly_covered or not_covered where code said covered, never the reverse.",
-          "items": {
-            "$ref": "#/$defs/BacklogJudgement"
-          },
-          "title": "Backlog Assessment",
-          "type": "array"
-        },
-        "trajectory_comment": {
-          "default": "",
-          "description": "One or two sentences on the progress across sprints; the trend itself is computed by code.",
-          "maxLength": 300,
-          "title": "Trajectory Comment",
-          "type": "string"
-        },
-        "next_focus": {
-          "default": "",
-          "description": "One sentence: what the next sprint should tackle first, and why.",
-          "maxLength": 250,
-          "title": "Next Focus",
-          "type": "string"
-        },
-        "opinion": {
-          "anyOf": [
-            {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "computed": true,
-          "default": null,
-          "title": "Opinion"
-        },
-        "project_state": {
-          "anyOf": [
-            {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "computed": true,
-          "default": null,
-          "title": "Project State"
-        },
-        "progress": {
-          "anyOf": [
-            {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "computed": true,
-          "default": null,
-          "title": "Progress"
-        }
-      },
-      "title": "AuditReportExt",
-      "type": "object"
-    },
-    "BacklogJudgement": {
-      "properties": {
-        "ref": {
-          "description": "A requirement id from the computed coverage list, exactly.",
-          "title": "Ref",
-          "type": "string"
-        },
-        "judgement": {
-          "enum": [
-            "covered",
-            "weakly_covered",
-            "not_covered"
-          ],
-          "title": "Judgement",
-          "type": "string"
-        },
-        "reason": {
-          "default": "",
-          "description": "One line: why, naming the stories or criteria.",
-          "maxLength": 250,
-          "title": "Reason",
-          "type": "string"
-        },
-        "computed": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "computed": true,
-          "default": null,
-          "title": "Computed"
-        }
-      },
-      "required": [
-        "ref",
-        "judgement"
-      ],
-      "title": "BacklogJudgement",
-      "type": "object"
-    },
-    "Checkpoint": {
-      "properties": {
-        "checkpoint": {
-          "maxLength": 200,
-          "title": "Checkpoint",
-          "type": "string"
-        },
-        "triggered_by": {
-          "description": "The planned epic or event that reaches it.",
-          "title": "Triggered By",
-          "type": "string"
-        },
-        "item_ids": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Item Ids",
-          "type": "array"
-        },
-        "lifecycle_stage": {
-          "enum": [
-            "plan_and_design",
-            "collect_and_process_data",
-            "build_and_use_model",
-            "verify_and_validate",
-            "deploy_and_use",
-            "operate_and_monitor"
-          ],
-          "title": "Lifecycle Stage",
-          "type": "string"
-        }
-      },
-      "required": [
-        "checkpoint",
-        "triggered_by",
-        "lifecycle_stage"
-      ],
-      "title": "Checkpoint",
-      "type": "object"
-    },
     "CoverageItem": {
       "properties": {
         "key": {
@@ -428,37 +238,6 @@
         "justification"
       ],
       "title": "CoverageItem",
-      "type": "object"
-    },
-    "DecisionEntry": {
-      "properties": {
-        "decision": {
-          "maxLength": 200,
-          "title": "Decision",
-          "type": "string"
-        },
-        "decided_by": {
-          "title": "Decided By",
-          "type": "string"
-        },
-        "artifact": {
-          "description": "The approved artifact that records it.",
-          "title": "Artifact",
-          "type": "string"
-        },
-        "reference": {
-          "default": "",
-          "description": "Commit, date or approval header it was read from.",
-          "title": "Reference",
-          "type": "string"
-        }
-      },
-      "required": [
-        "decision",
-        "decided_by",
-        "artifact"
-      ],
-      "title": "DecisionEntry",
       "type": "object"
     },
     "Finding": {
@@ -638,6 +417,101 @@
       "title": "Finding",
       "type": "object"
     },
+    "GeneratedStory": {
+      "properties": {
+        "story_id": {
+          "description": "G1, G2, … in order. Code gives the backlog id (RAI-n) at approval.",
+          "title": "Story Id",
+          "type": "string"
+        },
+        "title": {
+          "description": "The story in a few words.",
+          "maxLength": 120,
+          "title": "Title",
+          "type": "string"
+        },
+        "description": {
+          "description": "The story as a team schedules it: \"As a <role>, I want <capability>, so that <benefit>.\"",
+          "maxLength": 400,
+          "title": "Description",
+          "type": "string"
+        },
+        "evr_ids": {
+          "description": "The requirement id(s) in scope that this story implements (at least one).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Evr Ids",
+          "type": "array"
+        },
+        "touches": {
+          "description": "What the story touches; it selects the cards allowed.",
+          "items": {
+            "enum": [
+              "scoring",
+              "automation",
+              "data_collection",
+              "personalization",
+              "generation",
+              "explanation",
+              "analytics",
+              "integration",
+              "access_control"
+            ],
+            "type": "string"
+          },
+          "title": "Touches",
+          "type": "array"
+        },
+        "eccola_cards": {
+          "description": "ECCOLA card ids its touches select that make it relevant.",
+          "items": {
+            "enum": [
+              "#0",
+              "#1",
+              "#2",
+              "#3",
+              "#4",
+              "#5",
+              "#6",
+              "#7",
+              "#8",
+              "#9",
+              "#10",
+              "#11",
+              "#12",
+              "#13",
+              "#14",
+              "#15",
+              "#16",
+              "#17",
+              "#18",
+              "#19",
+              "#20"
+            ],
+            "type": "string"
+          },
+          "title": "Eccola Cards",
+          "type": "array"
+        },
+        "criteria": {
+          "description": "Verifiable ethical acceptance criteria, labelled AC-<story id>-<n> (e.g. AC-G1-1).",
+          "items": {
+            "$ref": "#/$defs/AcceptanceCriterion"
+          },
+          "title": "Criteria",
+          "type": "array"
+        }
+      },
+      "required": [
+        "story_id",
+        "title",
+        "description",
+        "evr_ids"
+      ],
+      "title": "GeneratedStory",
+      "type": "object"
+    },
     "OpenIssue": {
       "properties": {
         "id": {
@@ -721,64 +595,48 @@
       "title": "OpenIssue",
       "type": "object"
     },
-    "Opportunity": {
+    "RaiBacklogExt": {
       "properties": {
-        "statement": {
-          "description": "One sentence: an improvement beyond closing the gaps — something that would make the next audits cheaper or the controls stronger.",
-          "maxLength": 200,
-          "title": "Statement",
-          "type": "string"
-        },
-        "refs": {
-          "description": "Item ids or principle keys it concerns.",
+        "stories": {
+          "description": "The generated RAI stories. Every requirement in scope is covered by at least one story, or listed in not_story.",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/GeneratedStory"
           },
-          "title": "Refs",
+          "maxItems": 30,
+          "title": "Stories",
           "type": "array"
         },
-        "benefit": {
-          "default": "",
-          "description": "What it would change, in one line.",
-          "maxLength": 200,
-          "title": "Benefit",
-          "type": "string"
+        "not_story": {
+          "description": "Requirements in scope that need no story, each with its reason.",
+          "items": {
+            "$ref": "#/$defs/RequirementWithoutStory"
+          },
+          "title": "Not Story",
+          "type": "array"
         }
       },
-      "required": [
-        "statement"
-      ],
-      "title": "Opportunity",
+      "title": "RaiBacklogExt",
       "type": "object"
     },
-    "Strength": {
+    "RequirementWithoutStory": {
       "properties": {
-        "statement": {
-          "description": "One sentence: what is working, specific to this product.",
-          "maxLength": 200,
-          "title": "Statement",
+        "evr_id": {
+          "description": "A requirement id in scope, exactly.",
+          "title": "Evr Id",
           "type": "string"
         },
-        "refs": {
-          "description": "What shows it: ids of items whose verdict is satisfied or partially_satisfied, or the key of an approved upstream artifact (e.g. requirements_review) whose approval record shows it. A strength resting on anything else is removed by code.",
-          "items": {
-            "type": "string"
-          },
-          "title": "Refs",
-          "type": "array"
-        },
-        "evidence": {
-          "default": "",
-          "description": "The evidence, quoted or named in one line.",
-          "maxLength": 200,
-          "title": "Evidence",
+        "reason": {
+          "description": "One line: why no story implements it (e.g. a policy decision).",
+          "maxLength": 250,
+          "title": "Reason",
           "type": "string"
         }
       },
       "required": [
-        "statement"
+        "evr_id",
+        "reason"
       ],
-      "title": "Strength",
+      "title": "RequirementWithoutStory",
       "type": "object"
     }
   },
@@ -862,7 +720,7 @@
       "type": "array"
     },
     "extension": {
-      "$ref": "#/$defs/AuditReportExt"
+      "$ref": "#/$defs/RaiBacklogExt"
     }
   },
   "required": [

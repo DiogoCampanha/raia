@@ -387,6 +387,7 @@ def _story_card(v: Dict[str, Any]) -> str:
         f'<span class="rv-story-title">{esc(v["title"] or D.first_sentence(v["description"]) or v["id"])}</span>'
         + "".join(tags) + "</div>"
         + (f'<p class="rv-story-desc">{esc(v["description"])}</p>' if v["description"] else "")
+        + (f'<div class="rv-muted">Implements {esc(", ".join(v.get("evr_ids") or []))}</div>' if v.get("evr_ids") else "")
         + '<div class="rv-story-lbl">Acceptance criteria</div>'
         + '<ul class="rv-crits">' + "".join(_criterion(l) for l in v["lines"]) + "</ul>"
         + (f'<div class="rv-story-why"><b>Why</b> {esc(v["why"])}</div>' if v["why"] else "")
@@ -437,8 +438,12 @@ def _story_layout(dg: Dict[str, Any], key: str, nested: bool) -> None:
     st.html(_counts_strip(dg))
     changed = [v for v in dg["stories"] if v["changed"]]
     plain = [v for v in dg["stories"] if not v["changed"]]
-    st.html('<div class="rv-h"><h4>Refined stories</h4><span class="rv-muted">Changes marked; copy each '
-            'new version back to your tracker</span></div>')
+    if dg["agent_key"] == "story_generate":
+        st.html('<div class="rv-h"><h4>Generated stories</h4><span class="rv-muted">They enter the backlog as '
+                'RAI-n when approved; each implements the requirements it names</span></div>')
+    else:
+        st.html('<div class="rv-h"><h4>Refined stories</h4><span class="rv-muted">Changes marked; copy each '
+                'new version back to your tracker</span></div>')
     if not changed:
         st.html('<div class="rv-empty">No story needed changes.</div>')
     all_choices: Dict[str, Dict[str, str]] = {}
@@ -483,6 +488,26 @@ def _sec(num: int, title: str, hint: str = "") -> str:
             + (f'<span class="rv-muted">{esc(hint)}</span>' if hint else "") + "</div>")
 
 
+def _blocks_html(blocks: List[Dict[str, Any]]) -> str:
+    """Deep-dive blocks as HTML, for sections drawn inside the report."""
+    out = []
+    for b in blocks:
+        t = b.get("type")
+        if t == "text" and (b.get("text") or "").strip():
+            out.append(f'<div class="rv-text"><span class="lbl">{esc(b["label"])}</span>{esc(b["text"])}</div>')
+        elif t == "table":
+            if b["rows"]:
+                head = "".join(f"<th>{esc(h)}</th>" for h in b["headers"])
+                body = "".join("<tr>" + "".join(f"<td>{esc(D.label(c) if c in (None, '') else c)}</td>" for c in r)
+                               + "</tr>" for r in b["rows"])
+                out.append(f'<table class="rv-table"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>')
+            else:
+                out.append('<div class="rv-empty">None.</div>')
+        elif t == "note":
+            out.append(f'<p class="rv-muted">{esc(b["text"])}</p>')
+    return "".join(out)
+
+
 def _report_html(dg: Dict[str, Any]) -> str:
     rp = dg["report"]
     op = rp["opinion"]
@@ -506,8 +531,18 @@ def _report_html(dg: Dict[str, Any]) -> str:
                + "</div></div>")
     out.append(_signature(dg))
 
-    # 2. Strengths
-    out.append(_sec(2, "Strengths", "Each rests on verified evidence or an approval on record"))
+    # 2-5. The project as a whole (when it has a backlog)
+    n = 1
+    for sec in rp.get("project") or []:
+        n += 1
+        out.append(_sec(n, sec["title"]))
+        out.append(f'<div class="rv-conclusion tone-{esc(sec.get("tone", "neutral"))}"><b>Conclusion</b>'
+                   f'{esc(sec["conclusion"])}</div>')
+        out.append(_blocks_html(sec["blocks"]))
+
+    # Strengths
+    n += 1
+    out.append(_sec(n, "Strengths", "Each rests on verified evidence or an approval on record"))
     if rp["strengths"]:
         out.append('<ul class="rv-points ok">' + "".join(
             f'<li><span class="raia-icon" aria-hidden="true">check_circle</span><div><b>{esc(x["statement"])}</b>'
@@ -519,8 +554,9 @@ def _report_html(dg: Dict[str, Any]) -> str:
                                                 "approval on record." if rp["has_strength_field"]
                                                 else "Not assessed in this record version.") + "</div>")
 
-    # 3. Risks
-    out.append(_sec(3, "Risks", "What the audit found, and what to do about it"))
+    # Risks
+    n += 1
+    out.append(_sec(n, "Risks", "What the audit found, and what to do about it"))
     if rp["risks"]:
         cards = []
         for r in rp["risks"]:
@@ -544,8 +580,9 @@ def _report_html(dg: Dict[str, Any]) -> str:
     else:
         out.append('<div class="rv-empty">No risks were identified.</div>')
 
-    # 4. Opportunities
-    out.append(_sec(4, "Opportunities", "Improvements beyond closing the gaps"))
+    # Opportunities
+    n += 1
+    out.append(_sec(n, "Opportunities", "Improvements beyond closing the gaps"))
     if rp["opportunities"]:
         out.append('<ul class="rv-points idea">' + "".join(
             f'<li><span class="raia-icon" aria-hidden="true">lightbulb</span><div><b>{esc(x["statement"])}</b>'
@@ -558,7 +595,8 @@ def _report_html(dg: Dict[str, Any]) -> str:
 
     # 5. Pathway
     pw = rp["pathway"]
-    out.append(_sec(5, "Pathway forward", "In the order to take it"))
+    n += 1
+    out.append(_sec(n, "Pathway forward", "In the order to take it"))
     if pw["summary"]:
         out.append(f'<p class="rv-path-sum">{esc(pw["summary"])}</p>')
     if pw["phases"]:
@@ -636,7 +674,7 @@ def record_view(agent_key: str, record: Dict[str, Any], computed_data: Optional[
         st.html(f'<div class="rv-notice">{esc(n)}</div>')
     # A reply that could not be read as a record has no stories and no report to
     # lead with: it is shown in the shared layout, with the notice above.
-    if agent_key == "story_refiner" and not record.get("schema_errors"):
+    if agent_key in D.STORY_KEYS and not record.get("schema_errors"):
         _story_layout(dg, key, nested)
         return
     if agent_key == "auditor" and not record.get("schema_errors"):

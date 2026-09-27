@@ -51,6 +51,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import vocab as V
 
+#: Records that lead with their stories: the Refiner's two modes.
+STORY_KEYS = ("story_refiner", "story_generate")
+
 #: Colour tones the views understand. Priority tones double as severity tones.
 TONES = ("critical", "high", "medium", "low", "ok", "decision", "neutral")
 
@@ -423,6 +426,8 @@ def story_views(record: Dict[str, Any], data: Dict[str, Any]) -> List[Dict[str, 
     off the record and the stories as the engine numbered them.
     """
     given = {s.get("id"): s for s in data.get("stories") or []}
+    generated = (record.get("meta") or {}).get("agent_key") == "story_generate" or not given and any(
+        "title" in e for e in (record.get("extension") or {}).get("stories") or [])
     decision_of: Dict[str, str] = {}
     for i in record.get("open_issues") or []:
         for link in i.get("links") or []:
@@ -430,7 +435,10 @@ def story_views(record: Dict[str, Any], data: Dict[str, Any]) -> List[Dict[str, 
     views = []
     for pos, entry in enumerate((record.get("extension") or {}).get("stories") or []):
         sid = str(entry.get("story_id") or "")
-        src = given.get(sid) or {}
+        # A generated story carries its own title and description; it has no
+        # criteria of the team's to keep.
+        src = ({"title": entry.get("title"), "description": entry.get("description")} if generated
+               else given.get(sid) or {})
         conflicts = {str(c.get("criterion_id")): c for c in entry.get("conflicts") or []}
         lines: List[Dict[str, Any]] = []
         for c in src.get("criteria") or []:
@@ -469,6 +477,7 @@ def story_views(record: Dict[str, Any], data: Dict[str, Any]) -> List[Dict[str, 
             "why": first_sentence(entry.get("card_discussion")),
             "cards": [(str(c), V.ECCOLA_CARDS.get(c, "")) for c in entry.get("eccola_cards") or []],
             "no_impact_reason": str(entry.get("no_impact_reason") or "").strip(),
+            "evr_ids": [str(x) for x in entry.get("evr_ids") or []],
             "tone": "high" if n_conf else ("ok" if n_new else "neutral"),
             "_pos": pos,
         })
@@ -491,6 +500,8 @@ def story_text(view: Dict[str, Any], choices: Optional[Dict[str, str]] = None) -
     out = [head]
     if view.get("description"):
         out.append(view["description"])
+    if view.get("evr_ids"):
+        out.append("Implements: " + ", ".join(view["evr_ids"]))
     out += ["", "Acceptance criteria:"]
     for l in view["lines"]:
         if l["kind"] == "kept":
@@ -550,6 +561,29 @@ def _stories(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, Any]):
     return sections, kpi
 
 
+def _generated(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, Any]):
+    """The generate mode's own sections: requirements left without a story, and why."""
+    none = ext.get("not_story") or []
+    left = data.get("left_out") or []
+    views = story_views(record, data)
+    sections = [
+        {"key": "not_story", "title": "Requirements without a story", "md_title": "Requirements Without a Story",
+         "conclusion": (f"{plural(len(none), 'requirement')} in scope need no story."
+                        if none else "Every requirement in scope has a story.")
+                       + (f" {plural(len(left), 'more requirement')} without a story wait for a later run."
+                          if left else ""),
+         "blocks": [{"type": "table", "headers": ["Requirement", "Why no story is needed"],
+                     "rows": [[n.get("evr_id"), n.get("reason")] for n in none]}]
+                   + ([{"type": "note", "text": "Waiting for a later run: " + ", ".join(left[:20])
+                        + (" …" if len(left) > 20 else "")}] if left else [])},
+    ]
+    kpi = {"label": "Stories generated", "value": len(views),
+           "hint": plural(sum(v["n_new"] for v in views), "criterion", "criteria")
+                   + f", {plural(len(data.get('scope') or []), 'requirement')} in scope",
+           "tone": "neutral"}
+    return sections, kpi
+
+
 VERDICT_TONE = {"satisfied": "ok", "partially_satisfied": "medium", "at_risk": "high", "not_verified": "critical"}
 
 
@@ -602,6 +636,98 @@ PATHWAY_PHASES = (
 )
 
 
+TREND_LABELS = {"improving": "Improving", "flat": "Flat", "declining": "Declining",
+                "first_sprint": "First sprint on record", "none": "No sprint closed yet"}
+TREND_TONE = {"improving": "ok", "flat": "medium", "declining": "high"}
+JUDGEMENT_LABELS = {"covered": "Covered", "weakly_covered": "Weakly covered", "not_covered": "Not covered"}
+REQ_STATE_LABELS = {"no_story": "No story", "planned": "Planned", "in_sprint": "In sprint",
+                    "delivered": "Delivered, not verified", "verified": "Verified", "at_risk": "At risk"}
+#: Rows a project section shows before "and n more" — lists start short.
+SHORT_ROWS = 10
+
+
+def _short(rows: List[List[Any]], what: str) -> List[Dict[str, Any]]:
+    extra = len(rows) - SHORT_ROWS
+    blocks: List[Dict[str, Any]] = []
+    if extra > 0:
+        blocks.append({"type": "note", "text": f"Showing the first {SHORT_ROWS} {what}, highest priority first; "
+                                               f"{extra} more are in the project download and on the Roadmap."})
+    return blocks
+
+
+def project_sections(record: Dict[str, Any], data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The four project-wide parts of an audit: stands, progress, backlog, next.
+
+    Read off what code computed (``project_state``, ``progress``, the backlog
+    coverage and the suggestion) and the model's short comments. Empty for an
+    audit of a project with no backlog.
+    """
+    if not data.get("project_mode"):
+        return []
+    ext = record.get("extension") or {}
+    ps = ext.get("project_state") or data.get("project_state") or {}
+    reqs = ps.get("requirements") or []
+    counts = ps.get("counts") or {}
+    order = ("verified", "delivered", "in_sprint", "planned", "at_risk", "no_story")
+    rest = ", ".join(f"{counts.get(k, 0)} {REQ_STATE_LABELS[k].lower()}" for k in order[1:] if counts.get(k))
+    rows = [[r.get("id"), REQ_STATE_LABELS.get(r.get("state"), label(r.get("state"))),
+             ", ".join(r.get("stories") or []) or "—", r.get("obligation") or "—", r.get("verified_in") or "—"]
+            for r in reqs]
+    stands = {"key": "project", "title": "Where the project stands", "md_title": "Where the Project Stands",
+              "conclusion": (f"{counts.get('verified', 0)} of {plural(len(reqs), 'requirement')} verified"
+                             + (f"; {rest}." if rest else ".")) if reqs else "No approved requirement to track.",
+              "blocks": [{"type": "table", "headers": ["Requirement", "State", "Stories", "Legal obligation", "Verified in"],
+                          "rows": rows[:SHORT_ROWS]}] + _short(rows, "requirements")}
+
+    pg = ext.get("progress") or {}
+    series = pg.get("series") or data.get("history") or []
+    tr = pg.get("trend") or {}
+    direction = tr.get("direction") or "none"
+    left = pg.get("sprints_left")
+    concl = f"Trend: {TREND_LABELS.get(direction, label(direction))}. {tr.get('reason', '')}".strip()
+    if isinstance(left, int) and left > 0:
+        concl += f" About {plural(left, 'sprint')} left at this pace (an estimate)."
+    progress = {"key": "progress", "title": "Progress across sprints", "md_title": "Progress Across Sprints",
+                "conclusion": concl, "tone": TREND_TONE.get(direction, "neutral"),
+                "blocks": ([{"type": "text", "label": "Comment", "text": str(ext.get("trajectory_comment") or "")}]
+                           if ext.get("trajectory_comment") else [])
+                          + [{"type": "table", "headers": ["Sprint", "Requirements verified", "Stories verified",
+                                                           "Carried over"],
+                              "rows": [[x.get("name") or x.get("sprint"), x.get("verified_requirements"),
+                                        x.get("stories_verified"), x.get("carried_over")] for x in series]}]
+                          + ([{"type": "note", "text": "The last row is this sprint as this audit closes it."}]
+                             if pg.get("projected") else [])}
+
+    cov = data.get("backlog_coverage") or {}
+    gaps = cov.get("gaps") or []
+    judged = ext.get("backlog_assessment") or []
+    weak = [j for j in judged if j.get("judgement") != "covered"]
+    gap_rows = [[g.get("title"), g.get("ref"), g.get("action")] for g in gaps]
+    backlog = {"key": "backlog", "title": "Is the backlog enough?", "md_title": "Is the Backlog Enough",
+               "conclusion": ("Yes, as far as code can tell: every requirement and severe risk has a story."
+                              if not gaps and not weak else
+                              f"{plural(len(gaps), 'gap')} found by code"
+                              + (f"; {plural(len(weak), 'requirement')} judged weakly or not covered." if weak else ".")),
+               "blocks": [{"type": "table", "headers": ["Gap", "Ref", "Action"], "rows": gap_rows[:SHORT_ROWS]}]
+                         + _short(gap_rows, "gaps")
+                         + ([{"type": "table", "headers": ["Requirement", "Judgement", "Why"],
+                              "rows": [[j.get("ref"), JUDGEMENT_LABELS.get(j.get("judgement"), label(j.get("judgement"))),
+                                        j.get("reason")] for j in judged]}] if judged else [])}
+
+    nx = data.get("next") or {}
+    sugg = nx.get("suggested") or []
+    legal = data.get("legal_unscheduled") or []
+    nxt = {"key": "next", "title": "What comes next", "md_title": "What Comes Next",
+           "conclusion": str(ext.get("next_focus") or "").strip()
+                         or (f"{plural(len(sugg), 'story', 'stories')} suggested for the next sprint by the rules."
+                             if sugg else "Nothing is waiting in the backlog."),
+           "blocks": [{"type": "table", "headers": ["Story", "Title", "Why"],
+                       "rows": [[x.get("id"), x.get("title"), x.get("reason")] for x in sugg]}]
+                     + ([{"type": "note", "text": "Legal-obligation requirements never scheduled: " + ", ".join(legal)}]
+                        if legal else [])}
+    return [stands, progress, backlog, nxt]
+
+
 def audit_report(record: Dict[str, Any], data: Dict[str, Any], actions: Sequence[Dict[str, Any]],
                  decisions: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     """The Auditor's record read as an audit report.
@@ -623,8 +749,11 @@ def audit_report(record: Dict[str, Any], data: Dict[str, Any], actions: Sequence
                   plural(kinds["acceptance criterion"], "acceptance criterion", "acceptance criteria")]
     baseline = [f"{b.get('label')}" + (f", approved by {b['approved_by']}" if b.get("approved_by") else "")
                 + (f" on {b['approved_at']}" if b.get("approved_at") else "") for b in data.get("baseline") or []]
+    if data.get("project_mode"):
+        scope_bits = ["the whole project"] + [x for x in scope_bits if not x.startswith("0 ")]
     header = {
-        "title": "Ethical requirements audit" + (f" — {sprint}" if sprint and sprint != "this sprint" else ""),
+        "title": ("Project audit" if data.get("project_mode") else "Ethical requirements audit")
+                 + (f" — {sprint}" if sprint and sprint != "this sprint" else ""),
         "fields": [
             ("Scope", " and ".join(scope_bits) + " from the approved artifacts" if audited else "No register was available"),
             ("Evidence declared", ", ".join(data.get("evidence_labels") or data.get("evidence_types") or []) or "None"),
@@ -688,7 +817,8 @@ def audit_report(record: Dict[str, Any], data: Dict[str, Any], actions: Sequence
                           for k, t, h, tone in PATHWAY_PHASES if phases[k]]}
     return {"header": header, "opinion": opinion, "strengths": strengths, "risks": risks,
             "opportunities": opportunities, "pathway": pathway,
-            "has_strength_field": "strengths" in ext}
+            "has_strength_field": "strengths" in ext,
+            "project": project_sections(record, data)}
 
 
 def _drift(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, Any]):
@@ -731,6 +861,7 @@ AGENT_SECTIONS = {
     "risk_classifier": _risk,
     "requirements_reviewer": _requirements,
     "story_refiner": _stories,
+    "story_generate": _generated,
     "auditor": _audit,
     "drift_monitor": _drift,
 }
@@ -742,7 +873,9 @@ AGENT_MD_SECTIONS: Dict[str, List[str]] = {
     "requirements_reviewer": ["Context of Use and Stakeholders", "Value Register", "Gap Analysis",
                               "Ethical Value Requirements", "Impact Assessment"],
     "story_refiner": ["Refined Stories", "Stories Without Ethical Impact", "Sprint Ethics Log"],
-    "auditor": ["Audit Opinion", "Strengths", "Risks", "Opportunities", "Pathway Forward",
+    "story_generate": ["Generated Stories", "Requirements Without a Story"],
+    "auditor": ["Audit Opinion", "Where the Project Stands", "Progress Across Sprints", "Is the Backlog Enough",
+                "What Comes Next", "Strengths", "Risks", "Opportunities", "Pathway Forward",
                 "Verdict Register", "Accountability Documentation"],
     "drift_monitor": ["Drift Alerts", "Fairness & Representativeness Analysis", "Response Plan"],
 }
@@ -887,10 +1020,33 @@ def _sig_drift(ext, data, record) -> Optional[Dict[str, Any]]:
                        + (f"; the trend is {trend}." if trend else ".")}
 
 
+def _sig_generated(ext, data, record) -> Optional[Dict[str, Any]]:
+    scope = data.get("scope") or []
+    if not scope:
+        return None
+    by_req: Dict[str, List[str]] = {}
+    for s_ in ext.get("stories") or []:
+        for e in s_.get("evr_ids") or []:
+            by_req.setdefault(str(e), []).append(str(s_.get("story_id")))
+    reasons = {str(n.get("evr_id")): n.get("reason") for n in ext.get("not_story") or []}
+    cells = []
+    for r in scope:
+        rid = str(r.get("id"))
+        if by_req.get(rid):
+            cells.append({"label": rid, "state": ", ".join(by_req[rid]), "tone": "ok"})
+        elif rid in reasons:
+            cells.append({"label": rid, "state": "No story needed", "tone": "neutral"})
+        else:
+            cells.append({"label": rid, "state": "Not covered", "tone": "high"})
+    return {"kind": "cells", "title": "Each requirement in scope", "cells": cells,
+            "caption": "Stories enter the backlog as RAI-n when a person approves."}
+
+
 SIGNATURES = {
     "risk_classifier": _sig_risk,
     "requirements_reviewer": _sig_requirements,
     "story_refiner": _sig_stories,
+    "story_generate": _sig_generated,
     "auditor": _sig_audit,
     "drift_monitor": _sig_drift,
 }
@@ -953,7 +1109,7 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
     if not record.get("headline") and summary.startswith(headline):
         summary = summary[len(headline):].strip()
 
-    stories = story_views(record, data) if agent_key == "story_refiner" else []
+    stories = story_views(record, data) if agent_key in STORY_KEYS else []
     agent_sections, agent_kpi = AGENT_SECTIONS.get(agent_key, lambda e, d, r: ([], None))(
         record.get("extension") or {}, data, record)
     for s in agent_sections:
@@ -999,9 +1155,9 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
                 + agent_sections + _trace_sections(record, data),
         "notices": notices,
         "unparsed": record.get("unparsed_response") or "",
-        "paste": stories_paste(record, data) if agent_key == "story_refiner" else "",
+        "paste": stories_paste(record, data) if agent_key in STORY_KEYS else "",
         "stories": stories,
-        "story_counts": story_counts(stories) if agent_key == "story_refiner" else {},
+        "story_counts": story_counts(stories) if agent_key in STORY_KEYS else {},
         "report": audit_report(record, data, actions, decisions) if agent_key == "auditor" else {},
     }
 

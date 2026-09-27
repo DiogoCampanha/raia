@@ -50,6 +50,7 @@ from typing import Any, Dict, List, Literal, Optional, Type
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ..rationale.story_map import CAPABILITY_OPTIONS
 from ..rationale.types import VALID_STATUSES
 from . import vocab as V
 
@@ -285,6 +286,9 @@ class StoryEntry(_Model):
         "Existing acceptance criteria of this story that conflict with an approved requirement or a "
         "selected card. Only real conflicts; leave empty otherwise."))
     no_impact_reason: str = Field(default="", max_length=200, description="Only for a story with no ethical impact: one line.")
+    evr_ids: List[str] = Field(default_factory=list, description=(
+        "Approved EVR ids this story helps implement, if any (they link it to the requirement on the "
+        "roadmap). Leave empty for a story with no ethical impact."))
 
 
 class RefinedStoriesExt(_Model):
@@ -300,6 +304,38 @@ class RefinedStoriesExt(_Model):
         if isinstance(value, str):
             return [value] if value.strip() else []
         return value
+
+
+# ---------------------------------------------------------------------------
+# User Story Refiner, generate mode — stories from approved requirements
+# ---------------------------------------------------------------------------
+
+Touch = Literal[tuple(o.value for o in CAPABILITY_OPTIONS if o.value != "none")]  # type: ignore[valid-type]
+
+
+class GeneratedStory(_Model):
+    story_id: str = Field(description="G1, G2, … in order. Code gives the backlog id (RAI-n) at approval.")
+    title: str = Field(max_length=120, description="The story in a few words.")
+    description: str = Field(max_length=400, description=(
+        "The story as a team schedules it: \"As a <role>, I want <capability>, so that <benefit>.\""))
+    evr_ids: List[str] = Field(description="The requirement id(s) in scope that this story implements (at least one).")
+    touches: List[Touch] = Field(default_factory=list, description="What the story touches; it selects the cards allowed.")
+    eccola_cards: List[Card] = Field(default_factory=list, description="ECCOLA card ids its touches select that make it relevant.")
+    criteria: List[AcceptanceCriterion] = Field(default_factory=list, description=(
+        "Verifiable ethical acceptance criteria, labelled AC-<story id>-<n> (e.g. AC-G1-1)."))
+
+
+class RequirementWithoutStory(_Model):
+    evr_id: str = Field(description="A requirement id in scope, exactly.")
+    reason: str = Field(max_length=250, description="One line: why no story implements it (e.g. a policy decision).")
+
+
+class RaiBacklogExt(_Model):
+    stories: List[GeneratedStory] = Field(default_factory=list, max_length=30, description=(
+        "The generated RAI stories. Every requirement in scope is covered by at least one story, or "
+        "listed in not_story."))
+    not_story: List[RequirementWithoutStory] = Field(default_factory=list, description=(
+        "Requirements in scope that need no story, each with its reason."))
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +384,13 @@ class Opportunity(_Model):
     benefit: str = Field(default="", max_length=200, description="What it would change, in one line.")
 
 
+class BacklogJudgement(_Model):
+    ref: str = Field(description="A requirement id from the computed coverage list, exactly.")
+    judgement: Literal["covered", "weakly_covered", "not_covered"]
+    reason: str = Field(default="", max_length=250, description="One line: why, naming the stories or criteria.")
+    computed: Optional[str] = computed()
+
+
 class AuditReportExt(_Model):
     items: List[AuditItem] = Field(default_factory=list, description="One entry per computed audit item.")
     accountability_log: List[DecisionEntry] = Field(default_factory=list, description="Who decided what, from the upstream approval headers (NIST AI RMF GOVERN 2).")
@@ -358,7 +401,16 @@ class AuditReportExt(_Model):
         "Up to three opportunities for improvement."))
     pathway_summary: str = Field(default="", max_length=250, description=(
         "One sentence: the way forward, in the order the team should take it."))
+    backlog_assessment: List[BacklogJudgement] = Field(default_factory=list, description=(
+        "One entry per requirement the backlog covers (computed list): is it covered well enough? "
+        "You may say weakly_covered or not_covered where code said covered, never the reverse."))
+    trajectory_comment: str = Field(default="", max_length=300, description=(
+        "One or two sentences on the progress across sprints; the trend itself is computed by code."))
+    next_focus: str = Field(default="", max_length=250, description=(
+        "One sentence: what the next sprint should tackle first, and why."))
     opinion: Optional[Dict[str, Any]] = computed()
+    project_state: Optional[Dict[str, Any]] = computed()
+    progress: Optional[Dict[str, Any]] = computed()
 
 
 # ---------------------------------------------------------------------------
@@ -392,6 +444,7 @@ EXTENSIONS: Dict[str, Type[_Model]] = {
     "risk_classifier": RiskClassificationExt,
     "requirements_reviewer": RequirementsReviewExt,
     "story_refiner": RefinedStoriesExt,
+    "story_generate": RaiBacklogExt,
     "auditor": AuditReportExt,
     "drift_monitor": DriftAlertsExt,
 }

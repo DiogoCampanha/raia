@@ -634,7 +634,7 @@ class ProjectService:
         repo = self.repository(user, project_id, "run")
         repo.save_intake(agent_key, inputs, by=user.id)
         self._count_model_call(user)
-        from .agents import AGENTS
+        from .agents import RUNNABLE as AGENTS
 
         if agent_key in AGENTS and repo.read_artifact(AGENTS[agent_key].spec.output_key) is not None:
             repo.record_event("revision_started", {"agent": agent_key, "user": user.id})
@@ -692,6 +692,144 @@ class ProjectService:
         if ok:
             repo.record_event("issue_arbitrated", {"user": user.id, "issue": issue_id, "status": status})
         return ok
+
+    # -- Backlog, sprints and roadmap ------------------------------------------------------------
+    #
+    # Owners and editors manage the backlog and plan sprints ("run"); every member,
+    # reviewers included, can tick a story done ("review"). Nothing here calls a
+    # model, and nothing here needs Jira: every change has this manual path.
+
+    @staticmethod
+    def _review_data(repo) -> Dict[str, Any]:
+        return (repo.read_data("requirements_review") or {}).get("structured") or {}
+
+    def board(self, user: User, project_id: str) -> Dict[str, Any]:
+        """Everything the Board shows: the registers, the open sprint and the roadmap."""
+        from . import backlog as B
+        from . import roadmap as R
+
+        repo = self.repository(user, project_id, "view")
+        bl, sp = B.load(repo)
+        review = self._review_data(repo)
+        return {
+            "ready": repo.read_artifact("requirements_review") is not None,
+            "backlog": bl, "sprints": sp, "open_sprint": B.open_sprint(sp),
+            "roadmap": R.roadmap(bl, sp, review) if review else {},
+            "uncovered": R.uncovered_requirements(review, bl) if review else [],
+            "review": review,
+        }
+
+    def _board_write(self, user: User, project_id: str, action: str, fn, message: str,
+                     event: str, payload: Optional[Dict[str, Any]] = None):
+        from . import backlog as B
+
+        repo = self.repository(user, project_id, action)
+        if repo.read_artifact("requirements_review") is None:
+            raise ValueError("The board opens once the ethical requirements are approved.")
+        bl, sp = B.load(repo)
+        result = fn(bl, sp)
+        repo.commit_files(B.register_files(repo, bl, sp), f"raia(board): {message} by {user.label}")
+        repo.record_event(event, {"user": user.id, **(payload or {})})
+        self.touch(project_id)
+        return result
+
+    def add_story(self, user: User, project_id: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a product story by hand (RAI stories come from the generate mode's gate)."""
+        from . import backlog as B
+
+        def fn(bl, sp):
+            return B.add_story(
+                bl, origin=B.PRODUCT, title=fields.get("title", ""), description=fields.get("description", ""),
+                existing_criteria=[l for l in str(fields.get("acceptance_criteria") or "").splitlines()],
+                touches=fields.get("touches") or [], estimate=fields.get("estimate"),
+                depends_on=fields.get("depends_on") or [], by=user.label, source="added on the board")
+        s = self._board_write(user, project_id, "run", fn, "product story added", "story_added")
+        return s
+
+    def update_story(self, user: User, project_id: str, story_id: str, changes: Dict[str, Any]) -> Dict[str, Any]:
+        from . import backlog as B
+
+        return self._board_write(user, project_id, "run",
+                                 lambda bl, sp: B.update_story(bl, story_id, changes, user.label),
+                                 f"{story_id} edited", "story_edited", {"story": story_id})
+
+    def create_sprint(self, user: User, project_id: str, **fields: Any) -> Dict[str, Any]:
+        from . import backlog as B
+
+        return self._board_write(user, project_id, "run",
+                                 lambda bl, sp: B.create_sprint(sp, by=user.label, **fields),
+                                 "sprint planned", "sprint_planned")
+
+    def update_sprint(self, user: User, project_id: str, sprint_id: str, changes: Dict[str, Any]) -> Dict[str, Any]:
+        from . import backlog as B
+
+        return self._board_write(user, project_id, "run",
+                                 lambda bl, sp: B.update_sprint(sp, sprint_id, changes),
+                                 f"{sprint_id} edited", "sprint_edited", {"sprint": sprint_id})
+
+    def schedule(self, user: User, project_id: str, story_ids: List[str], add: bool = True) -> List[str]:
+        from . import backlog as B
+
+        def fn(bl, sp):
+            for sid in story_ids:
+                (B.schedule if add else B.unschedule)(bl, sp, sid, user.label)
+            return list(story_ids)
+        return self._board_write(user, project_id, "run", fn,
+                                 ("scheduled " if add else "unscheduled ") + ", ".join(story_ids),
+                                 "stories_scheduled" if add else "stories_unscheduled", {"stories": list(story_ids)})
+
+    def start_sprint(self, user: User, project_id: str) -> Dict[str, Any]:
+        from . import backlog as B
+
+        return self._board_write(user, project_id, "run", lambda bl, sp: B.start_sprint(sp, bl, user.label),
+                                 "sprint started", "sprint_started")
+
+    def end_sprint(self, user: User, project_id: str) -> Dict[str, Any]:
+        from . import backlog as B
+
+        return self._board_write(user, project_id, "run", lambda bl, sp: B.end_sprint(sp, user.label),
+                                 "sprint ended", "sprint_ended")
+
+    def reopen_sprint(self, user: User, project_id: str) -> Dict[str, Any]:
+        from . import backlog as B
+
+        return self._board_write(user, project_id, "run", lambda bl, sp: B.reopen_sprint(sp, user.label),
+                                 "sprint reopened", "sprint_reopened")
+
+    def tick(self, user: User, project_id: str, story_id: str, done: bool) -> Dict[str, Any]:
+        """A person marks a sprint story delivered or not. Reviewers may do this too."""
+        from . import backlog as B
+
+        return self._board_write(user, project_id, "review",
+                                 lambda bl, sp: B.tick(bl, sp, story_id, done, user.label, "manual"),
+                                 f"{story_id} marked {'done' if done else 'not done'}",
+                                 "story_ticked", {"story": story_id, "done": bool(done), "source": "manual"})
+
+    def resolve_story_review(self, user: User, project_id: str, story_id: str, decision: str) -> Dict[str, Any]:
+        from . import backlog as B
+
+        return self._board_write(user, project_id, "run",
+                                 lambda bl, sp: B.resolve_review(bl, story_id, decision, user.label),
+                                 f"{story_id} review settled ({decision})", "story_review_settled",
+                                 {"story": story_id, "decision": decision})
+
+    def suggest_sprint(self, user: User, project_id: str) -> Dict[str, Any]:
+        """The rule-based suggestion for the open sprint. No model is called and nothing is changed."""
+        from . import backlog as B
+        from . import roadmap as R
+
+        repo = self.repository(user, project_id, "view")
+        bl, sp = B.load(repo)
+        x = B.open_sprint(sp)
+        chosen = [s["id"] for s in B.in_sprint(bl, x["id"])] if x else []
+        cap = (x or {}).get("capacity") or R.DEFAULT_CAPACITY
+        unit = (x or {}).get("unit") or "stories"
+        if x:
+            used = sum(((s.get("estimate") or 1) if unit == "points" else 1) for s in B.in_sprint(bl, x["id"]))
+            cap = max(0, cap - used)
+        if not cap:
+            return {"suggested": [], "blocked": [], "waiting": [], "capacity": 0, "unit": unit, "used": 0}
+        return R.suggest(bl, sp, self._review_data(repo), repo.open_issues(), cap, unit, exclude=chosen)
 
     # -- Tester assessment -------------------------------------------------------------------
 

@@ -44,7 +44,11 @@ def hints(agent_key: str, verdict_keys: List[str], rationale: RationaleResult,
         ids["story_cards"] = dict(verdict.get("story_cards") or {})
         ids["existing_criteria"] = dict(verdict.get("existing_criteria") or {})
         ids["evr_ids"] = list(verdict.get("evr_ids") or [])
+    if agent_key == "story_generate":
+        ids["evr_ids"] = list(verdict.get("evr_ids") or [])
+        ids["project_cards"] = list(data.get("project_cards") or [])
     if agent_key == "auditor":
+        ids["backlog_refs"] = [str(c.get("ref")) for c in (data.get("backlog_coverage") or {}).get("covered") or []]
         ids["audit_items"] = {str(i.get("id")): i.get("computed_verdict")
                               for i in data.get("audited_items") or []}
         ids["not_verified"] = list(verdict.get("not_verified") or [])

@@ -427,7 +427,8 @@ def main() -> None:
     button(at, f"{pid2}::run::{au}").click()
     ok(at.run(), "it runs to the gate")
     body = text(at)
-    check('class="rv-report ' in body and "Audit report" in body and "Ethical requirements audit" in body,
+    check('class="rv-report ' in body and "Audit report" in body
+          and ("Ethical requirements audit" in body or "Project audit" in body),
           "the draft reads as an audit report, with its header")
     check(all(h in body for h in ("Audit opinion", "Strengths", "Risks", "Opportunities", "Pathway forward")),
           "…opinion, strengths, risks, opportunities and pathway forward, in order")

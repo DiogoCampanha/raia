@@ -19,7 +19,7 @@ then distinctive terms from the requirement. It is designed to be conservative
 """
 
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..fields import options, selected, text_of
 from .types import ChecklistItem, Finding, Pin, RationaleResult, md_table
@@ -162,6 +162,20 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
     criteria: List[Dict[str, str]] = stories.get("criteria") or []
     high_risk = bool(risk.get("eu_is_high_risk") or risk.get("br_is_high_risk"))
 
+    # Once the project has a backlog, the audit is project-wide: this sprint's
+    # work is audited item by item, and everything else is reported where it
+    # stands — verified earlier, planned, or with no story yet — instead of
+    # being marked NOT VERIFIED for not being scheduled yet.
+    backlog = (upstream.get("backlog") or {}).get("data") or {}
+    sprints = (upstream.get("sprints") or {}).get("data") or {}
+    project_mode = bool(backlog.get("stories"))
+    # Items are audited per sprint once the team works in sprints; a team that
+    # has not planned one yet is audited on everything, as before.
+    sprint_mode = project_mode and bool(sprints.get("sprints"))
+    open_sprint = next((x for x in sprints.get("sprints") or [] if x.get("state") != "closed"), None)
+    if project_mode and open_sprint and sprint_id == "this sprint":
+        sprint_id = open_sprint.get("name") or open_sprint.get("id")
+
     # -- 1. Verdict assignment ----------------------------------------------
 
     rows: List[List[str]] = []
@@ -181,17 +195,55 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
             subjects[item_id] = subject
             not_verified.append(item_id)
 
-    for eid in evr_ids:
-        assess(eid, subject_by_id.get(eid, ""), "ethical value requirement")
-    for c in criteria:
-        cid = str(c.get("id") or "")
-        if cid:
-            assess(cid, str(c.get("text") or ""), "acceptance criterion")
+    def not_delivered(item_id: str, subject: str, kind: str, why: str) -> None:
+        rows.append([item_id, kind, subject[:70], NOT_VERIFIED, why])
+        subjects[item_id] = subject
+        not_verified.append(item_id)
+
+    if not sprint_mode:
+        for eid in evr_ids:
+            assess(eid, subject_by_id.get(eid, ""), "ethical value requirement")
+        for c in criteria:
+            cid = str(c.get("id") or "")
+            if cid:
+                assess(cid, str(c.get("text") or ""), "acceptance criterion")
+    elif open_sprint:
+        spr = open_sprint.get("id")
+        live = [x for x in backlog.get("stories") or [] if x.get("status") != "obsolete"]
+        in_sprint = [x for x in live if x.get("sprint") == spr]
+        for st in in_sprint:
+            for c in st.get("criteria") or []:
+                if c.get("kind") != "ethical" or not c.get("id"):
+                    continue
+                if st.get("status") != "done":
+                    not_delivered(c["id"], str(c.get("text") or ""), "acceptance criterion",
+                                  f"{st['id']} was not marked done this sprint")
+                else:
+                    assess(c["id"], str(c.get("text") or ""), "acceptance criterion")
+        # A requirement is audited in the sprint that completes its stories.
+        here = {x["id"] for x in in_sprint}
+        for eid in evr_ids:
+            linked = [x for x in live if eid in (x.get("evr_ids") or [])]
+            if not linked or not any(x["id"] in here for x in linked):
+                continue
+            if not all(x["id"] in here or x.get("status") == "verified" for x in linked):
+                continue
+            pending = [x["id"] for x in linked if x["id"] in here and x.get("status") != "done"]
+            if pending:
+                not_delivered(eid, subject_by_id.get(eid, ""), "ethical value requirement",
+                              "not delivered this sprint: " + ", ".join(pending))
+            else:
+                assess(eid, subject_by_id.get(eid, ""), "ethical value requirement")
+    else:
+        r.notes.append("No sprint is open, so no item is audited this time: the report covers where the "
+                       "project stands, whether the backlog is enough, and what comes next.")
 
     if rows:
         r.tables[
             "Verdicts assigned by code (you may downgrade a verdict, never upgrade one)"
         ] = md_table(["Item", "Kind", "Subject", "Computed verdict", "Basis"], rows)
+    elif sprint_mode:
+        pass
     else:
         r.notes.append(
             "No machine-readable requirement or criterion register was found upstream, so no "
@@ -234,7 +286,21 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
             type="risk_acceptance", decision_owner="product", blocking=False,
         )
 
-    # -- 3. Pins, checklist --------------------------------------------------
+    # -- 3. The project as a whole (project mode) -----------------------------
+
+    ceiling_caps: List[str] = []
+    project: Dict[str, Any] = {}
+    if project_mode:
+        project = _project_view(backlog, sprints, review, risk, open_sprint, r)
+        closing_no = int((open_sprint or {}).get("number") or len(project["history"]))
+        if project["coverage"]["severe_uncovered"]:
+            ceiling_caps.append("a high or critical risk has no story: "
+                                + ", ".join(project["coverage"]["severe_uncovered"]))
+        if closing_no >= 2 and project["legal_unscheduled"]:
+            ceiling_caps.append("legal-obligation requirement(s) with no story in any sprint by sprint "
+                                f"{closing_no}: " + ", ".join(project["legal_unscheduled"]))
+
+    # -- 4. Pins, checklist --------------------------------------------------
 
     r.pins = [
         Pin("ms_rai_v2", SECTION_MS_ACCOUNTABILITY, "accountability documentation"),
@@ -255,6 +321,9 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
     # The best opinion the evidence allows: every item with evidence satisfied,
     # nothing at risk, no finding. The final verdicts and findings only lower it.
     ceiling, ceiling_reasons = rate(len(rows), len(assessable), evidence_declared=bool(evidence_types))
+    if ceiling_caps and at_most(ceiling, "needs_improvement") != ceiling:
+        ceiling = "needs_improvement"
+        ceiling_reasons = ceiling_reasons + [f"capped: {c}" for c in ceiling_caps]
     r.findings.append(
         Finding("audit.opinion_ceiling", "Best audit opinion the evidence allows",
                 f"{ceiling.replace('_', ' ')} — " + "; ".join(ceiling_reasons)
@@ -288,6 +357,103 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
             "subjects": subjects,
             "baseline": _baseline(upstream),
             "opinion_ceiling": {"rating": ceiling, "reasons": ceiling_reasons},
+            "project_mode": project_mode,
         }
     )
+    if project_mode:
+        r.checklist += [
+            ChecklistItem("backlog", "Judge whether the backlog covers each listed requirement; never raise a computed gap"),
+            ChecklistItem("trajectory", "Comment on the progress across sprints, from the computed series"),
+            ChecklistItem("next", "Say what the next sprint should tackle first"),
+        ]
+        r.data.update({
+            "sprint_ref": (open_sprint or {}).get("id", ""),
+            "sprint_close": (open_sprint or {}).get("id", "") if (open_sprint or {}).get("state") == "review" else "",
+            "project_state": project["state"],
+            "backlog_coverage": project["coverage"],
+            "history": project["history"],
+            "next": project["next"],
+            "legal_unscheduled": project["legal_unscheduled"],
+            "ceiling_caps": ceiling_caps,
+            "board": project["board"],
+        })
     return r
+
+
+def _project_view(backlog: Dict[str, Any], sprints: Dict[str, Any], review: Dict[str, Any],
+                  risk: Dict[str, Any], open_sprint: Optional[Dict[str, Any]], r: RationaleResult) -> Dict[str, Any]:
+    """Where the project stands, how it is moving, whether the backlog is enough, what comes next.
+
+    All four are computed here, before the model is asked anything, and shown
+    to it as ground truth; the tables are also what the report prints.
+    """
+    from .. import roadmap as R
+    from . import backlog_coverage
+
+    rows = R.requirement_states(review, backlog)
+    counts = R.state_counts(rows)
+    coverage = backlog_coverage.run(backlog, review, risk)
+    history = R.history(sprints)
+    legal_unscheduled = backlog_coverage.legal_unscheduled(rows)
+    suggestion = R.suggest(backlog, sprints, review, [], (open_sprint or {}).get("capacity"),
+                           (open_sprint or {}).get("unit") or "stories")
+    open_rai = sum(1 for s in backlog.get("stories") or []
+                   if s.get("origin") == "rai" and s.get("status") not in ("verified", "obsolete"))
+
+    r.tables["Where the project stands (computed): every approved requirement"] = md_table(
+        ["Requirement", "State", "Stories", "Legal", "Priority", "Verified in"],
+        [[x["id"], R.REQ_STATE_LABELS[x["state"]], ", ".join(x["stories"]) or "—", x["obligation"] or "—",
+          x["priority"] or "—", x["verified_in"] or "—"] for x in rows])
+    if history:
+        r.tables["Progress across closed sprints (computed)"] = md_table(
+            ["Sprint", "Requirements verified (cumulative)", "Criteria verified", "Stories verified",
+             "Carried over", "Opinion"],
+            [[h.get("name"), h.get("verified_requirements"), h.get("verified_criteria"), h.get("stories_verified"),
+              h.get("carried_over"), str(h.get("opinion") or "").replace("_", " ")] for h in history])
+    if coverage["gaps"]:
+        r.tables["Backlog gaps (computed; each needs an action)"] = md_table(
+            ["Gap", "Ref", "Detail", "Action"],
+            [[g["title"], g["ref"], g["text"][:120], g["action"]] for g in coverage["gaps"][:20]])
+    if coverage["covered"]:
+        r.tables["Requirements the backlog covers: judge each in backlog_assessment (you may lower, never raise)"] = md_table(
+            ["Requirement", "Stories", "Their ethical criteria"],
+            [[c["ref"], ", ".join(c["stories"]), " / ".join(c["criteria"]) or "none"] for c in coverage["covered"]])
+    if suggestion["suggested"]:
+        r.tables["What comes next: the rule-based suggestion for the next sprint"] = md_table(
+            ["Story", "Title", "Why"], [[x["id"], x["title"][:80], x["reason"]] for x in suggestion["suggested"]])
+
+    r.findings.append(Finding(
+        "audit.project_state", "Requirements by state",
+        ", ".join(f"{R.REQ_STATE_LABELS[k]} {v}" for k, v in counts.items() if v) or "no approved requirement"))
+    r.findings.append(Finding(
+        "audit.backlog_gaps", f"{len(coverage['gaps'])} backlog gap(s)",
+        ", ".join(f"{g['kind'].replace('_', ' ')}: {g['ref']}" for g in coverage["gaps"][:8]) or "none"))
+    no_story = [g["ref"] for g in coverage["gaps"] if g["kind"] in ("legal_without_story", "requirement_without_story")]
+    if no_story:
+        r.raise_issue(
+            f"{len(no_story)} approved requirement(s) have no story in the backlog: {', '.join(no_story)}. "
+            "Generate stories for them, or record why none is needed.",
+            type="missing_information", decision_owner="product", blocking=False,
+        )
+    if coverage["severe_uncovered"]:
+        r.raise_issue(
+            "High or critical risk(s) with no story behind them: " + ", ".join(coverage["severe_uncovered"])
+            + ". Link each to a requirement with a story, or record the accepted risk.",
+            type="risk_acceptance", decision_owner="product", blocking=False,
+        )
+
+    compact_review = {"evrs": review.get("evrs") or [], "evr_ids": review.get("evr_ids") or [],
+                      "gaps": review.get("gaps") or [],
+                      "record": {"findings": [{"links": f.get("links"), "priority": f.get("priority")}
+                                              for f in (review.get("record") or {}).get("findings") or []]}}
+    return {
+        "state": {"counts": counts, "requirements": [
+            {k: x[k] for k in ("id", "statement", "state", "stories", "legal", "obligation", "priority", "verified_in")}
+            for x in rows]},
+        "coverage": coverage,
+        "history": history,
+        "legal_unscheduled": legal_unscheduled,
+        "next": {"suggested": suggestion["suggested"], "blocked": suggestion["blocked"],
+                 "sprints_left": R.sprints_left(history, open_rai), "open_rai": open_rai},
+        "board": {"backlog": backlog, "sprints": sprints, "review": compact_review},
+    }

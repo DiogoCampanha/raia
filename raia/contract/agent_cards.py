@@ -48,7 +48,17 @@ LIMITATIONS: Dict[str, List[str]] = {
         "criterion as entered and the decision open until someone takes it.",
         "Acceptance criteria are checked for form, not for whether the threshold is right.",
     ],
+    "story_generate": [
+        "Stories are generated for approved requirements only; a risk the requirements do not cover "
+        "does not become a story here (the Auditor reports it as a backlog gap).",
+        "One run covers a short list of requirements; the rest wait for the next run.",
+        "Acceptance criteria are checked for form, not for whether the threshold is right.",
+    ],
     "auditor": [
+        "The backlog checks are structural (a story exists, links, evidence named); whether a story's "
+        "criteria really answer a risk is the agent's judgement, which may only lower code's.",
+        "The trend compares the last two sprints and the sprints-left figure assumes the average pace "
+        "so far: both are indications, not forecasts.",
         "Evidence matching is lexical and conservative: an item lands in NOT VERIFIED when in doubt, "
         "and a match is only a reason to assess, not proof.",
         "The opinion follows a fixed RAIA rule over counts (share satisfied, items at risk, finding "
@@ -68,9 +78,14 @@ CHECKS: Dict[str, List[str]] = {
                               "A recommended candidate is shown only if it addresses a computed gap, cites "
                               "a retrieved excerpt and has a testable fit criterion"],
     "story_refiner": ["Every story id has an entry", "Only cards in scope for each story and approved EVR ids are used",
+                      "Approval writes the criteria and requirement links back to the backlog",
                       "Criteria are labelled AC-<story>-<n>",
                       "A conflict names an existing criterion of its own story, and opens a decision (by code)"],
-    "auditor": ["Every computed item has a verdict", "An unevidenced item is never upgraded (restored by code)",
+    "story_generate": ["Every requirement in scope is covered by a story or justified, and no other id appears",
+                       "Every story links at least one requirement", "At most three stories per requirement",
+                       "Cards are those the story's touches select", "Criteria are labelled AC-<story>-<n>"],
+    "auditor": ["Every requirement the backlog covers is judged, and no judgement rises above code's (restored by code)",
+                "Every computed item has a verdict", "An unevidenced item is never upgraded (restored by code)",
                 "A strength rests on a satisfied item or an approval on record (anything else removed by code)",
                 "The opinion is rated by code and never rises above the best the declared evidence allows"],
     "drift_monitor": ["One alert per computed breach, with the computed severity (restored by code)",
@@ -107,10 +122,10 @@ def _fields(model, prefix: str = "") -> List[str]:
 
 
 def card(key: str) -> str:
-    from ..agents import AGENTS
+    from ..agents import AGENTS, RUNNABLE
     from ..ui.agent_docs import DOCS
 
-    agent = AGENTS[key]
+    agent = RUNNABLE[key]
     spec = agent.spec
     docs = DOCS.get(key, {})
     try:
@@ -120,7 +135,7 @@ def card(key: str) -> str:
     producers = {a.spec.output_key: a.spec.name for a in AGENTS.values()}
 
     lines = [
-        f"# Agent card — {spec.name}",
+        f"# Agent card — {spec.name}" + (f" · {spec.mode_label} mode" if spec.parent else ""),
         "",
         "> Generated from the code by `python -m raia.contract.agent_cards`. Follows "
         "`docs/templates/agent-card.md`. Do not edit by hand.",
@@ -129,6 +144,9 @@ def card(key: str) -> str:
         "",
         spec.description.strip(),
         "",
+        *([f"A mode of the {AGENTS[spec.parent].spec.name}, not an agent of its own: it shares that agent's "
+           "place in the architecture and runs through the same gate, with its own record.", ""]
+          if spec.parent else []),
         "## 2. Place in the lifecycle",
         "",
         "| | |", "|---|---|",
@@ -201,7 +219,9 @@ def card(key: str) -> str:
 def generated() -> Dict[str, str]:
     from ..agents import AGENTS
 
-    return {f"{key}.md": card(key) for key in AGENTS}
+    from ..agents import RUNNABLE
+
+    return {f"{key}.md": card(key) for key in RUNNABLE}
 
 
 def main() -> None:
