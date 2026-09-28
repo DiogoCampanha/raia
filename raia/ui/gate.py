@@ -32,7 +32,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 import streamlit as st
 
-from raia.agents import AGENTS
+from raia.agents import RUNNABLE as AGENTS
 from raia.contract import vocab as V
 from raia.contract.schema import record_model
 from raia.deploy import friendly_llm_error
@@ -413,6 +413,34 @@ def _clear_recs(agent_key: str) -> None:
     st.session_state.pop(_recs_key(agent_key), None)
 
 
+def _recommend_more(project: Project, agent) -> None:
+    """The next five candidates, for gaps not offered yet: the list starts short and grows on request."""
+    spec = agent.spec
+    recs = st.session_state.get(_recs_key(spec.key)) or {}
+    offered = [c.get("addresses") for c in recs.get("candidates") or []]
+    inputs = _current_inputs(spec.key, spec.input_fields)
+    with st.spinner("Reading the norms for more candidate requirements"):
+        try:
+            result = get_service().recommend_requirements(current_user(), project.id, spec.key, inputs,
+                                                          exclude=offered)
+        except (AccessDenied, UsageLimitReached) as exc:
+            flash(str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 - surfaced to the person
+            flash(friendly_llm_error(exc))
+            return
+    start = len(recs.get("candidates") or [])
+    new = []
+    for i, c in enumerate(result.get("candidates") or [], 1):
+        new.append({**c, "id": f"C{start + i}"})
+    recs["candidates"] = list(recs.get("candidates") or []) + new
+    recs["dropped"] = list(recs.get("dropped") or []) + list(result.get("dropped") or [])
+    recs.setdefault("evidence", {}).update({e["citation"]: e for e in result.get("evidence") or []})
+    st.session_state[_recs_key(spec.key)] = recs
+    flash(f"{len(new)} more candidate requirement(s) to review below." if new
+          else (result.get("note") or "No more gaps to recommend for."))
+
+
 def _candidate_panel(project: Project, agent, can_run: bool) -> None:
     spec = agent.spec
     recs = st.session_state.get(_recs_key(spec.key)) or {}
@@ -468,8 +496,13 @@ def _candidate_panel(project: Project, agent, can_run: bool) -> None:
                 for d in dropped:
                     st.markdown(f"- `{d.get('addresses') or '?'}` — {d.get('reason', '')}")
         if can_run:
-            st.button("Dismiss recommendations", key=pkey("recs_clear", spec.key),
-                      on_click=_clear_recs, args=(spec.key,))
+            row = st.container(horizontal=True)
+            if row.button("Recommend more", key=pkey("recs_more", spec.key), icon=I.SUGGEST,
+                          help="The next candidates, for gaps not offered yet. Uses one agent run."):
+                _recommend_more(project, agent)
+                st.rerun()
+            row.button("Dismiss recommendations", key=pkey("recs_clear", spec.key),
+                       on_click=_clear_recs, args=(spec.key,))
 
 
 def _field_origin_note(agent_key: str, f: InputField) -> None:
@@ -532,6 +565,16 @@ def _autosave_intake(project: Project, spec) -> None:
     if snap != st.session_state.get(pkey("saved", spec.key)):
         get_service().save_intake(current_user(), project.id, spec.key, snap)
         st.session_state[pkey("saved", spec.key)] = snap
+
+
+def prefill(agent_key: str, values: Dict[str, Any]) -> None:
+    """Put the team's own data into a form (e.g. the sprint's stories from the board).
+
+    Only for data that is already the team's, never for a suggestion: those go
+    through the suggestion path, which marks them until a person reviews them.
+    """
+    for key, value in values.items():
+        st.session_state[_state_key(agent_key, key)] = copy.deepcopy(value)
 
 
 def intake_form(project: Project, agent, can_run: bool) -> Dict[str, Any]:
@@ -773,13 +816,24 @@ def record_editor(agent_key: str, payload: Dict[str, Any]) -> Tuple[Optional[Dic
     ]
 
     errors: List[str] = []
+    if agent_key == "story_generate":
+        gen = [x.get("story_id") for x in (rec.get("extension") or {}).get("stories") or []]
+        drop = st.multiselect("Leave out these generated stories", gen, key=k("drop"),
+                              help="They will not enter the backlog. Their requirements stay without a "
+                                   "story until a later run.")
+        if drop:
+            ext = dict(rec.get("extension") or {})
+            ext["stories"] = [x for x in ext.get("stories") or [] if x.get("story_id") not in drop]
+            rec["extension"] = ext
     with st.expander("Agent-specific sections (JSON)"):
         st.caption("The part of the record shaped by this agent's normative source. It is checked "
                    "against the schema before it can be approved.")
         raw = st.text_area("Extension", json.dumps(original.get("extension") or {}, indent=2, ensure_ascii=False),
                            height=320, key=k("extension"), label_visibility="collapsed")
         try:
-            rec["extension"] = json.loads(raw)
+            parsed = json.loads(raw)
+            if parsed != (original.get("extension") or {}) or agent_key != "story_generate":
+                rec["extension"] = parsed
         except ValueError as exc:
             errors.append(f"extension: not valid JSON ({exc})")
 

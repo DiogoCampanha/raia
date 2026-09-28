@@ -40,9 +40,10 @@ class AuditorAgent(BaseAgent):
         layer="Dev",
         sdlc_phase="Development and validation",
         description=(
-            "Audits sprint progress against the approved ethical requirements and "
-            "reports it as an audit: an opinion, strengths, risks, opportunities and the way "
-            "forward, grounded in versioned evidence."
+            "Audits the whole project at each sprint close: the sprint's work against the evidence, "
+            "where every requirement stands, the progress across sprints and whether the backlog is "
+            "enough — reported as an audit with an opinion, strengths, risks, opportunities and the "
+            "way forward."
         ),
         intro=(
             "Verdicts are pre-assigned by code: anything with no trace in the sprint outcomes "
@@ -52,7 +53,7 @@ class AuditorAgent(BaseAgent):
             "opportunities and the pathway forward."
         ),
         grounding_sources=["ms_rai_v2", "nist_ai_rmf"],
-        upstream_keys=["risk_classification", "requirements_review", "refined_stories"],
+        upstream_keys=["risk_classification", "requirements_review", "refined_stories", "backlog", "sprints"],
         required_upstream=["requirements_review"],
         output_key="audit_report",
         engine=traceability.run,
@@ -108,7 +109,17 @@ class AuditorAgent(BaseAgent):
             "Findings are the risks the audit found — unverified items and accountability gaps — "
             "at most five, each linked to the item ids it concerns. Actions are the "
             "recommendations: each gives a finding an owner, a stage and the evidence that would "
-            "close it."
+            "close it.\n\n"
+            "When the project has a backlog, the audit covers the whole project, not only this sprint. "
+            "Where the project stands, the progress across sprints (and its trend), the backlog gaps "
+            "and the next-sprint suggestion are computed by code and given to you. Items not scheduled "
+            "yet are planned, not failures. In `backlog_assessment`, judge every requirement the "
+            "backlog covers: `covered` when its stories' criteria answer it, `weakly_covered` or "
+            "`not_covered` when they do not — you may lower code's judgement, never raise it. A "
+            "backlog gap that matters becomes a finding linked to its ref (e.g. EVR-4), with the "
+            "action that closes it (e.g. generate stories for EVR-4). `trajectory_comment` explains "
+            "the computed trend in one or two sentences; `next_focus` says what the next sprint "
+            "should tackle first."
         ),
     )
 
@@ -117,3 +128,8 @@ class AuditorAgent(BaseAgent):
         items = (record.get("extension") or {}).get("items") or []
         report.add(contract_checks.check_registered_ids(
             "Audit coverage", "audit", expected, [i.get("item_id") for i in items]))
+        covered = [str(c.get("ref")) for c in ((rationale.data or {}).get("backlog_coverage") or {}).get("covered") or []]
+        if (rationale.data or {}).get("project_mode"):
+            judged = [str(j.get("ref")) for j in (record.get("extension") or {}).get("backlog_assessment") or []]
+            report.add(contract_checks.check_registered_ids(
+                "Backlog assessment", "backlog_assessment", covered, judged))

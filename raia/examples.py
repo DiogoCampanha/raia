@@ -104,6 +104,13 @@ EXAMPLES: Dict[str, Dict[str, Any]] = {
             "attached to the ticket, documentation updated."
         ),
     },
+    "story_generate": {
+        "scope": "short",
+        "definition_of_done": (
+            "Merged behind a feature flag, unit and integration tests green, evaluation report "
+            "attached to the ticket, documentation updated."
+        ),
+    },
     "auditor": {
         "sprint_id": "Sprint 7",
         "sprint_outcomes": (

@@ -41,6 +41,7 @@ PREFIX: Dict[str, str] = {
     "risk_classifier": "RC",
     "requirements_reviewer": "RR",
     "story_refiner": "SR",
+    "story_generate": "SG",
     "auditor": "AU",
     "drift_monitor": "DM",
 }
@@ -50,6 +51,7 @@ RECORD_TYPES: Dict[str, str] = {
     "risk_classifier": "Risk classification record",
     "requirements_reviewer": "Requirements review record",
     "story_refiner": "Refined stories record",
+    "story_generate": "RAI backlog record",
     "auditor": "Audit record",
     "drift_monitor": "Drift monitoring record",
 }
@@ -286,6 +288,9 @@ def priority_floors(agent_key: str, rationale: RationaleResult) -> Dict[str, rub
         for item in verdict.get("not_verified") or []:
             floors[item] = (("high", "unverified ethical item on a high-risk system") if risk_high
                             else ("medium", "unverified ethical item"))
+        for g in (data.get("backlog_coverage") or {}).get("gaps") or []:
+            if g.get("kind") in ("legal_without_story", "risk_without_story"):
+                floors.setdefault(str(g.get("ref")), ("high", g.get("title", "backlog gap")))
 
     elif agent_key == "drift_monitor":
         for window, sev in drift_severities(rationale).items():
@@ -354,6 +359,55 @@ def _audit_opinion(ext: Dict[str, Any], rationale: RationaleResult, findings: Se
     if final != rating:
         reasons = reasons + [f"capped at the best the declared evidence allows ({ceiling.replace('_', ' ')})"]
     ext["opinion"] = {"rating": final, "reasons": reasons, "ceiling": ceiling}
+
+
+def _audit_project(ext: Dict[str, Any], rationale: RationaleResult, notes: List[str]) -> None:
+    """The project-wide parts of the audit, held to what code computed.
+
+    The backlog judgement follows the verdicts' one-way rule: code's "not
+    covered" stands, and "covered" may only be lowered. Where the project
+    stands and how it is moving are computed from the final verdicts, exactly
+    as the approval that closes the sprint will record them.
+    """
+    data = rationale.data or {}
+    if not data.get("project_mode"):
+        return
+    from .. import roadmap as R
+
+    coverage = data.get("backlog_coverage") or {}
+    computed = {str(c.get("ref")): "covered" for c in coverage.get("covered") or []}
+    computed.update({str(g.get("ref")): "not_covered" for g in coverage.get("gaps") or []
+                     if g.get("kind") in ("legal_without_story", "requirement_without_story")})
+    order = ("not_covered", "weakly_covered", "covered")
+    kept = []
+    for j in ext.get("backlog_assessment") or []:
+        ref = str(j.get("ref"))
+        base = computed.get(ref)
+        j["computed"] = base
+        if base and order.index(j.get("judgement", "covered")) > order.index(base):
+            notes.append(f"UPGRADE: {ref} was judged {j.get('judgement')}; code found it {base}. Restored.")
+            j["judgement"] = base
+        kept.append(j)
+    ext["backlog_assessment"] = kept
+
+    board = data.get("board") or {}
+    verdicts = {str(i.get("item_id")): i.get("verdict") for i in ext.get("items") or []}
+    closing = str(data.get("sprint_close") or "")
+    review = board.get("review") or {}
+    if closing:
+        projection = R.project_close(board.get("backlog") or {}, board.get("sprints") or {}, review, closing, verdicts)
+        series, tr = projection.get("series") or [], projection.get("trend") or {}
+        state_rows = projection.get("requirements") or []
+    else:
+        series = list(data.get("history") or [])
+        tr = R.trend(series)
+        state_rows = (data.get("project_state") or {}).get("requirements") or []
+    open_rai = (series[-1].get("open_rai_stories") if series else (data.get("next") or {}).get("open_rai")) or 0
+    ext["progress"] = {"series": series, "trend": tr, "projected": bool(closing),
+                       "sprints_left": R.sprints_left(series, int(open_rai))}
+    ext["project_state"] = {"counts": R.state_counts(state_rows), "requirements": [
+        {k: x.get(k) for k in ("id", "statement", "state", "stories", "legal", "obligation", "priority", "verified_in")}
+        for x in state_rows]}
 
 
 def finalize(
@@ -481,6 +535,7 @@ def finalize(
                                             "for this item. A verdict may be downgraded, never upgraded.")
                 item["verdict"] = "not_verified"
     if agent_key == "auditor" and isinstance(rec.get("extension"), dict):
+        _audit_project(ext, rationale, notes)
         _audit_opinion(ext, rationale, findings, issues, notes)
     if agent_key == "drift_monitor":
         severities = drift_severities(rationale)

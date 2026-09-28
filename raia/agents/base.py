@@ -170,6 +170,10 @@ class AgentSpec:
     #: "reasons"}}, "basis", "control_hints"}``. A suggestion only ever fills an
     #: empty field and is recorded as one (see ``raia.rationale.coverage``).
     suggest: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None
+    #: A mode of another agent (the Refiner's generate mode): it shares that
+    #: agent's identity and place in the pipeline, and has its own record.
+    parent: str = ""
+    mode_label: str = ""
 
     def __post_init__(self) -> None:
         # The layout is the contract's, not the agent's to choose.
@@ -367,7 +371,11 @@ class BaseAgent:
         system = COMMON_SYSTEM_PREAMBLE.format(
             agent_name=self.spec.name, layer=self.spec.layer, sdlc_phase=self.spec.sdlc_phase
         )
-        upstream_text = repo.upstream_context(self.spec.upstream_keys)
+        # The board's registers reach the engine through the bundle; the prompt
+        # gets what the engine computed from them, not the whole backlog.
+        from ..repository import REGISTERS
+
+        upstream_text = repo.upstream_context([k for k in self.spec.upstream_keys if k not in REGISTERS])
         computed = rationale.summary_md() if self.spec.engine else "(no rule engine for this agent)"
         revision_note = ""
         if feedback:

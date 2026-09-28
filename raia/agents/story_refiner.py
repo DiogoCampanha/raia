@@ -37,6 +37,7 @@ class UserStoryRefinerAgent(BaseAgent):
     spec = AgentSpec(
         key="story_refiner",
         name="User Story Refiner",
+        mode_label="Refine sprint stories",
         layer="Dev",
         sdlc_phase="Iterative development (sprints)",
         description=(
@@ -52,7 +53,7 @@ class UserStoryRefinerAgent(BaseAgent):
             "ready to copy back to your tracker."
         ),
         grounding_sources=["eccola", "ms_rai_v2"],
-        upstream_keys=["risk_classification", "requirements_review"],
+        upstream_keys=["risk_classification", "requirements_review", "backlog", "sprints"],
         required_upstream=["requirements_review"],
         output_key="refined_stories",
         engine=story_map.run,
@@ -94,8 +95,10 @@ class UserStoryRefinerAgent(BaseAgent):
             "covers it. In `conflicts`, flag an existing criterion (by its id, e.g. `S1-E2`) only "
             "when it conflicts with an approved requirement or a card in scope — say why in one "
             "sentence and suggest a rewrite; the team decides. A story with no ethical impact has "
-            "no criteria and a one-line `no_impact_reason`. `sprint_ethics_log` lists up to five "
-            "decisions taken and why, one sentence each.\n\n"
+            "no criteria and a one-line `no_impact_reason`. On each story, `evr_ids` names the "
+            "approved requirement(s) the story helps implement, if any, so it joins the roadmap. "
+            "RAI stories already in the sprint carry their own criteria: never duplicate them. "
+            "`sprint_ethics_log` lists up to five decisions taken and why, one sentence each.\n\n"
             "The refined stories are the output the team uses: they are read first and copied back "
             "to the tracker, so put the substance in the criteria. `card_discussion` is ONE "
             "sentence saying why this story got its criteria. Findings and actions only explain "
@@ -126,7 +129,8 @@ class UserStoryRefinerAgent(BaseAgent):
             "Card selection", "cards", allowed, used, require_all=False))
         report.add(contract_checks.check_registered_ids(
             "Requirement references", "references", evr_ids,
-            [e for s in stories for c in s.get("criteria") or [] for e in c.get("evr_ids") or []],
+            [e for s in stories for c in s.get("criteria") or [] for e in c.get("evr_ids") or []]
+            + [e for s in stories for e in s.get("evr_ids") or []],
             require_all=False))
         report.add(contract_checks.check_registered_ids(
             "Conflicting criteria", "conflicts",

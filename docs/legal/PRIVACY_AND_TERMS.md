@@ -1,6 +1,6 @@
 # Privacy Policy and User Agreement
 
-**Effective date:** 17 September 2026 · **Version:** 1.0
+**Effective date:** 27 September 2026 · **Version:** 1.1
 
 RAIA (Responsible AI Assistant) is a research prototype developed as part of a
 master's research project on Responsible AI. This page explains what RAIA does
@@ -34,6 +34,15 @@ files, calendar or any other Google data, and requests no other permissions.
   optional profile questions (broad categories only, such as region or years of
   experience).
 
+**Optional: a Jira connection.** Only if you choose to connect Jira in
+Settings, RAIA stores your Jira Cloud site address, the email you use there, a
+default project key and your Jira **API token**. The token is stored
+encrypted and is used only to create, update and read the Jira issues of the
+sprints you send there; it is never written to a project, its downloads or its
+activity log, and it is deleted when you disconnect Jira or delete your
+account. Where the deployment cannot encrypt it, the token is not stored at
+all and is kept only for your browser session. RAIA works fully without Jira.
+
 **Technical information.** The date of your first sign-in, your last sign-in,
 when you accepted this agreement and a daily count of agent runs used to
 enforce fair-use limits.
@@ -61,6 +70,10 @@ use Google user data to develop or train AI models.
   content of the stage being run (your form answers and the relevant approved
   project documents) to the configured language-model provider. Your Google
   account details are not sent.
+- **Jira (only if you connect it).** When you push a sprint or sync its
+  status, the stories of that sprint (titles, descriptions, acceptance
+  criteria, the requirements they implement and labels identifying them) are
+  sent to the Jira site you connected, under your own Jira account.
 - **Infrastructure providers** host the application and its database on
   RAIA's behalf, under their own security commitments.
 - **Legal obligations:** information may be disclosed where the law requires it.

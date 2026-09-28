@@ -291,8 +291,10 @@ def test_story_map() -> None:
         "US-12: Ranked shortlist\nAs a recruiter, I want a shortlist.\nAcceptance criteria:\n"
         "- Shows 20 candidates\n- Loads in under 2 seconds\n\nPROJ-7 As an HR manager I want a report.\n"
         "Given a month, when I open it, then I see throughput\nAC2: exports to CSV")
-    check([x["id"] for x in pasted] == ["S12", "PROJ-7"], "pasted stories keep the team's ids")
-    check(pasted[0]["title"] == "Ranked shortlist" and [c["id"] for c in pasted[0]["criteria"]] == ["S12-E1", "S12-E2"],
+    check([x["id"] for x in pasted] == ["US-12", "PROJ-7"], "pasted stories keep the team's ids (US-n is the backlog's own)")
+    check(story_map.normalize_stories("STORY-4: A thing\nAs a user I want it.")[0]["id"] == "S4",
+          "STORY-n is still read as S<n>")
+    check(pasted[0]["title"] == "Ranked shortlist" and [c["id"] for c in pasted[0]["criteria"]] == ["US-12-E1", "US-12-E2"],
           "acceptance criteria stay with their story, each with its own id")
     check(len(pasted[1]["criteria"]) == 2 and pasted[1]["criteria"][1]["text"] == "exports to CSV",
           "…including Given/When/Then lines and AC-numbered lines, which are not stories")

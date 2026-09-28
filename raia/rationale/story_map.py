@@ -109,7 +109,13 @@ _VALID_ID = re.compile(r"^[A-Z][A-Z0-9]{0,9}-?\d+$")
 
 
 def _legacy_id(raw: str) -> str:
-    """``US-12`` and ``STORY-12`` are read as ``S12``; any other id is kept, upper-cased."""
+    """``STORY-12`` and ``US12`` are read as ``S12``; any other id is kept, upper-cased.
+
+    ``US-12`` is the backlog's own id for a product story, so it is kept as
+    written: a story sent from the board comes back under the same id.
+    """
+    if re.match(r"^US-\d+$", raw, re.I):
+        return raw.upper()
     m = re.match(r"^(?:US|STORY)-?(\d+)$", raw, re.I)
     return f"S{m.group(1)}" if m else raw.upper()
 
@@ -303,6 +309,30 @@ def _context_tokens(risk: Dict[str, Any], caps: List[str]) -> Set[str]:
     return tokens
 
 
+def cards_for(risk: Dict[str, Any], story_caps: Sequence[str]) -> List[Dict[str, Any]]:
+    """The ECCOLA cards in scope for a story that touches ``story_caps``, each with why."""
+    story_tokens = _context_tokens(risk, list(story_caps))
+    chosen_cards = []
+    for card in CARDS:
+        why: List[str] = []
+        if card["always"]:
+            why.append("applies to any AI product")
+        why.extend(t for t in card["triggers"] if t in story_tokens)
+        if why:
+            chosen_cards.append({**card, "why": why})
+    return chosen_cards
+
+
+def sprint_context(upstream: Dict[str, Any]) -> Dict[str, Any]:
+    """The open sprint and the RAI stories already in it, from the board's registers."""
+    sprints = ((upstream.get("sprints") or {}).get("data") or {}).get("sprints") or []
+    open_ = next((x for x in sprints if x.get("state") != "closed"), None)
+    stories = ((upstream.get("backlog") or {}).get("data") or {}).get("stories") or []
+    rai = [s for s in stories if open_ and s.get("sprint") == open_.get("id") and s.get("origin") == "rai"
+           and s.get("status") != "obsolete"]
+    return {"sprint": open_ or {}, "rai_in_sprint": rai}
+
+
 def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
     r = RationaleResult(engine="story_card_map")
 
@@ -321,24 +351,15 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
 
     tokens = _context_tokens(risk, caps)
 
-    def cards_for(story_caps: Sequence[str]) -> List[Dict[str, Any]]:
-        story_tokens = _context_tokens(risk, story_caps)
-        chosen_cards = []
-        for card in CARDS:
-            why: List[str] = []
-            if card["always"]:
-                why.append("applies to any AI product")
-            why.extend(t for t in card["triggers"] if t in story_tokens)
-            if why:
-                chosen_cards.append({**card, "why": why})
-        return chosen_cards
+    def _cards(story_caps: Sequence[str]) -> List[Dict[str, Any]]:
+        return cards_for(risk, story_caps)
 
     # Each story gets the cards its own capabilities select; the sprint's set is
     # their union, and a capability reason names the stories it came from.
     per_story: Dict[str, List[str]] = {}
     reasons: Dict[str, Dict[str, List[str]]] = {}
     for st in stories:
-        chosen_cards = cards_for(st["capabilities"])
+        chosen_cards = _cards(st["capabilities"])
         st["cards"] = [c["id"] for c in chosen_cards]
         per_story[st["id"]] = st["cards"]
         for c in chosen_cards:
@@ -352,7 +373,7 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
         for card in CARDS if card["id"] in reasons
     ]
     if not stories:
-        selected_cards = cards_for(caps)
+        selected_cards = _cards(caps)
 
     existing_total = sum(len(st["criteria"]) for st in stories)
     r.findings.append(
@@ -377,6 +398,15 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
         [[st["id"], st["title"] or st["description"][:80], ", ".join(c["id"] for c in st["criteria"]) or "none",
           ", ".join(st["cards"])] for st in stories]
     )
+
+    ctx = sprint_context(upstream)
+    if ctx["rai_in_sprint"]:
+        r.tables["RAI stories already in this sprint (they carry their own criteria: do not duplicate them)"] = md_table(
+            ["Story", "Title", "Requirements", "Ethical criteria"],
+            [[s.get("id"), s.get("title") or "", ", ".join(s.get("evr_ids") or []),
+              "; ".join(f"{c.get('id')}: {c.get('text', '')[:80]}" for c in s.get("criteria") or []
+                        if c.get("kind") == "ethical") or "none"]
+             for s in ctx["rai_in_sprint"]])
 
     if evr_ids:
         r.tables["Approved ethical value requirements available for traceability"] = md_table(
@@ -455,6 +485,7 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
             "capabilities": caps,
             "evr_ids": evr_ids,
             "sprint_goal": sprint_goal,
+            "sprint": (ctx["sprint"] or {}).get("id", ""),
         }
     )
     return r

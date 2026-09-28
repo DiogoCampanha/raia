@@ -50,10 +50,17 @@ ARTIFACT_FILES: Dict[str, str] = {
     "risk_classification": "02_risk_classification.md",
     "requirements_review": "03_requirements_review.md",
     "refined_stories": "04_refined_stories.md",
+    "rai_backlog": "04a_rai_backlog.md",
     "audit_report": "05_audit_report.md",
     "drift_report": "06_drift_report.md",
     "open_issues": "07_open_issues.md",
+    "backlog": "08_backlog.md",
+    "sprints": "09_sprints.md",
 }
+
+#: Registers maintained by code (not agent outputs): written through the same
+#: commit path, but never listed as a stage's approved artifact.
+REGISTERS = ("open_issues", "backlog", "sprints")
 
 OPEN = "open"
 RESOLVED = "resolved"
@@ -63,6 +70,16 @@ ISSUE_STATUSES = (OPEN, RESOLVED, ACCEPTED)
 
 def _sidecar(filename: str) -> str:
     return filename.rsplit(".", 1)[0] + ".json"
+
+
+def sprint_file(key: str, sprint_id: str) -> str:
+    """The per-sprint copy of an artifact: ``04_refined_stories.SPR-2.md``.
+
+    A flat name rather than a folder, so both storage backends and every export
+    treat it as one more file of the blackboard.
+    """
+    stem, ext = ARTIFACT_FILES[key].rsplit(".", 1)
+    return f"{stem}.{sprint_id}.{ext}"
 
 
 def _git_available() -> bool:
@@ -152,6 +169,39 @@ class BaseRepository:
     def existing_artifacts(self) -> List[str]:
         return [k for k in ARTIFACT_FILES if self.read_artifact(k) is not None]
 
+    def read_sprint_artifact(self, key: str, sprint_id: str) -> Optional[str]:
+        """The copy of an artifact approved for one sprint, if there is one."""
+        return self._read_file(sprint_file(key, sprint_id))
+
+    def read_sprint_data(self, key: str, sprint_id: str) -> Dict[str, Any]:
+        text = self._read_file(_sidecar(sprint_file(key, sprint_id)))
+        if not text:
+            return {}
+        try:
+            return json.loads(text)
+        except ValueError:
+            return {}
+
+    # -- Registers maintained by code (backlog, sprints) ------------------------
+
+    def read_register(self, key: str) -> Dict[str, Any]:
+        """The structured body of a code-maintained register, or ``{}``."""
+        return dict((self.read_data(key) or {}).get("structured") or {})
+
+    @staticmethod
+    def register_files(key: str, structured: Dict[str, Any], markdown: str) -> Dict[str, str]:
+        """The two files of a register, ready to go into one commit."""
+        filename = ARTIFACT_FILES[key]
+        return {
+            filename: markdown,
+            _sidecar(filename): json.dumps({"artifact": key, "structured": structured},
+                                           indent=2, ensure_ascii=False, default=str),
+        }
+
+    def commit_files(self, files: Dict[str, str], message: str) -> str:
+        """Record several files as one version (used for register updates)."""
+        return self._commit_files(files, message)
+
     def upstream_context(self, keys: List[str]) -> str:
         """Approved upstream artifacts, concatenated as prompt context."""
         parts = []
@@ -189,6 +239,8 @@ class BaseRepository:
         approved_by: str = "human",
         structured: Optional[Dict[str, Any]] = None,
         run_provenance: Optional[Dict[str, Any]] = None,
+        extra_files: Optional[Dict[str, str]] = None,
+        sprint_id: str = "",
     ) -> str:
         """Persist an approved artifact — Markdown and sidecar, one commit.
 
@@ -210,12 +262,22 @@ class BaseRepository:
             "structured": structured or {},
             "provenance": record,
         }
+        files = {
+            filename: header + cleaned.text,
+            _sidecar(filename): json.dumps(payload, indent=2, ensure_ascii=False, default=str),
+        }
+        if sprint_id:
+            # The same approval, kept per sprint so the series survives the next one.
+            copy = sprint_file(key, sprint_id)
+            files[copy] = files[filename]
+            files[_sidecar(copy)] = files[_sidecar(filename)]
+        # Registers the approval changes (the backlog, the sprints) travel in the
+        # same commit: one approval, one recorded version.
+        files.update(extra_files or {})
         commit = self._commit_files(
-            {
-                filename: header + cleaned.text,
-                _sidecar(filename): json.dumps(payload, indent=2, ensure_ascii=False, default=str),
-            },
-            f"raia({key}): human-approved update by {approved_by}",
+            files,
+            f"raia({key}): human-approved update by {approved_by}"
+            + (f" ({sprint_id})" if sprint_id else ""),
         )
         self.clear_pending_for(key)
         return commit

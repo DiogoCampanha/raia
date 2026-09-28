@@ -208,6 +208,48 @@ Three rules the tests enforce:
   timestamp and the SHA-256 of every file it wrote, and `verify_history()`
   recomputes all of them.
 
+## 1d. The sprint cycle: backlog, sprints and roadmap
+
+Once the risk classification and the ethical requirements are approved, a
+project runs as a loop of sprints over one backlog. Requirements are
+constants; the work they need is spread over many sprints. There are still
+five agents: the backlog, the sprints and the roadmap are **shared state on the
+blackboard**, not an agent, and people plan the sprints.
+
+```mermaid
+flowchart TB
+    subgraph ONCE["Once per project"]
+      RC["Risk Classifier + H"] --> RR["Requirements Reviewer + H<br/>(constants, change-controlled)"]
+    end
+    RR --> GEN["User Story Refiner · generate mode + H<br/>requirements without a story → RAI-n"]
+    GEN --> BL[("08_backlog<br/>RAI-n and US-n stories")]
+    subgraph SPRINT["Every sprint (09_sprints)"]
+      PLAN["Plan: rule-based suggestion,<br/>a person decides"] --> REF["User Story Refiner · refine mode + H<br/>product stories get ethical criteria"]
+      REF --> TICK["Tick done by hand<br/>(or optional Jira sync)"]
+      TICK --> AUD["Auditor + H<br/>project-wide audit"]
+    end
+    BL --> PLAN
+    AUD -->|"approval closes the sprint:<br/>verified or carried over"| BL
+    AUD --> RM["Roadmap (computed)<br/>state per requirement · series · trend"]
+    RR -. "a revision flags only<br/>the stories it touches" .-> BL
+```
+
+| Piece | Where | Rule |
+|---|---|---|
+| Backlog register | `raia/backlog.py`, `08_backlog.md` + `.json` | Stable ids (`RAI-n` from requirements, `US-n` product). An RAI story links at least one requirement. Statuses: backlog, in sprint, done, verified, needs review, obsolete |
+| Sprints register | `raia/backlog.py`, `09_sprints.md` + `.json` | One open sprint at a time: planning → active → awaiting audit → closed. It closes only on an approved audit, which records its numbers |
+| Per-sprint copies | `04_refined_stories.SPR-n.md`, `05_audit_report.SPR-n.md` | The same commit as the approval that wrote them |
+| Roadmap | `raia/roadmap.py` | Computed, never generated: where each requirement stands, verified requirements per sprint, the trend, the sprints-left estimate, and the next-sprint suggestion (rules only, no model) |
+| Generate mode | `raia/agents/story_generate.py`, `raia/rationale/story_seed.py` | A mode of the User Story Refiner with its own record. Short list by default (five), widened on request |
+| Project-wide audit | `raia/rationale/traceability.py`, `raia/rationale/backlog_coverage.py` | This sprint's items audited; the rest reported where it stands; the backlog checked against the ethical risks |
+| Change control | `backlog.compare_requirements`, `backlog.change_control` | A changed requirement flags its stories; a removed one proposes obsolete; the stages of the sprint cycle are never flagged wholesale (`lineage.CYCLIC`) |
+| Jira (optional) | `raia/jira.py`, `raia/ui/jira_panel.py` | CSV with no setup; push and sync with a person's own token. Done in Jira means delivered; a sync never overwrites a manual change and never verifies |
+
+Who may do what on the board: owners and editors add stories, plan, start and
+end sprints and push to Jira; every member, reviewers included, can tick a
+story done and sync from Jira. Only an approved Auditor run sets a story
+verified.
+
 ## 2. Class Diagram (code structure)
 
 ```mermaid
@@ -352,8 +394,11 @@ stateDiagram-v2
     [*] --> ProductBrief : human writes brief
     ProductBrief --> RiskClassification : Risk Classifier + H
     RiskClassification --> RequirementsReview : Requirements Reviewer + H
-    RequirementsReview --> RefinedStories : User Story Refiner + H
+    RequirementsReview --> RaiBacklog : User Story Refiner (generate) + H
+    RaiBacklog --> RefinedStories : sprint planned by a person
+    RequirementsReview --> RefinedStories : User Story Refiner (refine) + H
     RequirementsReview --> AuditReport : Auditor + H
+    AuditReport --> RefinedStories : next sprint
     RiskClassification --> DriftReport : Drift Monitor + H (Ops adoptable early)
     RefinedStories --> AuditReport
     AuditReport --> [*]
@@ -394,10 +439,14 @@ stateDiagram-v2
 | Durable review state | `PostgresSaver` checkpointer and stored drafts; a restored review re-enters the gate | code + test_projects |
 | Input sanitization | `raia/sanitize.py` — control characters, length caps, injection patterns in English and Portuguese; applied to form input *and* to the approved artifact | code |
 | Provider-agnostic LLM | `raia/llm.py` factory and a single `invoke_chat` call site | structure |
+| Iterative development across sprints | a backlog and sprints on the blackboard (`raia/backlog.py`); the Refiner's generate and refine modes write to it only through their gates; the roadmap and the sprint suggestion are computed (`raia/roadmap.py`) | code + test_backlog |
+| The audit covers the whole project | `traceability.run` audits the sprint's items and reports the rest where it stands; `backlog_coverage` checks the backlog against the ethical risks; progress and trend are computed from the final verdicts | code + test_backlog |
+| Only an audit verifies | `backlog.apply_audit` runs only on an approved audit of an ended sprint; ticks and Jira syncs set *done*, never *verified* | code + test_backlog, test_jira |
 
 **Not yet implemented** (tracked in the README roadmap): ingesting the official
-legal texts with article-level citation metadata, Jira/Confluence MCP
-connectors, and least-privilege tool-permission hardening.
+legal texts with article-level citation metadata, Confluence, Jira Server or
+Data Center (Jira Cloud is supported, optionally), and least-privilege
+tool-permission hardening.
 
 **Known limitations, stated plainly.** The corpus is a set of curated summaries
 prepared for this project, so a citation resolves to a section of a summary

@@ -40,6 +40,12 @@ STALE = "stale"
 #: Artifacts that are written together with another agent's approval.
 _EXTRA_PRODUCERS = {"product_brief": "risk_classifier"}
 
+#: Stages that run once per sprint over the backlog. A revised requirement does
+#: not flag them wholesale: requirements change control flags only the stories
+#: it touches (``raia.backlog.change_control``), and the next sprint's run reads
+#: the new version.
+CYCLIC = ("story_refiner", "auditor")
+
 
 def _agents(agents: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if agents is not None:
@@ -121,7 +127,7 @@ def stage_states(repo, agents: Optional[Dict[str, Any]] = None) -> List[Dict[str
         approved = agent.spec.output_key in done
         missing = agent.missing_prerequisites(repo)
         because: List[str] = []
-        if approved and key in marks["current"]:
+        if approved and key in marks["current"] and key not in CYCLIC:
             mine = marks["current"][key]
             because = [u for u in ancestors(key, agents)
                        if marks["approved"].get(u, -1) > mine]
@@ -151,7 +157,8 @@ def revision_impact(repo, agent_key: str, agents: Optional[Dict[str, Any]] = Non
     """Approved stages that will be flagged for review if ``agent_key`` is re-approved."""
     agents = _agents(agents)
     done = set(repo.existing_artifacts())
-    return [k for k in descendants(agent_key, agents) if agents[k].spec.output_key in done]
+    return [k for k in descendants(agent_key, agents)
+            if agents[k].spec.output_key in done and k not in CYCLIC]
 
 
 #: Statuses a person can act on from a stage page, and the order a project page

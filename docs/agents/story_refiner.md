@@ -12,9 +12,9 @@ Selects the ethical themes that actually apply to each story and adds verifiable
 |---|---|
 | Layer | Dev |
 | SDLC phase | Iterative development (sprints) |
-| When to run | During sprint planning, for the stories about to enter a sprint. |
+| When to run | During sprint planning, for the product stories about to enter a sprint. |
 | Requires approved | Requirements Reviewer |
-| Reads | Risk Classifier, Requirements Reviewer |
+| Reads | Risk Classifier, Requirements Reviewer, backlog, sprints |
 | Produces | `04_refined_stories.md` — refined stories record |
 
 ## 3. Normative grounding
@@ -69,7 +69,7 @@ Excerpts pinned for the canonical scenario:
 
 ## 7. The record it produces
 
-Schema `raia-record/1.2` — `docs/schema/story_refiner.schema.json`. Identifier prefix `SR`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.3` — `docs/schema/story_refiner.schema.json`. Identifier prefix `SR`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
@@ -91,6 +91,7 @@ Schema `raia-record/1.2` — `docs/schema/story_refiner.schema.json`. Identifier
 | `stories[].conflicts[].problem` | One sentence: why the existing criterion conflicts. |
 | `stories[].conflicts[].suggested_rewrite` | The criterion rewritten so the conflict is gone. |
 | `stories[].no_impact_reason` | Only for a story with no ethical impact: one line. |
+| `stories[].evr_ids` | Approved EVR ids this story helps implement, if any (they link it to the requirement on the roadmap). Leave empty for a story with no ethical impact. |
 | `sprint_ethics_log` | Up to five decisions taken this sprint, one sentence each with its reason (ECCOLA documentation step). |
 
 Rendered sections: Summary → Refined Stories → Stories Without Ethical Impact → Findings → Action Plan → Open Issues → Sprint Ethics Log → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
@@ -106,6 +107,7 @@ Verdict keys the agent declares: `story_count`.
 - The rule engine's issues are carried forward; the verdict is reconciled
 - Every story id has an entry
 - Only cards in scope for each story and approved EVR ids are used
+- Approval writes the criteria and requirement links back to the backlog
 - Criteria are labelled AC-<story>-<n>
 - A conflict names an existing criterion of its own story, and opens a decision (by code)
 

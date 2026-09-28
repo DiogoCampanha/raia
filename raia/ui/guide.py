@@ -26,8 +26,8 @@ from typing import List, Optional, Tuple
 DOCUMENT = Path(__file__).resolve().parents[2] / "docs" / "TESTERS.md"
 
 TITLE = "How to use RAIA"
-SUBTITLE = ("A step-by-step walkthrough for testers. About 25 minutes to try the stages, "
-            "and 10 more for the assessment.")
+SUBTITLE = ("A step-by-step walkthrough for testers. About 35 minutes to try the stages and a "
+            "sprint, and 10 more for the assessment.")
 
 INTRO = (
     "You are testing **RAIA (Responsible AI Assistant)**, a research prototype that helps "
@@ -47,8 +47,8 @@ MENU: List[Tuple[str, str]] = [
     ("Agents", "How RAIA works: the architecture (select an agent in the diagram to see what it "
                "reads and produces) and each agent's documentation."),
     ("Assessment", "The evaluation form for this study."),
-    ("Account", "Settings (profile, your data, delete account), the Privacy Policy and User "
-                "Agreement, and **Sign out**."),
+    ("Account", "Settings (profile, the optional Jira connection, your data, delete account), the "
+                "Privacy Policy and User Agreement, and **Sign out**."),
 ]
 
 
@@ -126,7 +126,11 @@ STEPS: List[Step] = [
         "**Reject** each one; nothing counts until you adopt it, and before running you confirm "
         "that the pre-filled answers reflect your project. The record then says which "
         "requirements RAIA recommended and you adopted.\n\n"
-        "In the **User Story Refiner**, add each story on its own card with its acceptance "
+        "Once the requirements are approved, the project page opens on its **Board** (next "
+        "step). From there the **User Story Refiner** has two modes: **Generate from "
+        "requirements** turns approved requirements into RAI stories for the backlog, and "
+        "**Refine sprint stories** adds ethical criteria to your product stories.\n\n"
+        "In the **User Story Refiner**'s refine mode, add each story on its own card with its acceptance "
         "criteria and what it touches (or paste several at once and check the cards). RAIA adds "
         "ethical criteria per story and flags any existing criterion that conflicts; each "
         "conflict becomes a decision for you. The result leads with the stories themselves: each "
@@ -135,10 +139,32 @@ STEPS: List[Step] = [
         "rewrite or keeps the original, then **Copy** the story (or **Copy all stories**) back "
         "to your tracker. **Why these changes** holds the risks, actions and decisions behind "
         "them.\n\n"
-        "The **Auditor** reads as an audit report: an opinion the software rates from the "
-        "evidence, the strengths the evidence supports, the risks with a recommendation each, "
-        "opportunities, and the pathway forward in order. The registers behind it are in "
-        "**Appendices**.",
+        "The **Auditor** reads as an audit report of the whole project: an opinion the software "
+        "rates from the evidence, where the project stands, its progress across sprints, whether "
+        "the backlog is enough for the ethical risks, what comes next, the strengths the evidence "
+        "supports, the risks with a recommendation each, opportunities, and the pathway forward. "
+        "The registers behind it are in **Appendices**.",
+    ),
+    Step(
+        "Run sprints on the Board",
+        "With the requirements approved, the project page opens on the **Board**, with three "
+        "views:\n\n"
+        "- **Sprint** — press **Generate stories from the requirements** first: RAIA writes RAI "
+        "stories for the five highest-priority requirements (run it again for more) and you "
+        "approve them at the gate; they enter the backlog as RAI-1, RAI-2, and so on. Then "
+        "**Plan the sprint**: RAIA suggests stories by fixed rules (carried-over first, then legal "
+        "obligations, then priority), each with its reason, and you add the ones you want. "
+        "**Start** the sprint, tick each story **Done** when it is delivered, **End** the sprint "
+        "and **Audit** it. The approved audit closes the sprint: it marks verified only what the "
+        "evidence supports and carries the rest over. A tick means delivered, never verified.\n"
+        "- **Backlog** — every story, RAI and product, with its requirements and status. Add "
+        "product stories, and settle any story flagged because a requirement changed.\n"
+        "- **Roadmap** — where each requirement stands, requirements verified per sprint, and an "
+        "estimate of the sprints left.\n\n"
+        "**Jira is optional.** Under **Jira (optional)** you can download a Jira-ready CSV, or, "
+        "after connecting your Jira Cloud account in **Settings**, push the sprint and sync its "
+        "status back. A sync never overrides what you ticked on the board; if Jira and the board "
+        "disagree, the story says so and you pick.",
     ),
     Step(
         "Revise a stage and re-check what depends on it",

@@ -42,7 +42,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
 from . import validators
-from .agents import AGENTS
+from .agents import RUNNABLE as AGENTS
 from .storage import build_checkpointer, open_repository
 
 
@@ -196,13 +196,20 @@ def _persist(state: StageState) -> StageState:
     if run.get("run_by"):
         prov["approval"]["run_by"] = run["run_by"]
 
+    extra_files, sprint_id, effect = _board_effects(agent, repo, record, rationale, structured, approver)
+
     commit = repo.save_artifact(
         agent.spec.output_key,
         content,
         approved_by=approver,
         structured=structured,
         run_provenance=prov,
+        extra_files=extra_files,
+        sprint_id=sprint_id,
     )
+    if effect:
+        repo.record_event("backlog_updated", {"agent": agent.spec.key, "user": decision.get("approver_id", ""),
+                                              "commit": commit, **effect})
 
     # Every issue in the approved record reaches the register with its type,
     # deciding role and blocking flag — the engine's, the agent's and the ones
@@ -231,6 +238,57 @@ def _persist(state: StageState) -> StageState:
         },
     )
     return {"commit": commit, "approved_content": content}
+
+
+def _board_effects(agent, repo, record: Dict[str, Any], rationale, structured: Dict[str, Any],
+                   approver: str):
+    """What an approval changes on the board, as files for the same commit.
+
+    Returns ``(files, sprint_id, effect)``: the register files to commit with
+    the artifact, the sprint the artifact is kept for (its per-sprint copy),
+    and a summary for the event log. Only approvals reach here, so nothing
+    enters the backlog, and no sprint closes, without a person's decision.
+    """
+    from . import backlog as B
+    from . import roadmap as R
+
+    key = agent.spec.key
+    if key != "requirements_reviewer" and repo.read_artifact("requirements_review") is None:
+        return {}, "", {}
+    bl, sp = B.load(repo)
+    x = B.open_sprint(sp)
+    data = rationale.data or {}
+
+    if key == "story_generate":
+        mapping = B.apply_generation(bl, record, by=approver, source="generate mode")
+        return B.register_files(repo, bl, None), "", {"generated": mapping}
+
+    if key == "story_refiner":
+        mapping = B.apply_refinement(bl, sp, record, data.get("stories") or [], by=approver, source="refine mode")
+        return B.register_files(repo, bl, None), (x["id"] if x else ""), {"refined": mapping}
+
+    if key == "auditor":
+        closing = str(data.get("sprint_close") or "")
+        if closing and x and x["id"] == closing and x["state"] == B.REVIEW:
+            review = (repo.read_data("requirements_review") or {}).get("structured") or {}
+            ext = record.get("extension") or {}
+            result = B.apply_audit(bl, sp, closing, record, {"progress": ext.get("progress") or {}}, by=approver)
+            closed = B.sprint(sp, closing)
+            closed["snapshot"] = R.metrics(bl, review, closing, result)
+            return B.register_files(repo, bl, sp), closing, {"closed": closing, **result}
+        return {}, "", {}
+
+    if key == "requirements_reviewer":
+        old = ((repo.read_data("requirements_review") or {}).get("structured") or {}).get("evrs") or []
+        if not old or not bl.get("stories"):
+            return {}, "", {}
+        diff = B.compare_requirements(old, structured.get("evrs") or [])
+        if not any(diff.values()):
+            return {}, "", {}
+        flagged = B.change_control(bl, diff, by=approver)
+        return B.register_files(repo, bl, None), "", {"requirements": diff, **flagged}
+
+    return {}, "", {}
 
 
 def _core(record: Dict[str, Any]) -> str:

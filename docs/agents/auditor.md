@@ -4,7 +4,7 @@
 
 ## 1. Purpose
 
-Audits sprint progress against the approved ethical requirements and reports it as an audit: an opinion, strengths, risks, opportunities and the way forward, grounded in versioned evidence.
+Audits the whole project at each sprint close: the sprint's work against the evidence, where every requirement stands, the progress across sprints and whether the backlog is enough — reported as an audit with an opinion, strengths, risks, opportunities and the way forward.
 
 ## 2. Place in the lifecycle
 
@@ -12,9 +12,9 @@ Audits sprint progress against the approved ethical requirements and reports it 
 |---|---|
 | Layer | Dev |
 | SDLC phase | Development and validation |
-| When to run | At the end of a sprint or before a release decision. |
+| When to run | At the end of each sprint (it closes the sprint), or at any time for a project-wide check. |
 | Requires approved | Requirements Reviewer |
-| Reads | Risk Classifier, Requirements Reviewer, User Story Refiner |
+| Reads | Risk Classifier, Requirements Reviewer, User Story Refiner, backlog, sprints |
 | Produces | `05_audit_report.md` — audit record |
 
 ## 3. Normative grounding
@@ -35,6 +35,8 @@ Audits sprint progress against the approved ethical requirements and reports it 
 
 ## 5. What the decision procedure settles in code
 
+- Audits the whole project: this sprint's items against the evidence it produced, and every other requirement where it stands — verified earlier, planned, or with no story yet.
+- Computes the progress across sprints and its trend, whether the backlog covers the project's ethical risks, and the rule-based suggestion for the next sprint.
 - Reads the register of approved requirements and acceptance criteria and matches each one to the evidence the sprint produced.
 - Refuses to mark anything verified without evidence: an item with no evidence is not verified, whatever the narrative says.
 - Rates the audit — not effective, needs improvement, effective with observations or effective — from the final verdicts, priorities and open decisions, never above what the declared evidence allows; removes any strength the evidence does not support.
@@ -58,13 +60,14 @@ Excerpts pinned for the canonical scenario:
 ## 6. What a person decides
 
 - Whether the evidence is sufficient for an accountability record.
+- Whether the backlog is enough, where code found it covered: the agent may only lower that judgement.
 - The decisions the pathway forward opens with, and who carries each recommendation.
 - What becomes an ethical checkpoint for the next iteration.
 - Every open issue the record raises, and whether to approve, edit or reject the record.
 
 ## 7. The record it produces
 
-Schema `raia-record/1.2` — `docs/schema/auditor.schema.json`. Identifier prefix `AU`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.3` — `docs/schema/auditor.schema.json`. Identifier prefix `AU`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
@@ -94,8 +97,14 @@ Schema `raia-record/1.2` — `docs/schema/auditor.schema.json`. Identifier prefi
 | `opportunities[].refs` | Item ids or principle keys it concerns. |
 | `opportunities[].benefit` | What it would change, in one line. |
 | `pathway_summary` | One sentence: the way forward, in the order the team should take it. |
+| `backlog_assessment` | One entry per requirement the backlog covers (computed list): is it covered well enough? You may say weakly_covered or not_covered where code said covered, never the reverse. |
+| `backlog_assessment[].ref` | A requirement id from the computed coverage list, exactly. |
+| `backlog_assessment[].judgement` | — |
+| `backlog_assessment[].reason` | One line: why, naming the stories or criteria. |
+| `trajectory_comment` | One or two sentences on the progress across sprints; the trend itself is computed by code. |
+| `next_focus` | One sentence: what the next sprint should tackle first, and why. |
 
-Rendered sections: Audit Opinion → Strengths → Risks → Opportunities → Pathway Forward → Open Issues → Verdict Register → Accountability Documentation → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
+Rendered sections: Audit Opinion → Where the Project Stands → Progress Across Sprints → Is the Backlog Enough → What Comes Next → Strengths → Risks → Opportunities → Pathway Forward → Open Issues → Verdict Register → Accountability Documentation → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
 
 Verdict keys the agent declares: `items_audited`, `opinion_ceiling`.
 
@@ -106,6 +115,7 @@ Verdict keys the agent declares: `items_audited`, `opinion_ceiling`.
 - Every checklist item is declared covered, not applicable or not grounded
 - Every finding has an action or an open issue
 - The rule engine's issues are carried forward; the verdict is reconciled
+- Every requirement the backlog covers is judged, and no judgement rises above code's (restored by code)
 - Every computed item has a verdict
 - An unevidenced item is never upgraded (restored by code)
 - A strength rests on a satisfied item or an approval on record (anything else removed by code)
@@ -114,5 +124,7 @@ Verdict keys the agent declares: `items_audited`, `opinion_ceiling`.
 ## 9. Limitations
 
 - The normative corpus is a set of curated summaries prepared for the project; a citation resolves to a section of a summary, not to official wording.
+- The backlog checks are structural (a story exists, links, evidence named); whether a story's criteria really answer a risk is the agent's judgement, which may only lower code's.
+- The trend compares the last two sprints and the sprints-left figure assumes the average pace so far: both are indications, not forecasts.
 - Evidence matching is lexical and conservative: an item lands in NOT VERIFIED when in doubt, and a match is only a reason to assess, not proof.
 - The opinion follows a fixed RAIA rule over counts (share satisfied, items at risk, finding priorities, blocking decisions); it rates the evidence the sprint produced, not the quality of the controls themselves.

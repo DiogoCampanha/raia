@@ -107,6 +107,19 @@ def build(prompt: str) -> Dict[str, Any]:
             else:
                 entries.append({"story_id": sid, "no_impact_reason": MOCK_NOTE})
         ext = {"stories": entries, "sprint_ethics_log": [MOCK_NOTE]}
+    elif key == "story_generate":
+        evrs = ids.get("evr_ids") or []
+        cards = ids.get("project_cards") or ["#0"]
+        links = evrs[:1]
+        ext = {"stories": [{
+            "story_id": f"G{i}", "title": f"[MOCK MODE] Implement {e}",
+            "description": f"As a product team, I want {e} built into the product, so that it can be verified.",
+            "evr_ids": [e], "touches": [], "eccola_cards": cards[:1],
+            "criteria": [{"id": f"AC-G{i}-1", "ms_goal": "A5", "stakeholder_group": "affected persons",
+                          "condition": f"[MOCK MODE] A verification record for {e} exists for the release.",
+                          "evidence_artifact": "verification record", "owner_role": "product",
+                          "evr_ids": [e]}],
+        } for i, e in enumerate(evrs, 1)], "not_story": []}
     elif key == "auditor":
         items = ids.get("audit_items") or {}
         links = list(items)[:1]
@@ -122,6 +135,10 @@ def build(prompt: str) -> Dict[str, Any]:
             "opportunities": [{"statement": "[MOCK MODE] Placeholder opportunity.", "refs": list(items)[:1],
                                "benefit": "[MOCK MODE] Placeholder benefit."}],
             "pathway_summary": "[MOCK MODE] Placeholder pathway: close the unverified items, then plan the next checkpoint.",
+            "backlog_assessment": [{"ref": r, "judgement": "covered", "reason": "[MOCK MODE] Placeholder judgement."}
+                                   for r in ids.get("backlog_refs") or []],
+            "trajectory_comment": "[MOCK MODE] Placeholder comment on the computed trend.",
+            "next_focus": "[MOCK MODE] Placeholder focus for the next sprint.",
         }
     elif key == "drift_monitor":
         sev = ids.get("breach_severities") or {}

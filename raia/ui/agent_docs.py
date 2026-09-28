@@ -58,7 +58,7 @@ DOCS: Dict[str, Dict[str, object]] = {
         ],
     },
     "story_refiner": {
-        "when": "During sprint planning, for the stories about to enter a sprint.",
+        "when": "During sprint planning, for the product stories about to enter a sprint.",
         "decides": [
             "Selects the ECCOLA themes relevant to each story from the approved risk tier, "
             "requirements and what that story touches, and records why each one applies.",
@@ -74,9 +74,28 @@ DOCS: Dict[str, Dict[str, object]] = {
             "Which stories carry no ethical impact and can move on unchanged.",
         ],
     },
-    "auditor": {
-        "when": "At the end of a sprint or before a release decision.",
+    "story_generate": {
+        "when": "Once the ethical requirements are approved, and again when new requirements have no story.",
         "decides": [
+            "Picks the requirements this run covers: those with no story yet, the five with the highest "
+            "priority by default (legal obligations first), or the ones you name.",
+            "Checks that every requirement in scope comes back covered by a story or with a reason it "
+            "needs none, and that every story links a requirement.",
+            "Gives each approved story its backlog id (RAI-n) and adds it to the backlog.",
+        ],
+        "you": [
+            "Whether each generated story is work your team can schedule in one sprint.",
+            "Whether a requirement really needs no story, when the agent says so.",
+            "When each story goes into a sprint: the board suggests, you decide.",
+        ],
+    },
+    "auditor": {
+        "when": "At the end of each sprint (it closes the sprint), or at any time for a project-wide check.",
+        "decides": [
+            "Audits the whole project: this sprint's items against the evidence it produced, and every "
+            "other requirement where it stands — verified earlier, planned, or with no story yet.",
+            "Computes the progress across sprints and its trend, whether the backlog covers the "
+            "project's ethical risks, and the rule-based suggestion for the next sprint.",
             "Reads the register of approved requirements and acceptance criteria and matches "
             "each one to the evidence the sprint produced.",
             "Refuses to mark anything verified without evidence: an item with no evidence is "
@@ -87,6 +106,8 @@ DOCS: Dict[str, Dict[str, object]] = {
         ],
         "you": [
             "Whether the evidence is sufficient for an accountability record.",
+            "Whether the backlog is enough, where code found it covered: the agent may only lower that "
+            "judgement.",
             "The decisions the pathway forward opens with, and who carries each recommendation.",
             "What becomes an ethical checkpoint for the next iteration.",
         ],

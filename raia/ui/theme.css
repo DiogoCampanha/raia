@@ -469,3 +469,8 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .rv-path .e .t { font-weight: 500; }
 .rv-path .e .m { display: block; font-size: .8125rem; color: var(--raia-muted); margin-top: .1rem; }
 .rv-obs .rv-meta .ln { margin: 0 0 .15rem; }
+
+/* ---- Tables drawn inside a report (the audit's project-wide sections) ---- */
+.rv-table { width: 100%; border-collapse: collapse; font-size: .875rem; margin: .5rem 0 1rem; }
+.rv-table th { text-align: left; font-weight: 600; padding: .4rem .6rem; border-bottom: 1px solid var(--raia-border, rgba(128,128,128,.35)); }
+.rv-table td { padding: .4rem .6rem; border-bottom: 1px solid var(--raia-border-soft, rgba(128,128,128,.18)); vertical-align: top; }

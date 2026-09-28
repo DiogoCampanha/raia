@@ -41,6 +41,14 @@ action_plan.csv       Every action from every approved RAIA record, sorted by
 action_plan.json      computed priority, with owner, lifecycle stage, review
                       cadence, verification method and evidence artifact.
 
+backlog.csv           The backlog: every story, its origin (RAI or product), the
+backlog.json          requirements it implements, its status and sprint, its
+                      ethical acceptance criteria and its Jira key if it has one.
+sprints.json          Every sprint with its state, scope, audit opinion, trend and
+                      the numbers recorded when it closed.
+roadmap.csv           Where each approved requirement stands: its stories, its
+                      state and the sprint it was verified in.
+
 git_history.txt       One line per recorded version. Every approval is one.
 
 history_chain.json    (database-backed projects) the full hash chain, so the
@@ -81,6 +89,8 @@ def session_bundle(repo: "BaseRepository", project_label: str = "") -> bytes:
         z.writestr("action_plan.csv", action_plan.to_csv(rows))
         z.writestr("action_plan.json", action_plan.to_json(rows))
 
+        _board_files(z, repo)
+
         history = repo.history(limit=500)
         z.writestr(
             "git_history.txt",
@@ -99,6 +109,38 @@ def session_bundle(repo: "BaseRepository", project_label: str = "") -> bytes:
 
     buffer.seek(0)
     return buffer.read()
+
+
+def _board_files(z: zipfile.ZipFile, repo: "BaseRepository") -> None:
+    """The backlog, the sprints and the roadmap, as tables (no Jira token is ever in them)."""
+    import csv
+
+    from . import backlog as B
+    from . import roadmap as R
+
+    bl, sp = B.load(repo)
+    if not bl["stories"] and not sp["sprints"]:
+        return
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(["id", "origin", "title", "requirements", "status", "sprint", "verified_in", "carried_over",
+                "ethical_criteria", "jira_key"])
+    for s in bl["stories"]:
+        w.writerow([s["id"], s.get("origin"), s.get("title"), " ".join(s.get("evr_ids") or []), s.get("status"),
+                    s.get("sprint"), s.get("verified_in"), s.get("carried_over"),
+                    " ".join(c["id"] for c in B.ethical_criteria(s)), (s.get("jira") or {}).get("key", "")])
+    z.writestr("backlog.csv", buf.getvalue())
+    z.writestr("backlog.json", json.dumps(bl, indent=2, ensure_ascii=False, default=str))
+    z.writestr("sprints.json", json.dumps(sp, indent=2, ensure_ascii=False, default=str))
+    review = (repo.read_data("requirements_review") or {}).get("structured") or {}
+    if review:
+        buf = io.StringIO()
+        w = csv.writer(buf, lineterminator="\n")
+        w.writerow(["requirement", "state", "stories", "legal_obligation", "priority", "verified_in", "statement"])
+        for r in R.requirement_states(review, bl):
+            w.writerow([r["id"], r["state"], " ".join(r["stories"]), r["obligation"], r["priority"],
+                        r["verified_in"], r["statement"]])
+        z.writestr("roadmap.csv", buf.getvalue())
 
 
 def bundle_name(project: str) -> str:

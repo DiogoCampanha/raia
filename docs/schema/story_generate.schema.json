@@ -1,7 +1,86 @@
 {
-  "$id": "raia-record/1.3/drift_monitor",
-  "title": "DriftMonitorRecord",
+  "$id": "raia-record/1.3/story_generate",
+  "title": "StoryGenerateRecord",
   "$defs": {
+    "AcceptanceCriterion": {
+      "properties": {
+        "id": {
+          "description": "AC-<story id>-<n>, e.g. AC-S1-1.",
+          "title": "Id",
+          "type": "string"
+        },
+        "ms_goal": {
+          "description": "The Microsoft RAI Standard v2 goal it serves.",
+          "enum": [
+            "A1",
+            "A2",
+            "A3",
+            "A4",
+            "A5",
+            "T1",
+            "T2",
+            "T3",
+            "F1",
+            "F2",
+            "F3",
+            "RS1",
+            "RS2",
+            "RS3",
+            "PS1",
+            "PS2",
+            "I1"
+          ],
+          "title": "Ms Goal",
+          "type": "string"
+        },
+        "stakeholder_group": {
+          "description": "The affected stakeholder group.",
+          "title": "Stakeholder Group",
+          "type": "string"
+        },
+        "condition": {
+          "description": "Measurable condition with its threshold, written as an acceptance criterion.",
+          "maxLength": 250,
+          "title": "Condition",
+          "type": "string"
+        },
+        "evidence_artifact": {
+          "description": "The artifact that demonstrates compliance.",
+          "title": "Evidence Artifact",
+          "type": "string"
+        },
+        "owner_role": {
+          "enum": [
+            "product",
+            "engineering",
+            "data_science",
+            "legal_compliance",
+            "operations",
+            "leadership"
+          ],
+          "title": "Owner Role",
+          "type": "string"
+        },
+        "evr_ids": {
+          "description": "Approved EVR ids this criterion implements.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Evr Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "ms_goal",
+        "stakeholder_group",
+        "condition",
+        "evidence_artifact",
+        "owner_role"
+      ],
+      "title": "AcceptanceCriterion",
+      "type": "object"
+    },
     "Action": {
       "properties": {
         "id": {
@@ -131,46 +210,6 @@
       "title": "Action",
       "type": "object"
     },
-    "Alert": {
-      "properties": {
-        "window": {
-          "description": "A computed breach window label, exactly.",
-          "title": "Window",
-          "type": "string"
-        },
-        "severity": {
-          "description": "Exactly the severity the engine computed.",
-          "enum": [
-            "low",
-            "medium",
-            "high"
-          ],
-          "title": "Severity",
-          "type": "string"
-        },
-        "meaning_for_affected_people": {
-          "description": "What this means for the people affected, in one or two sentences.",
-          "maxLength": 300,
-          "title": "Meaning For Affected People",
-          "type": "string"
-        },
-        "citations": {
-          "description": "Citation tags copied exactly from the retrieved excerpts, e.g. \"[Source: ... | authority: legal]\". Never invent one.",
-          "items": {
-            "type": "string"
-          },
-          "title": "Citations",
-          "type": "array"
-        }
-      },
-      "required": [
-        "window",
-        "severity",
-        "meaning_for_affected_people"
-      ],
-      "title": "Alert",
-      "type": "object"
-    },
     "CoverageItem": {
       "properties": {
         "key": {
@@ -199,49 +238,6 @@
         "justification"
       ],
       "title": "CoverageItem",
-      "type": "object"
-    },
-    "DriftAlertsExt": {
-      "properties": {
-        "alerts": {
-          "description": "One alert per computed breach window.",
-          "items": {
-            "$ref": "#/$defs/Alert"
-          },
-          "title": "Alerts",
-          "type": "array"
-        },
-        "trend_interpretation": {
-          "description": "The movement across windows, conclusion first (NIST AI RMF MEASURE 3).",
-          "maxLength": 400,
-          "title": "Trend Interpretation",
-          "type": "string"
-        },
-        "representativeness": {
-          "description": "Whether the population mix shifted relative to the population affected, conclusion first (MEASURE 2).",
-          "maxLength": 400,
-          "title": "Representativeness",
-          "type": "string"
-        },
-        "sample_adequacy": {
-          "description": "Groups whose samples do not support a conclusion.",
-          "items": {
-            "type": "string"
-          },
-          "title": "Sample Adequacy",
-          "type": "array"
-        },
-        "response_plan": {
-          "$ref": "#/$defs/ResponsePlan",
-          "description": "Response, recovery and communication (NIST AI RMF MANAGE)."
-        }
-      },
-      "required": [
-        "trend_interpretation",
-        "representativeness",
-        "response_plan"
-      ],
-      "title": "DriftAlertsExt",
       "type": "object"
     },
     "Finding": {
@@ -421,6 +417,101 @@
       "title": "Finding",
       "type": "object"
     },
+    "GeneratedStory": {
+      "properties": {
+        "story_id": {
+          "description": "G1, G2, … in order. Code gives the backlog id (RAI-n) at approval.",
+          "title": "Story Id",
+          "type": "string"
+        },
+        "title": {
+          "description": "The story in a few words.",
+          "maxLength": 120,
+          "title": "Title",
+          "type": "string"
+        },
+        "description": {
+          "description": "The story as a team schedules it: \"As a <role>, I want <capability>, so that <benefit>.\"",
+          "maxLength": 400,
+          "title": "Description",
+          "type": "string"
+        },
+        "evr_ids": {
+          "description": "The requirement id(s) in scope that this story implements (at least one).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Evr Ids",
+          "type": "array"
+        },
+        "touches": {
+          "description": "What the story touches; it selects the cards allowed.",
+          "items": {
+            "enum": [
+              "scoring",
+              "automation",
+              "data_collection",
+              "personalization",
+              "generation",
+              "explanation",
+              "analytics",
+              "integration",
+              "access_control"
+            ],
+            "type": "string"
+          },
+          "title": "Touches",
+          "type": "array"
+        },
+        "eccola_cards": {
+          "description": "ECCOLA card ids its touches select that make it relevant.",
+          "items": {
+            "enum": [
+              "#0",
+              "#1",
+              "#2",
+              "#3",
+              "#4",
+              "#5",
+              "#6",
+              "#7",
+              "#8",
+              "#9",
+              "#10",
+              "#11",
+              "#12",
+              "#13",
+              "#14",
+              "#15",
+              "#16",
+              "#17",
+              "#18",
+              "#19",
+              "#20"
+            ],
+            "type": "string"
+          },
+          "title": "Eccola Cards",
+          "type": "array"
+        },
+        "criteria": {
+          "description": "Verifiable ethical acceptance criteria, labelled AC-<story id>-<n> (e.g. AC-G1-1).",
+          "items": {
+            "$ref": "#/$defs/AcceptanceCriterion"
+          },
+          "title": "Criteria",
+          "type": "array"
+        }
+      },
+      "required": [
+        "story_id",
+        "title",
+        "description",
+        "evr_ids"
+      ],
+      "title": "GeneratedStory",
+      "type": "object"
+    },
     "OpenIssue": {
       "properties": {
         "id": {
@@ -504,40 +595,48 @@
       "title": "OpenIssue",
       "type": "object"
     },
-    "ResponsePlan": {
+    "RaiBacklogExt": {
       "properties": {
-        "escalation_path": {
-          "description": "Who is alerted, in what order, within what time.",
-          "maxLength": 300,
-          "title": "Escalation Path",
+        "stories": {
+          "description": "The generated RAI stories. Every requirement in scope is covered by at least one story, or listed in not_story.",
+          "items": {
+            "$ref": "#/$defs/GeneratedStory"
+          },
+          "maxItems": 30,
+          "title": "Stories",
+          "type": "array"
+        },
+        "not_story": {
+          "description": "Requirements in scope that need no story, each with its reason.",
+          "items": {
+            "$ref": "#/$defs/RequirementWithoutStory"
+          },
+          "title": "Not Story",
+          "type": "array"
+        }
+      },
+      "title": "RaiBacklogExt",
+      "type": "object"
+    },
+    "RequirementWithoutStory": {
+      "properties": {
+        "evr_id": {
+          "description": "A requirement id in scope, exactly.",
+          "title": "Evr Id",
           "type": "string"
         },
-        "deactivation_criteria": {
-          "description": "When the system is rolled back or deactivated (MANAGE 2).",
-          "maxLength": 300,
-          "title": "Deactivation Criteria",
-          "type": "string"
-        },
-        "affected_community_feedback": {
-          "description": "How input from users and affected communities is captured (MANAGE 4).",
-          "maxLength": 300,
-          "title": "Affected Community Feedback",
-          "type": "string"
-        },
-        "recovery_and_communication": {
-          "description": "How the system recovers and who is told.",
-          "maxLength": 300,
-          "title": "Recovery And Communication",
+        "reason": {
+          "description": "One line: why no story implements it (e.g. a policy decision).",
+          "maxLength": 250,
+          "title": "Reason",
           "type": "string"
         }
       },
       "required": [
-        "escalation_path",
-        "deactivation_criteria",
-        "affected_community_feedback",
-        "recovery_and_communication"
+        "evr_id",
+        "reason"
       ],
-      "title": "ResponsePlan",
+      "title": "RequirementWithoutStory",
       "type": "object"
     }
   },
@@ -621,7 +720,7 @@
       "type": "array"
     },
     "extension": {
-      "$ref": "#/$defs/DriftAlertsExt"
+      "$ref": "#/$defs/RaiBacklogExt"
     }
   },
   "required": [

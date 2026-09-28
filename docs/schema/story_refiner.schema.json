@@ -1,5 +1,5 @@
 {
-  "$id": "raia-record/1.2/story_refiner",
+  "$id": "raia-record/1.3/story_refiner",
   "title": "StoryRefinerRecord",
   "$defs": {
     "AcceptanceCriterion": {
@@ -626,6 +626,14 @@
           "maxLength": 200,
           "title": "No Impact Reason",
           "type": "string"
+        },
+        "evr_ids": {
+          "description": "Approved EVR ids this story helps implement, if any (they link it to the requirement on the roadmap). Leave empty for a story with no ethical impact.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Evr Ids",
+          "type": "array"
         }
       },
       "required": [
