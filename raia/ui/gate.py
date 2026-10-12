@@ -1137,6 +1137,14 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
     user = current_user()
     svc = get_service()
 
+    # The page opens at the top of a draft that just arrived, wherever the
+    # person had scrolled to on the form before.
+    st.html('<div class="review-anchor" id="draft-top"></div>')
+    if st.session_state.pop(pkey("scroll_draft", agent_key), None):
+        st.html("<script>setTimeout(() => document.getElementById('draft-top')"
+                "?.scrollIntoView({behavior: 'smooth', block: 'start'}), 300)</script>",
+                unsafe_allow_javascript=True)
+
     with st.container(border=True):
         st.subheader("Human review required", anchor=False)
         ran_by = payload.get("run_by_name")
@@ -1157,6 +1165,16 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
     original = payload.get("record") or {}
     cards = _card_review(project, agent_key, payload)
     decisions = _draft_decisions(project, agent_key, payload)
+    from .components import handoff_strip
+
+    try:
+        received = svc.handoff(user, project.id, agent_key, draft=original, computed=_computed_data(payload))
+        moved = svc.handoff_delta(user, project.id, agent_key, original, _computed_data(payload)) if original else {}
+    except Exception:  # noqa: BLE001 - the strip is a reading aid; never let it stop a review
+        received, moved = {}, {}
+
+    def strip(_dg) -> None:
+        handoff_strip(received, moved)
 
     tab_read, tab_edit, tab_evidence, tab_reason = st.tabs(
         [":material/article: Draft", ":material/edit: Edit the record",
@@ -1186,7 +1204,8 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
             except Exception as exc:  # noqa: BLE001 - shown to the reviewer
                 st.error(f"The reviewed record could not be rendered: {exc}")
         else:
-            draft_view(agent_key, payload, shown, review=cards if original else None, decide=decisions)
+            draft_view(agent_key, payload, shown, review=cards if original else None, decide=decisions,
+                       before=strip)
     with tab_evidence:
         evidence_panel(payload.get("evidence") or [])
     with tab_reason:
@@ -1262,19 +1281,10 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
             placeholder="Be specific: this goes straight into the next attempt.",
         )
         if st.button("Reject and regenerate", key=pkey("reject", agent_key), icon=I.REJECT):
-            with st.spinner("Regenerating with your feedback"):
-                try:
-                    result = svc.resume(
-                        user, project.id, agent_key,
-                        {"action": "reject",
-                         "feedback": feedback or dict(REJECTION_REASONS)[reason],
-                         "reason": reason},
-                    )
-                except (AccessDenied, UsageLimitReached) as exc:
-                    st.error(str(exc))
-                    return
-                except Exception as exc:  # noqa: BLE001 - surfaced to the person
-                    st.error(friendly_llm_error(exc))
-                    return
-            st.session_state[pkey("pending", agent_key)] = result["payload"]
+            # Regenerating calls the model: it runs on the stage page's working
+            # screen, and the new draft opens at its top.
+            st.session_state[pkey("work", agent_key)] = {
+                "kind": "reject",
+                "decision": {"action": "reject", "feedback": feedback or dict(REJECTION_REASONS)[reason],
+                             "reason": reason}}
             st.rerun()

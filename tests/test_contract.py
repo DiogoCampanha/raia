@@ -634,6 +634,17 @@ def test_card_review() -> None:
     check(RV.issue_key({"description": "Design  oversight, before release!"}) == RV.issue_key(blocked["open_issues"][0]),
           "a decision is named by its wording, so renumbering cannot lose it")
 
+    from raia import handoff as H
+    from raia import roadmap as R
+
+    d = H.delta("requirements_reviewer", {"findings": [{"title": "A"}], "open_issues": []},
+                {"gaps": [{"ref": "eu.art9"}, {"ref": "fairness"}]},
+                {"findings": [{"title": "A"}, {"title": "B"}], "open_issues": []}, {"gaps": [{"ref": "fairness"}]})
+    check("1 gap closed" in d["line"] and "1 new risk" in d["line"] and d["unchanged"] == 1,
+          "a revision says what improved and what is new since the approved version")
+    facts = R.requirement_facts({"evrs": [{"id": "EVR-1"}, {"id": "EVR-2"}], "excluded_evrs": ["EVR-2"]})
+    check(list(facts) == ["EVR-1"], "an overridden requirement is not handed on: no story, no audit")
+
 
 def main() -> None:
     for fn in (test_vocabularies_come_from_the_corpus, test_rubric, test_parse_and_fallback,

@@ -66,7 +66,9 @@ def requirement_facts(review: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """
     review = review or {}
     evrs = review.get("evrs") or []
+    excluded = {str(x) for x in review.get("excluded_evrs") or []}
     ids = [str(e.get("id")) for e in evrs if e.get("id")] or [str(x) for x in review.get("evr_ids") or []]
+    ids = [i for i in ids if i not in excluded]
     out: Dict[str, Dict[str, Any]] = {}
     for pos, eid in enumerate(ids):
         e = next((x for x in evrs if str(x.get("id")) == eid), {})

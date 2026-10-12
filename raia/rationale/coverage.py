@@ -312,6 +312,7 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
             "gaps": gaps,
             "evr_ids": evr_ids,
             "principle_coverage": {row[0]: row[2] for row in principle_rows},
+            "obligation_coverage": {row[0]: row[3] for row in obligation_rows},
             "suggestion_origin": origin,
         }
     )

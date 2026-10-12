@@ -71,6 +71,10 @@ def approve(svc, user, pid, key, inputs):
     return payload, failed
 
 
+from raia import handoff as H  # noqa: E402
+from raia.storage import open_repository  # noqa: E402
+
+
 def main() -> None:
     ingest_corpus(verbose=False)
     svc = ProjectService(runner=StageRunner())
@@ -92,6 +96,27 @@ def main() -> None:
     check(board["ready"] and len(evrs) > 0, f"the board opens with {len(evrs)} requirements on the roadmap")
     check(all(r["state"] == R.NO_STORY for r in board["roadmap"]["requirements"]),
           "every requirement starts with no story")
+
+    print("== 1b. Each stage shows what it received, and what it did with it ==")
+    rr_data = (open_repository(p.id).read_data("requirements_review").get("structured") or {})
+    got = svc.handoff(ana, p.id, "requirements_reviewer", draft=rr_data.get("record"), computed=rr_data)
+    obligations = [i for i in got["items"] if i["kind"] == "obligation"]
+    check(obligations and all(i["status"] in ("addressed", "open") for i in obligations),
+          "the Requirements Reviewer shows every obligation the Risk Classifier handed on, and its fate")
+    check(any(i["status"] == "addressed" and i["by"].startswith("new requirement EVR-") for i in obligations),
+          "…an obligation with no requirement is answered by a new EVR, named")
+    check(got["line"].startswith("From the Risk Classifier:") and "addressed" in got["line"],
+          "…in one line a person can read")
+    before = svc.handoff(ana, p.id, "story_generate")
+    check(before["sources"] and all(i["status"] == "open" for i in before["items"] if i["kind"] == "requirement"),
+          "before generation, every requirement is handed on with no story yet")
+    rows = svc.thread(ana, p.id)
+    check(rows and all(r["requirement"] for r in rows) and any(r["gap"] for r in rows),
+          "the Traceability thread lists every obligation and requirement, gaps marked")
+    note = H.prompt_note(open_repository(p.id), "story_refiner")
+    check(not note or "Decided and excluded upstream" in note, "the next prompt is told what people settled upstream")
+    check("Travels to the next stage" in svc.hands_on(ana, p.id, "requirements_reviewer"),
+          "the next-step card says what travels on")
 
     print("== 2. Generate mode: a short list, through the gate ==")
     payload, failed = approve(svc, ana, p.id, "story_generate", EXAMPLES["story_generate"])

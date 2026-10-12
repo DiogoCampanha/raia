@@ -229,6 +229,11 @@ def main() -> None:
         button(at, f"{pid1}::run::{agent}").click()
         ok(at.run(), "the run pauses at the gate")
         check("Human review required" in text(at), "the gate is shown")
+        check('id="draft-top"' in text(at) and "scrollIntoView" in text(at),
+              "the run went through the working screen, and the draft opens at its top")
+        check(f"{pid1}::work::{agent}" not in at.session_state and not any(
+            t.label.startswith("What does the AI produce") for t in at.text_area),
+              "…with the form set aside, not left on screen under the draft")
         check("Recorded in the audit trail as" in text(at), "…naming the signed-in approver")
         check(any("Edit the record" in t.label for t in at.tabs), "…with the record editor, not a text box")
         check("Risks identified" in text(at) and "What to do" in text(at) and "Do now" in text(at),

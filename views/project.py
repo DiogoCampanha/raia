@@ -13,7 +13,7 @@ from raia.projects import EDITOR, OWNER, REVIEWER, ROLE_LABELS
 from raia.repository import ACCEPTED, ARTIFACT_FILES, DECIDED, OPEN, RESOLVED, RETIRED_ARTIFACTS
 from raia.ui import routes
 from raia.ui.board import board_tab, sprint_step
-from raia.ui.components import (artifact_body, empty_state, page_header, risk_md, role_badge,
+from raia.ui.components import (artifact_body, empty_state, esc, page_header, risk_md, role_badge,
                                 role_label, role_md, stage_tracker, stat_tiles)
 from raia.ui.record_view import record_from_data, record_view
 from raia.ui.state import current_user, flash, get_service, open_project, pkey, show_flash
@@ -88,11 +88,12 @@ with st.container(border=True):
 plan_rows = action_plan.project_actions(repo)
 
 TAB_BOARD = ":material/view_kanban: Board"
-tab_board, tab_overview, tab_docs, tab_plan, tab_issues, tab_activity, tab_people = st.tabs([
+tab_board, tab_overview, tab_docs, tab_plan, tab_trace, tab_issues, tab_activity, tab_people = st.tabs([
     TAB_BOARD,
     ":material/dashboard: Overview",
     ":material/description: Documents",
     f":material/checklist: Action plan ({len(plan_rows)})" if plan_rows else ":material/checklist: Action plan",
+    ":material/account_tree: Traceability",
     f":material/gavel: Open issues ({summary['open_issues']})" if summary["open_issues"]
     else ":material/gavel: Open issues",
     ":material/history: Activity",
@@ -222,6 +223,36 @@ with tab_plan:
                            mime="text/csv", key=pkey("plan_csv"), icon=I.DOWNLOAD)
         d2.download_button("Action plan (JSON)", action_plan.to_json(plan_rows), file_name="action_plan.json",
                            mime="application/json", key=pkey("plan_json"), icon=I.DOWNLOAD)
+
+# ---- Traceability --------------------------------------------------------------------
+
+with tab_trace:
+    st.caption("The thread from the risk classification to the audit, one row per legal obligation and "
+               "per requirement: which requirement answers it, which stories implement that, and what the "
+               "audit verified. Highlighted rows are the gaps still open.")
+    rows = svc.thread(user, proj.id)
+    if not rows:
+        empty_state("Nothing to trace yet",
+                    "Approve the risk classification and the requirements review, and the thread appears here.")
+    else:
+        n = len(rows)
+        with_req = sum(1 for r in rows if r["requirement"] not in ("gap", "not reviewed yet")
+                       and "overridden" not in r["requirement"])
+        with_story = sum(1 for r in rows if r["stories"] not in ("—", "no story yet"))
+        verified = sum(1 for r in rows if r["verified"])
+        stat_tiles([
+            ("Items traced", n, "obligations and requirements", False),
+            ("With a requirement or control", with_req, "", with_req < n),
+            ("With a story", with_story, "", False),
+            ("Verified by an audit", verified, "", False),
+        ])
+        head = "".join(f"<th>{h}</th>" for h in ("Obligation", "What it requires", "Requirement", "Stories", "Audit"))
+        body = "".join(
+            f'<tr class="{"tr-gap" if r["gap"] else ("tr-ok" if r["verified"] else "")}">'
+            f'<td><code>{esc(r["obligation"]) or "—"}</code></td><td>{esc(r["label"][:160])}</td>'
+            f'<td>{esc(r["requirement"])}</td><td>{esc(r["stories"])}</td><td>{esc(r["audit"])}</td></tr>'
+            for r in rows)
+        st.html(f'<table class="rv-table tr-table"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>')
 
 # ---- Open issues -------------------------------------------------------------------
 

@@ -720,6 +720,35 @@ class ProjectService:
             repo.record_event("issue_reopened", {"user": user.id, "issue": issue_id})
         return ok
 
+    # -- Hand-off between stages (read only; see raia.handoff) --------------------------------
+
+    def handoff(self, user: User, project_id: str, agent_key: str, draft: Optional[Dict[str, Any]] = None,
+                computed: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        from . import handoff as H
+
+        return H.inherited(self.repository(user, project_id, "view"), agent_key, draft, computed)
+
+    def handoff_delta(self, user: User, project_id: str, agent_key: str, draft: Dict[str, Any],
+                      computed: Dict[str, Any]) -> Dict[str, Any]:
+        """What a draft changes against the approved version of the same stage."""
+        from . import handoff as H
+        from .agents import RUNNABLE
+
+        repo = self.repository(user, project_id, "view")
+        key = RUNNABLE[agent_key].spec.output_key
+        prev = (repo.read_data(key) or {}).get("structured") or {}
+        return H.delta(agent_key, prev.get("record") or {}, prev, draft, computed) if prev else {}
+
+    def hands_on(self, user: User, project_id: str, agent_key: str) -> str:
+        from . import handoff as H
+
+        return H.hands_on(self.repository(user, project_id, "view"), agent_key)
+
+    def thread(self, user: User, project_id: str) -> List[Dict[str, Any]]:
+        from . import handoff as H
+
+        return H.thread(self.repository(user, project_id, "view"))
+
     def open_issues(self, user: User, project_id: str) -> List[Dict[str, Any]]:
         return self.repository(user, project_id, "view").open_issues()
 

@@ -238,6 +238,8 @@ def next_step_card(project_id: str, stages: List[Dict[str, Any]], agent_key: str
         st.html('<div class="next-head">' + icon_html("check_circle")
                 + "<strong>Approved and committed</strong>"
                 + (f"<code>{esc(commit)}</code>" if commit else "") + "</div>")
+        if done.get("travels"):
+            st.caption(done["travels"])
         flagged = done.get("flagged") or []
         if flagged:
             st.caption("These stages were approved against the previous version and are now flagged "
@@ -296,3 +298,103 @@ def stage_footer(project_id: str, stages: List[Dict[str, Any]], agent_key: str) 
                     routes.go(routes.STAGE, project=project_id, agent=str(nxt["agent"]))
         elif st.button("Project overview", icon=I.OPEN, icon_position="right", key="foot_project_r"):
             routes.go(routes.PROJECT, id=project_id)
+
+
+# ---- Hand-off between stages (raia.handoff) --------------------------------------------
+
+_HO_TONE = {"addressed": "ok", "partial": "medium", "open": "high", "excluded": "neutral"}
+
+
+def _ho_items_html(items: List[Dict[str, Any]], status: str, limit: int = 0) -> str:
+    rows = [i for i in items if i["status"] == status]
+    if limit:
+        rows = rows[:limit]
+    return "".join(
+        f'<li class="ho-item tone-{_HO_TONE[status]}"><a class="rv-id" href="#card-{esc(i["id"])}">{esc(i["id"])}</a>'
+        f'<span class="t">{esc(i["label"][:140])}</span>'
+        + (f'<span class="rv-muted">{esc(i["by"])}</span>' if i.get("by") else "") + "</li>" for i in rows)
+
+
+def handoff_strip(info: Dict[str, Any], delta: Optional[Dict[str, Any]] = None) -> None:
+    """Under a draft's status: what this stage received, what it did with each item, what is still open."""
+    if not info or not (info.get("line") or (delta or {}).get("line")):
+        return
+    items = info.get("items") or []
+    c = info.get("counts") or {}
+    open_items = _ho_items_html(items, "open") + _ho_items_html(items, "partial")
+    done = _ho_items_html(items, "addressed")
+    excluded = info.get("excluded") or []
+    parts = ['<div class="ho-strip">',
+             f'<div class="ho-head"><span class="raia-icon" aria-hidden="true">call_received</span>'
+             f'<span>{esc(info.get("line") or "")}</span></div>']
+    if open_items:
+        parts.append('<div class="ho-sub">Still open from earlier stages — the gaps this draft leaves</div>'
+                     f'<ul class="ho-list">{open_items}</ul>')
+    if done:
+        parts.append(f'<details class="ho-more"><summary>Addressed here ({c.get("addressed", 0)})</summary>'
+                     f'<ul class="ho-list">{done}</ul></details>')
+    if excluded:
+        parts.append('<details class="ho-more"><summary>Excluded by a reviewer upstream '
+                     f'({len(excluded)})</summary><ul class="ho-list">'
+                     + "".join(f'<li class="ho-item tone-neutral"><span class="rv-id">{esc(x["id"])}</span>'
+                               f'<span class="t">{esc(x["label"][:120])}</span><span class="rv-muted">'
+                               f'{esc(x["from"])}: {esc(x.get("reason") or "")}</span></li>' for x in excluded)
+                     + "</ul></details>")
+    if delta and delta.get("line"):
+        tone = "ok" if delta.get("better") and not delta.get("worse") else ("high" if delta.get("worse") else "neutral")
+        parts.append(f'<div class="ho-delta tone-{tone}"><span class="raia-icon" aria-hidden="true">compare_arrows</span>'
+                     f'{esc(delta["line"])}</div>')
+    parts.append("</div>")
+    st.html("".join(parts))
+
+
+def receives_card(info: Dict[str, Any], decide=None) -> None:
+    """Before a run: what this stage builds on, and the earlier decisions still open.
+
+    ``decide(issue, choice, why) -> error or None`` records a decision on one of
+    those register entries; without it they are listed only.
+    """
+    if not info or not (info.get("sources") or info.get("decisions") or info.get("excluded")):
+        return
+    with st.container(border=True, key="ho-receives"):
+        st.markdown(f"{icon_md('call_received')} **What this stage receives**")
+        sources = info.get("sources") or []
+        if sources:
+            st.caption(" · ".join(f"{s['name']}" + (f", approved {s['at']} by {s['by']}" if s.get("by") else "")
+                                  for s in sources))
+        if info.get("line"):
+            st.markdown(info["line"])
+        items = info.get("items") or []
+        if items:
+            st.html('<details class="ho-more"><summary>See every item handed on</summary><ul class="ho-list">'
+                    + "".join(f'<li class="ho-item tone-neutral"><span class="rv-id">{esc(i["id"])}</span>'
+                              f'<span class="t">{esc(i["label"][:140])}</span>'
+                              + (f'<span class="rv-muted">{esc(i["by"])}</span>' if i.get("by") else "") + "</li>"
+                              for i in items) + "</ul></details>")
+        excluded = info.get("excluded") or []
+        if excluded:
+            st.caption("Excluded by a reviewer upstream, and not handed on: "
+                       + "; ".join(f"{x['id']} ({x['from']})" for x in excluded))
+        decisions = info.get("decisions") or []
+        if decisions:
+            st.markdown("**Decisions still open from earlier stages**"
+                        + (" — the blocking ones first" if any(d.get("blocking") for d in decisions) else ""))
+            for d in decisions:
+                with st.container(border=True, key=f"ho-dec-{d['id']}"):
+                    st.markdown(("**Blocking** · " if d.get("blocking") else "") + f"`{d['id']}` {d.get('text', '')}")
+                    if decide is None or not d.get("options"):
+                        st.caption("Decide it on the project's Open issues tab, or on the stage that raised it.")
+                        continue
+                    pick = st.radio("Decision", d["options"], key=f"ho-pick-{d['id']}", index=None)
+                    why = st.text_input("Why?", key=f"ho-why-{d['id']}")
+                    if st.button("Record decision", key=f"ho-go-{d['id']}", type="primary",
+                                 disabled=not (pick and (why or "").strip())):
+                        err = decide(d, pick, why)
+                        if err:
+                            st.error(err)
+                        else:
+                            st.rerun()
+
+
+def icon_md(name: str) -> str:
+    return f":material/{name}:"

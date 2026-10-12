@@ -490,24 +490,34 @@ def decision_block(d: Dict[str, Any]) -> None:
     with st.container(border=True, key=f"{dc.key}::dbox::{d['id']}"):
         st.html(_decision_card(d, interactive=True))
         k = f"{dc.key}::d::{d['key'][:60]}"
-        options = list(d["options"]) + [OTHER]
-        choice = st.radio("Your decision", options, key=k + "::choice", index=None)
-        own = st.text_input("Your decision, in a few words", key=k + "::own") if choice == OTHER else ""
-        why = st.text_input("Why? (required)", key=k + "::why", placeholder="The reason, recorded with the decision")
-        if st.button("Record decision", key=k + "::go", type="primary", icon=":material/gavel:"):
-            final = (own or "").strip() if choice == OTHER else (choice or "")
-            if not final:
-                st.error("Choose an option, or write the decision.")
-            elif not (why or "").strip():
-                st.error("Say why: one line is enough.")
+        if d["blocking"]:
+            _decision_form(d, dc, k)
+        else:
+            # A decision that blocks nothing waits one click away, so a long list
+            # of them does not bury the rest of the record.
+            with st.popover("Take this decision", icon=":material/gavel:"):
+                _decision_form(d, dc, k)
+
+
+def _decision_form(d: Dict[str, Any], dc: "Decisions", k: str) -> None:
+    options = list(d["options"]) + [OTHER]
+    choice = st.radio("Your decision", options, key=k + "::choice", index=None)
+    own = st.text_input("Your decision, in a few words", key=k + "::own") if choice == OTHER else ""
+    why = st.text_input("Why? (required)", key=k + "::why", placeholder="The reason, recorded with the decision")
+    if st.button("Record decision", key=k + "::go", type="primary", icon=":material/gavel:"):
+        final = (own or "").strip() if choice == OTHER else (choice or "")
+        if not final:
+            st.error("Choose an option, or write the decision.")
+        elif not (why or "").strip():
+            st.error("Say why: one line is enough.")
+        else:
+            err = dc.record(d, final, why.strip())
+            if err:
+                st.error(err)
             else:
-                err = dc.record(d, final, why.strip())
-                if err:
-                    st.error(err)
-                else:
-                    st.rerun()
-        if dc.where == "draft":
-            st.caption("Recorded with the draft, and written to the project's open issues when it is approved.")
+                st.rerun()
+    if dc.where == "draft":
+        st.caption("Recorded with the draft, and written to the project's open issues when it is approved.")
 
 
 def _group_head(title: str, hint: str, tone: str, count: int) -> str:

@@ -161,11 +161,18 @@ class RequirementsReviewerAgent(BaseAgent):
     def structured_from(self, record: Dict[str, Any], rationale: RationaleResult) -> Dict[str, Any]:
         """Publish the approved requirements, so the Auditor audits their wording."""
         data = super().structured_from(record, rationale)
+        evrs = (record.get("extension") or {}).get("evrs") or []
+        # A requirement a reviewer overrode stays in the record, marked, but is
+        # not handed on: no story is generated for it and it is not audited.
+        overridden = [str(e.get("id")) for e in evrs if (e.get("review") or {}).get("status") == "overridden"]
         data["evrs"] = [
             {"id": e.get("id"), "value": e.get("value"), "statement": e.get("statement", ""),
              "fit_criterion": e.get("fit_criterion", ""), "verification_method": e.get("verification_method")}
-            for e in (record.get("extension") or {}).get("evrs") or []
+            for e in evrs if str(e.get("id")) not in overridden
         ]
+        data["excluded_evrs"] = overridden
+        if overridden and isinstance(data.get("evr_ids"), list):
+            data["evr_ids"] = [x for x in data["evr_ids"] if str(x) not in overridden]
         return data
 
     # -- Recommendations (candidate requirements a person may adopt) ---------
