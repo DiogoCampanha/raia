@@ -229,7 +229,10 @@ the expert panel (no panelist had used the software yet).
   exclusions to the prompt. `coverage` publishes `obligation_coverage`.
 - **Working screen** (REV-4). New `raia/progress.py`; `views/stage.working_screen`
   runs the agent (and regeneration) on a page that shows only that it is
-  working, step by step; the gate scrolls to its top on arrival.
+  working, step by step; the gate scrolls to its top on arrival. The working
+  screen replaces the form in the same slot of the page, and anything left over
+  from the previous screen is hidden until the run ends, so nothing on screen
+  looks editable while the agent works.
 - **Docs.** README, `docs/architecture.md` (section 1e, the review loop and the
   hand-off; the dashed Ops layer), `docs/output-contract.md`, the agent cards
   (Receives, Hands on), the template, the Guide and `docs/TESTERS.md`, the

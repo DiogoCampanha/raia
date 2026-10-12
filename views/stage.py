@@ -131,35 +131,43 @@ def working_screen() -> bool:
     kind = req.get("kind")
     title = (f"{spec.name} is regenerating the draft with your feedback" if kind == "reject"
              else f"{spec.name} is working")
-    with st.container(key=look_key(ident, "working")):
-        with st.status(title, expanded=True) as box:
-            st.caption("Your answers are saved and set aside while the agent works. Nothing is saved to the "
-                       "project until a person approves the draft.")
-            line = st.empty()
-            line.markdown(" → ".join(STEPS))
+    # What the page showed before (the form) stays on screen, faded, until this
+    # run ends; hide it, so the page is only the agent at work, and bring the
+    # panel into view wherever the person had scrolled to.
+    st.html('<style>[data-stale="true"], [data-testid="stLayoutWrapper"]:not(:has([data-stale="false"])), '
+            '[data-testid="stExpander"]:not(:has([data-stale="false"])), '
+            '[data-testid="stTabs"]:not(:has([data-stale="false"])) { display: none !important; }</style>'
+            '<div id="agent-working"></div>'
+            "<script>document.getElementById('agent-working')?.scrollIntoView({block: 'center'})</script>",
+            unsafe_allow_javascript=True)
+    with st.container(border=True, key=look_key(ident, "working")):
+        st.markdown(f"**{title}**")
+        st.caption("Your answers are saved and set aside while the agent works. Nothing is saved to the "
+                   "project until a person approves the draft.")
+        line = st.empty()
 
-            def on_step(label: str) -> None:
-                line.markdown(" → ".join(f"**{s}**" if s == label else s for s in STEPS))
-                box.update(label=f"{title}: {label.lower()}")
+        def show(current: str = "") -> None:
+            done = STEPS.index(current) if current in STEPS else -1
+            line.html('<ol class="work-steps">' + "".join(
+                f'<li class="{"done" if i < done else ("now" if i == done else "")}">{s}</li>'
+                for i, s in enumerate(STEPS)) + "</ol>")
 
-            try:
-                with progress.listening(on_step):
-                    if kind == "reject":
-                        result = svc.resume(user, proj.id, agent_key, req["decision"])
-                    else:
-                        result = svc.start_run(user, proj.id, agent_key, req["inputs"])
-            except (AccessDenied, UsageLimitReached) as exc:
-                box.update(label="The agent could not run", state="error")
-                st.error(str(exc))
-                st.button("Back to the form", icon=I.BACK, key=pkey("work_back", agent_key))
-                return True
-            except Exception as exc:  # noqa: BLE001 - surfaced to the person
-                box.update(label="The agent could not finish", state="error")
-                st.error(friendly_llm_error(exc))
-                st.button("Back to the form" if kind != "reject" else "Back to the draft", icon=I.BACK,
-                          key=pkey("work_back", agent_key))
-                return True
-            box.update(label=f"{spec.name} has drafted its record", state="complete")
+        show()
+        try:
+            with st.spinner("Working", show_time=True), progress.listening(show):
+                if kind == "reject":
+                    result = svc.resume(user, proj.id, agent_key, req["decision"])
+                else:
+                    result = svc.start_run(user, proj.id, agent_key, req["inputs"])
+        except (AccessDenied, UsageLimitReached) as exc:
+            st.error(str(exc))
+            st.button("Back to the form", icon=I.BACK, key=pkey("work_back", agent_key))
+            return True
+        except Exception as exc:  # noqa: BLE001 - surfaced to the person
+            st.error(friendly_llm_error(exc))
+            st.button("Back to the form" if kind != "reject" else "Back to the draft", icon=I.BACK,
+                      key=pkey("work_back", agent_key))
+            return True
     if result.get("status") == "awaiting_review":
         st.session_state[pkey("pending", agent_key)] = result["payload"]
         st.session_state[pkey("scroll_draft", agent_key)] = True
@@ -375,5 +383,9 @@ with st.container(key=look_key(ident, "page")):
                  status=state["status"], back=(proj.name, routes.PROJECT, {"id": proj.id}))
     stage_rail(proj.id, stages, current=ident)
     show_flash()
-    body()
+    # One slot for everything between the rail and the footer: when an agent
+    # runs, the working screen replaces the form in it at once, instead of the
+    # form lingering, faded, until the run ends.
+    with st.empty().container():
+        body()
     stage_footer(proj.id, stages, ident)
