@@ -172,7 +172,7 @@ def main() -> None:
     no_emoji(at, "home page")
 
     print("== 2. The demo project ==")
-    button(at, "demo_project").click()
+    button(at, "demo_project_resume_screening").click()
     ok(at.run(), "the demo project is created and opened")
     pid1 = at.query_params["id"][0]
     goto(at, "project", id=pid1)
@@ -314,7 +314,7 @@ def main() -> None:
     print("== 5. A second project stays isolated ==")
     goto(at, "home")
     ok(at.run(), "Home opens")
-    check(any("2/5 approved" in str(p.proto) for p in at.get("progress")),
+    check(any("2/4 approved" in str(p.proto) for p in at.get("progress")),
           "the project list shows derived progress")
     at.text_input[0].input("Credit-limit recommender")
     next(b for b in at.button if b.label == "Create project").click()
@@ -333,7 +333,7 @@ def main() -> None:
     print("== 5b. Recommend ethical requirements: proposed, never assumed ==")
     goto(at, "stage", project=pid2, agent="risk_classifier")
     ok(at.run(), "the second project's Risk Classifier opens")
-    button(at, f"{pid2}::ex::risk_classifier").click()
+    button(at, f"{pid2}::ex::risk_classifier::resume_screening").click()
     ok(at.run(), "its answers are filled")
     button(at, f"{pid2}::run::risk_classifier").click()
     ok(at.run(), "it runs")
@@ -399,7 +399,7 @@ def main() -> None:
     sr = "story_refiner"
     goto(at, "stage", project=pid2, agent=sr)
     ok(at.run(), "the Story Refiner opens")
-    button(at, f"{pid2}::ex::{sr}").click()
+    button(at, f"{pid2}::ex::{sr}::resume_screening").click()
     ok(at.run(), "its stories are filled")
     button(at, f"{pid2}::run::{sr}").click()
     ok(at.run(), "it runs to the gate")
@@ -422,7 +422,7 @@ def main() -> None:
     au = "auditor"
     goto(at, "stage", project=pid2, agent=au)
     ok(at.run(), "the Auditor opens")
-    button(at, f"{pid2}::ex::{au}").click()
+    button(at, f"{pid2}::ex::{au}::resume_screening").click()
     ok(at.run(), "its answers are filled")
     button(at, f"{pid2}::run::{au}").click()
     ok(at.run(), "it runs to the gate")

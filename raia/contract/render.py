@@ -20,8 +20,8 @@ Declared Coverage, Verdict Reconciliation). The screen and the document draw
 the same digest (:mod:`raia.contract.digest`), so they cannot drift apart.
 
 The agent's own sections are named after what its normative source produces (a
-value register and ethical value requirements, a sprint ethics log, drift
-alerts and a response plan). Nothing in the Markdown is written by the model
+value register and ethical value requirements, a sprint ethics log, an
+audit opinion). Nothing in the Markdown is written by the model
 directly; it is all a view of fields that were validated first.
 """
 

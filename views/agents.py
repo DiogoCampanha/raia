@@ -15,7 +15,7 @@ from raia.ui.theme import look
 
 page_header(
     "How RAIA works",
-    "Five specialized agents apply Responsible AI across the software life cycle. Each one "
+    "Four specialized agents apply Responsible AI across the software life cycle. Each one "
     "drafts; a person decides. This page explains the architecture and documents every agent.",
     eyebrow="Architecture",
 )
@@ -135,7 +135,8 @@ for col, (layer, blurb) in zip((l1, l2, l3), LAYERS.items()):
     with col, st.container(border=True, height="stretch"):
         st.markdown(f"**{layer} layer**")
         st.caption(blurb)
-        st.caption(" · ".join(a.spec.name for a in AGENTS.values() if a.spec.layer == layer))
+        st.caption(" · ".join(a.spec.name for a in AGENTS.values() if a.spec.layer == layer)
+                   or "No agent in this build")
 
 st.subheader("What happens inside one stage", anchor=False)
 cols = st.columns(len(TURN), gap="small")

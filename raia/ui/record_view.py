@@ -112,18 +112,6 @@ def _signature(dg: Dict[str, Any]) -> str:
                              for x in segs) + "</div>")
         out.append('<div class="rv-tags">' + "".join(chip(x["label"], x["tone"], n=x["value"])
                                                      for x in sig["segments"]) + "</div>")
-    elif kind == "series":
-        pts = sig["points"]
-        thr = sig.get("threshold")
-        top = max([p["value"] for p in pts] + ([thr] if isinstance(thr, (int, float)) else [])) * 1.2 or 1
-        bars = "".join(f'<div class="sig-bar tone-{esc(p["tone"])}" style="height:{max(p["value"] / top * 100, 2):.1f}%"'
-                       f' title="{esc(p["label"])}: {p["value"]:g}"></div>' for p in pts)
-        line = (f'<div class="sig-thr" style="bottom:{thr / top * 100:.1f}%"><span>threshold {thr:g}</span></div>'
-                if isinstance(thr, (int, float)) else "")
-        labels = "".join(f'<div class="sig-x"><b>{p["value"]:g}</b> {esc(p["label"])}'
-                         + (f' · <span class="flag">{esc(p["note"])}</span>' if p["note"] else "") + "</div>"
-                         for p in pts)
-        out.append(f'<div class="sig-plot">{line}{bars}</div><div class="sig-xs">{labels}</div>')
     if sig.get("caption"):
         out.append(f'<p class="rv-sig-cap">{esc(sig["caption"])}</p>')
     out.append("</div>")

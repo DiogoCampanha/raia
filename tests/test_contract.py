@@ -64,7 +64,7 @@ def test_vocabularies_come_from_the_corpus() -> None:
     pl = CORPUS["pl_2338_2023"]
     check(all(w in pl for w in ("vulnerability", "irreversibility", "scale")),
           "the magnitude anchors use PL 2338/2023's harm criteria")
-    for engine in ("coverage", "drift", "risk_screen", "story_map", "traceability"):
+    for engine in ("coverage", "risk_screen", "story_map", "traceability"):
         text = (ROOT / "raia" / "rationale" / f"{engine}.py").read_text()
         types = set(re.findall(r'type="([a-z_]+)"', text))
         owners = set(re.findall(r'decision_owner="([a-z_]+)"', text))
@@ -377,15 +377,7 @@ def test_signatures() -> None:
                                                                {"verdict": "not_verified"}]}}, {})
     check(sig["kind"] == "split" and [x["value"] for x in sig["segments"]] == [1, 0, 0, 2],
           "the Auditor splits the items by verdict")
-    sig = digest.signature("drift_monitor", {}, {
-        "thresholds": {"parity_difference": {"value": 0.1}},
-        "analysis": {"windows": [{"window": "2026-04", "dp_difference": 0.05, "parity_breach": False},
-                                 {"window": "2026-06", "dp_difference": 0.18, "parity_breach": True}],
-                     "trend": {"direction": "widening"}}})
-    check(sig["kind"] == "series" and sig["threshold"] == 0.1 and [p["tone"] for p in sig["points"]] == ["ok", "high"],
-          "the Drift Monitor plots the parity gap per window against its threshold")
-    check("2026-06: 0.18 (breach)" in digest.signature_text(sig), "…and the document states the same numbers")
-    check(digest.signature("auditor", {}, {}) is None and digest.signature("drift_monitor", {"extension": None}, {}) is None,
+    check(digest.signature("auditor", {}, {}) is None and digest.signature("requirements_reviewer", {"extension": None}, {}) is None,
           "no computed facts, no picture: nothing is drawn from the model's prose")
 
 

@@ -10,7 +10,7 @@ from raia.contract import vocab as V
 from raia.export import bundle_name, session_bundle
 from raia.lineage import next_steps
 from raia.projects import EDITOR, OWNER, REVIEWER, ROLE_LABELS
-from raia.repository import ACCEPTED, ARTIFACT_FILES, OPEN, RESOLVED
+from raia.repository import ACCEPTED, ARTIFACT_FILES, OPEN, RESOLVED, RETIRED_ARTIFACTS
 from raia.ui import routes
 from raia.ui.board import board_tab, sprint_step
 from raia.ui.components import (artifact_body, empty_state, page_header, risk_md, role_badge,
@@ -67,7 +67,7 @@ with st.container(border=True):
                     st.session_state[pkey("board_view", proj.id)] = cycle.get("view", "Sprint")
                     st.rerun()
     elif focus is None:
-        c1.markdown(f"{I.OK} **All five stages are approved.** Revisit any stage from the "
+        c1.markdown(f"{I.OK} **Every stage is approved.** Revisit any stage from the "
                     "tracker below, or download the project.")
         c2.download_button("Download project", data=_bundle,
                            file_name=bundle_name(proj.name), mime="application/zip",
@@ -149,7 +149,11 @@ with tab_docs:
     for key in existing:
         content = repo.read_artifact(key) or ""
         data = repo.read_data(key)
-        with st.expander(ARTIFACT_FILES[key], icon=I.DOCS):
+        retired = key in RETIRED_ARTIFACTS
+        title = ARTIFACT_FILES[key] + (f" — {RETIRED_ARTIFACTS[key]}" if retired else "")
+        with st.expander(title, icon=I.DOCS):
+            if retired:
+                st.caption("This stage is no longer part of RAIA. The document is kept as it was approved.")
             prov = data.get("provenance") or {}
             if prov:
                 model = prov.get("model", {})

@@ -4,7 +4,7 @@ A multi-agent, LLM-based **software architecture** that operationalizes
 Responsible AI across the software development life cycle, implemented as a
 working proof of concept.
 
-Five specialized agents, organized in three layers (Product / Dev / Ops),
+Four specialized agents, organized in two layers (Product / Dev),
 communicate **exclusively** through a versioned shared artifact repository
 and are separated by **mandatory human approval gates**. Work is organized in
 **projects**: each person signs in, and every project has its own stages,
@@ -43,7 +43,7 @@ normative sources only. See [`docs/output-contract.md`](docs/output-contract.md)
 the agent cards in [`docs/agents/`](docs/agents/) and the JSON Schemas in
 [`docs/schema/`](docs/schema/).
 
-## The Five Agents
+## The Agents
 
 | Agent | Layer | Decision procedure | Grounded in |
 |---|---|---|---|
@@ -51,7 +51,11 @@ the agent cards in [`docs/agents/`](docs/agents/) and the JSON Schemas in
 | **Requirements Reviewer** | 🟦 Product | Obligation × principle coverage matrix against stated requirements and existing controls; assigns the requirement register; on request, recommends candidate requirements a person adopts or rejects | IEEE 7000, MS RAI v2 |
 | **User Story Refiner** | 🟩 Dev | Two modes. *Generate*: approved requirements without a story (a short list, legal obligations first) become RAI stories for the backlog, every requirement covered or justified. *Refine*: ECCOLA card selection per story from risk tier, data categories and capabilities; story register as a counted invariant; criteria written back to the backlog | ECCOLA, MS RAI v2 |
 | **Auditor** | 🟩 Dev | Project-wide at each sprint close: the sprint's items matched against evidence (no evidence → NOT VERIFIED by code), where every requirement stands, progress and trend, whether the backlog covers the ethical risks, and what comes next | MS RAI v2, NIST AI RMF |
-| **Drift Monitor** | 🟧 Ops | Fairness metrics, thresholds parsed from approved artifacts, breach and trend detection, sample-adequacy flags | NIST AI RMF |
+
+The RAIA architecture also specifies an **Ops layer** — fairness-drift
+monitoring after deployment. It needs production telemetry that a team
+designing a product rarely holds, so it is future work and has no agent in
+this build (see the roadmap).
 
 **Sprints over one backlog.** Once the requirements are approved, the project
 page opens on a **Board**: the backlog (RAI stories generated from the
@@ -163,8 +167,9 @@ artifact.
   prompt-injection patterns in English and Portuguese. Findings are flagged,
   never silently removed. The approved draft is sanitized on its way into the
   repository too, because that is the text every downstream prompt inherits.
-- **(f) Deterministic metrics** — fairness numbers come from pandas, and every
-  figure in the narrative is checked against the computed set.
+- **(f) Deterministic facts** — verdicts, obligation lists, coverage matrices,
+  registers, priorities and identifiers are computed by code; the model may
+  downgrade a computed verdict, never upgrade one.
 - **(g) Declared completeness** — each agent publishes the checklist it must
   account for and declares, per item, `covered`, `not-applicable` or
   `not-grounded` with a reason. Being exhaustive is not the goal; being
@@ -194,7 +199,7 @@ raia/
 ├── raia/
 │   ├── config.py              # env-driven settings; authority + source registries
 │   ├── fields.py              # the structured-intake field model
-│   ├── examples.py            # the canonical resume-screening walkthrough
+│   ├── examples.py            # the two example cases (resume screening, customer-support assistant)
 │   ├── llm.py                 # provider-agnostic factory, retry, contract-aware mock
 │   ├── rag.py                 # retrieval with pinned excerpts and excerpt ids
 │   ├── rationale/             # the deterministic decision procedures
@@ -202,7 +207,6 @@ raia/
 │   │   ├── coverage.py        #   obligation × principle coverage matrix
 │   │   ├── story_map.py       #   ECCOLA card selection, story register
 │   │   ├── traceability.py    #   evidence matching, NOT VERIFIED by code
-│   │   ├── drift.py           #   thresholds, breaches, trend, sample adequacy
 │   │   └── principles.py      #   the seven adopted principles, machine-readable
 │   ├── contract/              # the standard RAIA record
 │   │   ├── vocab.py           #   closed vocabularies from the normative sources
@@ -232,7 +236,7 @@ raia/
 │   ├── pipeline.py            # the graph: generate → human gate → persist
 │   ├── sanitize.py            # injection screening (EN + PT), flag-never-delete
 │   ├── export.py              # one-zip project export
-│   └── agents/                # the five agent specifications (and the Refiner's generate mode)
+│   └── agents/                # the four agent specifications (and the Refiner's generate mode)
 ├── corpus/                    # curated normative summaries (extensible)
 ├── docs/
 │   ├── architecture.md        # diagrams and the traceability table
@@ -341,7 +345,7 @@ python tests/consistency_check.py --agent risk_classifier --runs 5   # with a re
 ```
 
 Runs fully offline. Covers ingestion, pinned retrieval, stage gates, required
-inputs, all five decision procedures, the human-review interrupt, the rejection
+inputs, every decision procedure, the human-review interrupt, the rejection
 loop, approval, provenance, sidecars, the open-issues register, restart
 recovery, the export bundle, and the deterministic unit checks. It asserts the
 two invariants directly: nothing persists without a human approval, and a
@@ -349,7 +353,7 @@ fabricated citation is detected.
 
 ## Roadmap (next developments)
 
-- [x] Structured intake driving deterministic decision procedures, all five agents
+- [x] Structured intake driving deterministic decision procedures, every agent
 - [x] Citation verification against retrieved excerpts
 - [x] Open Issues register with arbitration
 - [x] Reproducible provenance and structured artifact sidecars
@@ -357,6 +361,7 @@ fabricated citation is detected.
 - [x] Projects owned by signed-in people, with editor/reviewer invitations and an optional second approver
 - [x] One standard record for every agent, with a project action plan
 - [x] Durable, tamper-evident storage for hosted deployments (PostgreSQL, hash-chained versions)
+- [ ] Ops layer: a fairness-drift monitor fed by production telemetry
 - [ ] Ingest the official legal texts with article-level citation metadata
 - [ ] Jira / Confluence integration via MCP connectors
 - [ ] Least-privilege tool-permission hardening

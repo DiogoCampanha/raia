@@ -2,7 +2,7 @@
 
 The page wears its agent's identity (colour, icon, question, header pattern —
 ``raia.ui.theme.AGENT_LOOK``) so a person always knows which agent they are
-working with, keeps the five stages in view, and ends with the previous and
+working with, keeps every stage in view, and ends with the previous and
 next stage whatever state this one is in.
 """
 

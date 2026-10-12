@@ -133,7 +133,7 @@ def icon_html(name: str) -> str:
 
 def stage_tracker(project_id: str, stages: List[Dict[str, object]], current: str = "",
                   key_prefix: str = "trk") -> None:
-    """The five stages as a row of cards (project page). Each card opens its stage."""
+    """Every stage as a row of cards (project page). Each card opens its stage."""
     cols = st.columns(len(stages), gap="small")
     for i, (col, s) in enumerate(zip(cols, stages), start=1):
         agent = str(s["agent"])
@@ -181,7 +181,7 @@ def agent_header(agent_key: str, name: str, description: str, eyebrow: str, stat
 
 
 def stage_rail(project_id: str, stages: List[Dict[str, Any]], current: str) -> None:
-    """The five stages as a compact, always-visible stepper on a stage page."""
+    """Every stage as a compact, always-visible stepper on a stage page."""
     cols = st.columns(len(stages), gap="small")
     for i, (col, s) in enumerate(zip(cols, stages), start=1):
         agent = str(s["agent"])
@@ -244,7 +244,7 @@ def next_step_card(project_id: str, stages: List[Dict[str, Any]], agent_key: str
                        "for review: **" + "**, **".join(flagged) + "**. Nothing was re-run.")
         steps = next_steps(stages, after=agent_key)
         if not steps:
-            st.markdown("**All five stages are approved.** When you are done, please complete the "
+            st.markdown("**Every stage is approved.** When you are done, please complete the "
                         "**Assessment**: it is the evidence the study depends on.")
             row = st.container(horizontal=True, key=look_key(agent_key, "next-row"))
             if row.button("Complete the assessment", type="primary", icon=I.ASSESSMENT, key="next_assessment"):

@@ -38,7 +38,6 @@ os.environ["RAIA_CHROMA_DIR"] = str(Path(_tmp) / "chroma")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from raia.agents import AGENTS                                  # noqa: E402
-from raia.agents.drift_monitor import compute_fairness_summary  # noqa: E402
 from raia.examples import EXAMPLES                              # noqa: E402
 from raia.export import session_bundle                          # noqa: E402
 from raia.pipeline import StageRunner                           # noqa: E402
@@ -163,8 +162,8 @@ def main() -> None:
           "an issue can be arbitrated")
     check(repo.open_issues()[0]["status"] == RESOLVED, "arbitration is recorded")
 
-    print("== 9. The remaining four agents ==")
-    for key in ("requirements_reviewer", "story_refiner", "auditor", "drift_monitor"):
+    print("== 9. The remaining agents ==")
+    for key in ("requirements_reviewer", "story_refiner", "auditor"):
         out = runner.start(PROJECT, key, EXAMPLES[key])
         payload = out["payload"]
         level = payload["validation"]["level"]
@@ -208,12 +207,7 @@ def main() -> None:
                         "approver": "smoke-tester"})
     check(bool(done["commit"]), "the restored review can then be approved normally")
 
-    print("== 13. Deterministic metrics stay reproducible ==")
-    table = compute_fairness_summary(EXAMPLES["drift_monitor"]["telemetry_csv"])
-    # Widest gap in the final window of the example: gender=M 0.39 vs gender=X 0.21.
-    check("| Window |" in table and "0.1800" in table, "fairness table computed outside the UI")
-
-    print("== 14. Audit trail and export ==")
+    print("== 13. Audit trail and export ==")
     history = repo.history()
     check(len(history) >= 6, f"{len(history)} commits recorded")
     events = [e["kind"] for e in repo.events()]
@@ -221,7 +215,7 @@ def main() -> None:
     bundle = session_bundle(repo)
     check(len(bundle) > 1000 and bundle[:2] == b"PK", "session export produces a zip")
 
-    print("== 15. The standard record ==")
+    print("== 14. The standard record ==")
     from raia.contract import SCHEMA_VERSION
     from raia.contract import actions as action_plan
     import io as _io
@@ -245,7 +239,7 @@ def main() -> None:
     names = _zip.ZipFile(_io.BytesIO(session_bundle(repo))).namelist()
     check("action_plan.csv" in names and "action_plan.json" in names, "the export contains the action plan")
 
-    print("== 16. A reviewer edits the record, not the prose ==")
+    print("== 15. A reviewer edits the record, not the prose ==")
     out = runner.start("edit-project", "risk_classifier", EXAMPLES["risk_classifier"])
     payload = out["payload"]
     try:
@@ -271,7 +265,7 @@ def main() -> None:
     check("Edited by the reviewer." in (erepo.read_artifact("risk_classification") or ""),
           "the approved document is re-rendered from the edited record")
 
-    print("== 17. A reply that breaks the contract is repaired, or shown honestly ==")
+    print("== 16. A reply that breaks the contract is repaired, or shown honestly ==")
     from langchain_core.messages import AIMessage as _AI
     import raia.agents.base as _base
 
@@ -292,7 +286,7 @@ def main() -> None:
         _base.invoke_chat = real
     check(run.repairs == 1 and not run.record.get("schema_errors"), "an invalid reply is repaired once")
 
-    print("== 17b. A reply cut off at the token limit is retried with more room ==")
+    print("== 16b. A reply cut off at the token limit is retried with more room ==")
     budgets = []
     calls["n"] = 0
 
@@ -337,7 +331,7 @@ def main() -> None:
           "…and a reply that keeps being cut off says so, with the limit it hit")
     check(len(run.record["open_issues"]) > 0, "…which still carries the rule engine's issues")
 
-    print("== 18. Deterministic unit checks ==")
+    print("== 17. Deterministic unit checks ==")
     import tests.test_engines as engines  # noqa: E402
     import tests.test_contract as contract_tests  # noqa: E402
 

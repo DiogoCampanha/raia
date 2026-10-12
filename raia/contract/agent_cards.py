@@ -65,10 +65,6 @@ LIMITATIONS: Dict[str, List[str]] = {
         "priorities, blocking decisions); it rates the evidence the sprint produced, not the quality "
         "of the controls themselves.",
     ],
-    "drift_monitor": [
-        "Metrics are computed from the telemetry supplied; the Ops layer is a demonstrable prototype.",
-        "Severity follows a fixed threshold rule; whether a breach warrants action is a human decision.",
-    ],
 }
 
 CHECKS: Dict[str, List[str]] = {
@@ -88,8 +84,6 @@ CHECKS: Dict[str, List[str]] = {
                 "Every computed item has a verdict", "An unevidenced item is never upgraded (restored by code)",
                 "A strength rests on a satisfied item or an approval on record (anything else removed by code)",
                 "The opinion is rated by code and never rises above the best the declared evidence allows"],
-    "drift_monitor": ["One alert per computed breach, with the computed severity (restored by code)",
-                      "Every figure in the prose is in the computed set"],
 }
 
 COMMON_CHECKS = [

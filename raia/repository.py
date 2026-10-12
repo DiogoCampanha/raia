@@ -52,11 +52,16 @@ ARTIFACT_FILES: Dict[str, str] = {
     "refined_stories": "04_refined_stories.md",
     "rai_backlog": "04a_rai_backlog.md",
     "audit_report": "05_audit_report.md",
+    # Retired: the Drift Monitor is no longer part of the build. Kept so a
+    # project that approved one still lists it under its documents.
     "drift_report": "06_drift_report.md",
     "open_issues": "07_open_issues.md",
     "backlog": "08_backlog.md",
     "sprints": "09_sprints.md",
 }
+
+#: Artifacts of stages no longer in the build, with how they are labelled.
+RETIRED_ARTIFACTS: Dict[str, str] = {"drift_report": "Retired stage (Drift Monitor)"}
 
 #: Registers maintained by code (not agent outputs): written through the same
 #: commit path, but never listed as a stage's approved artifact.

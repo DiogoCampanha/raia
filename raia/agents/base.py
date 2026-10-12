@@ -2,7 +2,7 @@
 raia.agents.base
 ================
 
-Base class shared by the five RAIA agents.
+Base class shared by the RAIA agents.
 
 Every agent runs the same five-step turn, generalised from the one place in
 the original system where a claim was enforced by code rather than requested
@@ -192,7 +192,7 @@ class AgentSpec:
 
 
 class BaseAgent:
-    """Runtime behavior shared by all five agents."""
+    """Runtime behavior shared by every agent."""
 
     spec: AgentSpec  # each subclass sets its own spec
 

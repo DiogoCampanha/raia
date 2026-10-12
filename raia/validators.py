@@ -318,38 +318,6 @@ def check_reconciliation(draft: str, verdict: Dict[str, Any], keys: Sequence[str
     )
 
 
-def check_numbers(draft: str, allowed: Iterable[str], label: str = "Reported figures") -> ValidationItem:
-    """Every number in the narrative must come from the computed set.
-
-    Applies where metrics are computed by code and the model only interprets
-    them. Years, counts of items, and section numbers are excluded so the check
-    stays about *metric values*.
-    """
-    allowed_set = {_norm(str(a)) for a in allowed}
-    body = strip_machine_block(draft or "")
-    body = re.sub(r"\[\s*Source\s*:[^\]]+\]", "", body)
-    invented: List[str] = []
-    for m in NUMBER_RE.finditer(body):
-        raw = m.group(1)
-        norm = _norm(raw.replace(",", "."))
-        if norm in allowed_set or _norm(raw) in allowed_set:
-            continue
-        # Ignore integers that are plainly not metric values.
-        if re.fullmatch(r"\d{1,4}", raw) and "." not in raw:
-            continue
-        invented.append(raw)
-
-    if invented:
-        return ValidationItem(
-            "numbers.invented", FAIL, label,
-            "The draft contains numeric values that are not in the set computed by code. "
-            "Metric values must never be produced by the model.",
-            sorted(set(invented)),
-        )
-    return ValidationItem("numbers.match", PASS, label,
-                          "Every figure in the draft comes from the computed set.")
-
-
 def check_traceability(draft: str, required_ids: Sequence[str], label: str,
                        code: str = "traceability") -> ValidationItem:
     """Every upstream identifier (EVR-1, S2, …) must appear in the draft."""

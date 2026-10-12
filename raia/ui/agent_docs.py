@@ -112,18 +112,6 @@ DOCS: Dict[str, Dict[str, object]] = {
             "What becomes an ethical checkpoint for the next iteration.",
         ],
     },
-    "drift_monitor": {
-        "when": "After deployment, on each monitoring period's telemetry export.",
-        "decides": [
-            "Computes every fairness and representativeness metric in code, with group sizes "
-            "and trend, against thresholds read from the approved upstream artifacts.",
-            "Checks that every number in the narrative is one the code computed.",
-        ],
-        "you": [
-            "Whether a drift alert warrants action, and which action.",
-            "Whether operational context explains a change in the numbers.",
-        ],
-    },
 }
 
 TURN = [
@@ -137,5 +125,6 @@ TURN = [
 LAYERS = {
     "Product": "Risk classification and ethical value requirements, at conception time.",
     "Dev": "Ethical acceptance criteria and accountability audits, inside sprints.",
-    "Ops": "Fairness-drift monitoring, after deployment.",
+    "Ops": "Planned: fairness-drift monitoring after deployment. It needs production telemetry a "
+           "team designing a product rarely holds, so it is left for future work and is not part of this build.",
 }

@@ -1011,6 +1011,7 @@ class ProjectService:
         """Store one tester assessment (final submission). A pending draft is discarded."""
         body = dict(payload)
         body["status"] = "submitted"
+        body["build"] = config.build_id()
         with self.db.tx() as t:
             self._delete_drafts(t, user)
             t.execute(

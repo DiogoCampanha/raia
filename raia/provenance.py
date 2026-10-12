@@ -54,6 +54,7 @@ def build(
     """Assemble the provenance record for one generated draft."""
     return {
         "schema": SCHEMA_VERSION,
+        "build": config.build_id(),
         "agent": {"key": agent_key, "name": agent_name, "layer": layer},
         "generated_at": _now(),
         "model": {

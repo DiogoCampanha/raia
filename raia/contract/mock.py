@@ -140,16 +140,6 @@ def build(prompt: str) -> Dict[str, Any]:
             "trajectory_comment": "[MOCK MODE] Placeholder comment on the computed trend.",
             "next_focus": "[MOCK MODE] Placeholder focus for the next sprint.",
         }
-    elif key == "drift_monitor":
-        sev = ids.get("breach_severities") or {}
-        links = list(sev)[:1]
-        ext = {
-            "alerts": [{"window": w, "severity": s, "meaning_for_affected_people": MOCK_NOTE, "citations": cite}
-                       for w, s in sev.items()],
-            "trend_interpretation": MOCK_NOTE, "representativeness": MOCK_NOTE, "sample_adequacy": [],
-            "response_plan": {"escalation_path": MOCK_NOTE, "deactivation_criteria": MOCK_NOTE,
-                              "affected_community_feedback": MOCK_NOTE, "recovery_and_communication": MOCK_NOTE},
-        }
 
     return {
         "headline": "[MOCK MODE] Placeholder headline: no model was called.",

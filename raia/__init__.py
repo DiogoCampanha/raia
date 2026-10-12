@@ -16,7 +16,7 @@ Package layout
 * :mod:`raia.db`          -- SQLite / PostgreSQL access shared by registry and store.
 * :mod:`raia.projects`    -- people, projects, roles, invitations, authorization.
 * :mod:`raia.auth`        -- sign-in (Google via Streamlit, or a local dev identity).
-* :mod:`raia.agents`      -- the five specialized agents.
+* :mod:`raia.agents`      -- the specialized agents.
 * :mod:`raia.pipeline`    -- LangGraph orchestration with human checkpoints.
 """
 
@@ -34,4 +34,4 @@ try:  # pragma: no cover - only takes effect on hosted Linux platforms
 except ImportError:
     pass
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

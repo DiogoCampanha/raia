@@ -234,3 +234,32 @@ def corpus_version() -> str:
     except OSError:
         return "unavailable"
     return h.hexdigest()[:12]
+
+
+_BUILD_ID: str = ""
+
+
+def build_id() -> str:
+    """Which build of RAIA is running: package version plus the git commit.
+
+    Stamped into every draft's provenance and every submitted assessment, so
+    evaluations of different builds can be told apart. ``RAIA_BUILD`` overrides
+    it on hosts where the source is not a git checkout.
+    """
+    global _BUILD_ID
+    if _BUILD_ID:
+        return _BUILD_ID
+    from . import __version__
+
+    sha = os.getenv("RAIA_BUILD", "").strip()
+    if not sha:
+        try:
+            import subprocess
+
+            out = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=Path(__file__).resolve().parent,
+                                 capture_output=True, text=True, timeout=3)
+            sha = out.stdout.strip() if out.returncode == 0 else ""
+        except (OSError, subprocess.SubprocessError):
+            sha = ""
+    _BUILD_ID = f"{__version__}+{sha or 'unknown'}"
+    return _BUILD_ID

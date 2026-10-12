@@ -359,20 +359,6 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .sig-split { display: flex; height: .8rem; border-radius: 999px; overflow: hidden; gap: 2px; background: var(--raia-surface); margin-bottom: .1rem; }
 .sig-split .seg { background: var(--tone); min-width: .5rem; }
 
-.sig-plot {
-  position: relative; display: flex; align-items: flex-end; gap: .75rem; height: 88px;
-  padding: 0 .25rem; border-bottom: 1px solid var(--raia-border);
-}
-.sig-bar {
-  flex: 1 1 0; max-width: 76px; border-radius: .3rem .3rem 0 0;
-  background: color-mix(in srgb, var(--tone) 70%, transparent); border: 1px solid var(--tone); border-bottom: none;
-}
-.sig-thr { position: absolute; left: 0; right: 0; border-top: 1.5px dashed #dc2626; pointer-events: none; }
-.sig-thr span { position: absolute; right: 0; top: -1.15rem; font-size: .6875rem; font-weight: 600; color: #dc2626; }
-.sig-xs { display: flex; gap: .75rem; padding: .3rem .25rem 0; }
-.sig-x { flex: 1 1 0; max-width: 76px; font-size: .75rem; color: var(--raia-muted); line-height: 1.35; }
-.sig-x b { display: block; color: inherit; font-size: .8125rem; color: var(--raia-muted); }
-.sig-x .flag { color: #ea580c; font-weight: 600; }
 
 /* ---- User Story Refiner: the refined stories first ------------------------ */
 /* One card per story. Criteria are marked by what happened to them: kept,

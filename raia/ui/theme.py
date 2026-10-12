@@ -129,10 +129,6 @@ _CARDS = ('<rect x="96" y="8" width="120" height="74" rx="10"/><rect x="72" y="2
 _LENS = ("".join(f'<circle cx="{x}" cy="{y}" r="2.5" fill="currentColor" stroke="none"/>'
                  for x in range(40, 230, 22) for y in range(14, 120, 22))
          + '<circle cx="132" cy="58" r="34" stroke-width="5"/><path d="m157 83 32 32" stroke-width="9"/>')
-_WAVE = ('<path d="M20 44h210" stroke-dasharray="6 7"/>'
-         '<path d="M20 92c18 0 22-30 40-30s22 34 40 34 22-44 40-44 22 26 40 26 20-52 50-60" stroke-width="5"/>'
-         '<path d="M20 116h210"/>')
-
 AGENT_LOOK: Dict[str, AgentLook] = {
     "risk_classifier": AgentLook("balance", "#3730a3", "#a5b4fc",
                                  "How risky is this product under the law?", _GAUGE),
@@ -142,8 +138,6 @@ AGENT_LOOK: Dict[str, AgentLook] = {
                                "Are the stories ready to build responsibly?", _CARDS),
     "auditor": AgentLook("manage_search", "#a21caf", "#f0abfc",
                          "Is there evidence the controls were built?", _LENS),
-    "drift_monitor": AgentLook("monitoring", "#4d7c0f", "#bef264",
-                               "Is the system still behaving in production?", _WAVE),
 }
 
 _NEUTRAL = AgentLook("hub", "#334155", "#cbd5e1", "", "")

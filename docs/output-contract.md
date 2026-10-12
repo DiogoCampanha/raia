@@ -190,14 +190,6 @@ The scale is RAIA's own rule over the accountability goals of the Microsoft RAI
 Standard v2 and NIST AI RMF GOVERN and MEASURE; it rates the evidence the
 sprint produced, not the quality of the controls themselves.
 
-### Drift Monitor — NIST AI RMF MEASURE and MANAGE
-
-| Field | Content |
-|---|---|
-| `alerts[]` | One per computed breach window, with exactly the computed `severity` and what it means for affected people |
-| `trend_interpretation`, `representativeness`, `sample_adequacy[]` | MEASURE 2 and 3: movement, population representativeness, where samples do not support a conclusion |
-| `response_plan` | `escalation_path`, `deactivation_criteria` (MANAGE 2), `affected_community_feedback` (MANAGE 4), `recovery_and_communication` |
-
 ## 5. Vocabularies and anchors
 
 <!-- VOCABULARY:START -->
@@ -270,7 +262,6 @@ Then floors, in this order, each recorded in `priority_basis`:
 | The finding cites a legal instrument, or links a legal obligation code | at least `high` | Authority precedence legal > standard > advisory |
 | A requirement closes a legal obligation gap | at least `high` | Same |
 | An item is unverified on a high-risk system | at least `high` (otherwise `medium`) | Microsoft RAI Standard v2 accountability; NIST AI RMF GOVERN |
-| A drift severity computed from telemetry | that severity | NIST AI RMF MEASURE 3 |
 
 An action takes the highest priority of the findings it answers. The overall
 status is at least `needs_attention` when any issue is open or any finding is
@@ -280,7 +271,7 @@ high, and `blocked` when anything is blocking.
 
 | Kind | Form | Assigned by |
 |---|---|---|
-| Finding, action, issue in a record | `<agent prefix>-F<n>`, `-A<n>`, `-I<n>` with prefixes `RC`, `RR`, `SR`, `AU`, `DM` | code |
+| Finding, action, issue in a record | `<agent prefix>-F<n>`, `-A<n>`, `-I<n>` with prefixes `RC`, `RR`, `SR`, `SG`, `AU` | code |
 | Ethical value requirement | `EVR-<n>` | Requirements Reviewer rule engine |
 | Story in a record | as given, or `S<n>`; `G<n>` in the generate mode | User Story Refiner rule engine |
 | Story in the backlog | `RAI-<n>` (from requirements), `US-<n>` (product) — stable for the project | backlog register |
@@ -300,7 +291,7 @@ layout keeps an **Open Issues** section (the project's register is read from
 it) and ends with the traceability appendix and the machine block (`schema`,
 `verdict.*`, `coverage.*`).
 
-### Summary, actions, deep dive — Risk Classifier, Requirements Reviewer, Drift Monitor
+### Summary, actions, deep dive — Risk Classifier, Requirements Reviewer
 
 **Summary**
 

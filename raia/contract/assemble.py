@@ -43,7 +43,6 @@ PREFIX: Dict[str, str] = {
     "story_refiner": "SR",
     "story_generate": "SG",
     "auditor": "AU",
-    "drift_monitor": "DM",
 }
 
 #: What each agent's record is called, in the rendered document and exports.
@@ -53,7 +52,6 @@ RECORD_TYPES: Dict[str, str] = {
     "story_refiner": "Refined stories record",
     "story_generate": "RAI backlog record",
     "auditor": "Audit record",
-    "drift_monitor": "Drift monitoring record",
 }
 
 FENCE_RE = re.compile(r"```(?:json|raia-record)?\s*\n(?P<body>\{.*?\})\s*```", re.S)
@@ -247,21 +245,6 @@ def frameworks_for(sources: Sequence[str]) -> List[Dict[str, str]]:
 # ---------------------------------------------------------------------------
 
 
-def drift_severities(rationale: RationaleResult) -> Dict[str, str]:
-    """Severity per telemetry window, exactly as the engine computes it."""
-    from ..rationale.drift import _severity
-
-    data = rationale.data or {}
-    analysis = data.get("analysis") or {}
-    threshold = (rationale.verdict or {}).get("parity_threshold")
-    out: Dict[str, str] = {}
-    for w in analysis.get("windows") or []:
-        sev = _severity(w, analysis.get("trend") or {}, threshold)
-        if sev:
-            out[str(w.get("window"))] = sev
-    return out
-
-
 def priority_floors(agent_key: str, rationale: RationaleResult) -> Dict[str, rubric.Floor]:
     data = rationale.data or {}
     verdict = rationale.verdict or {}
@@ -292,9 +275,6 @@ def priority_floors(agent_key: str, rationale: RationaleResult) -> Dict[str, rub
             if g.get("kind") in ("legal_without_story", "risk_without_story"):
                 floors.setdefault(str(g.get("ref")), ("high", g.get("title", "backlog gap")))
 
-    elif agent_key == "drift_monitor":
-        for window, sev in drift_severities(rationale).items():
-            floors[window] = (sev, f"computed drift severity for window {window}")
 
     return floors
 
@@ -537,15 +517,7 @@ def finalize(
     if agent_key == "auditor" and isinstance(rec.get("extension"), dict):
         _audit_project(ext, rationale, notes)
         _audit_opinion(ext, rationale, findings, issues, notes)
-    if agent_key == "drift_monitor":
-        severities = drift_severities(rationale)
-        for alert in ext.get("alerts") or []:
-            w = str(alert.get("window"))
-            if w in severities and alert.get("severity") != severities[w]:
-                notes.append(f"SEVERITY: alert for {w} said {alert.get('severity')}; the engine computed "
-                             f"{severities[w]}. Restored by code.")
-                alert["severity"] = severities[w]
-    for key in ("obligations", "gap_analysis", "evrs", "alerts", "items"):
+    for key in ("obligations", "gap_analysis", "evrs", "items"):
         for entry in ext.get(key) or []:
             if isinstance(entry, dict) and "citations" in entry:
                 entry["citations"] = [normalize_citation(c) for c in entry["citations"] if c]

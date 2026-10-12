@@ -824,49 +824,12 @@ def audit_report(record: Dict[str, Any], data: Dict[str, Any], actions: Sequence
             "project": project_sections(record, data)}
 
 
-def _drift(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, Any]):
-    alerts = ext.get("alerts") or []
-    plan = ext.get("response_plan") or {}
-    adequacy = [str(x) for x in ext.get("sample_adequacy") or [] if str(x).strip()]
-    sev = [a.get("severity") for a in alerts]
-    worst = next((s for s in ("high", "medium", "low") if s in sev), None)
-    v = record.get("computed_verdict") or {}
-    cards = [card(id=str(a.get("window", "")), title=f"{str(a.get('severity') or '').capitalize()} severity",
-                  tone=tone_of_priority(a.get("severity")), body=str(a.get("meaning_for_affected_people") or ""),
-                  cites=a.get("citations") or []) for a in alerts]
-    fair_blocks = [_text("Trend", ext.get("trend_interpretation")), _text("Representativeness", ext.get("representativeness")),
-                   {"type": "text", "label": "Sample adequacy", "text": "" if adequacy else "No concern declared."}]
-    if adequacy:
-        fair_blocks.append({"type": "bullets", "items": adequacy})
-    sections = [
-        {"key": "alerts", "title": "Drift alerts", "md_title": "Drift Alerts",
-         "conclusion": (f"{plural(len(alerts), 'window')} breached the threshold; highest severity {worst}."
-                        if alerts else "No window breached the threshold."),
-         "blocks": [{"type": "cards", "items": cards}] if cards else [{"type": "note", "text": "None."}]},
-        {"key": "fairness", "title": "Fairness", "md_title": "Fairness & Representativeness Analysis",
-         "conclusion": first_sentence(ext.get("trend_interpretation")) or "No trend interpretation was provided.",
-         "blocks": fair_blocks},
-        {"key": "response", "title": "Response plan", "md_title": "Response Plan",
-         "conclusion": first_sentence(plan.get("deactivation_criteria")) or first_sentence(plan.get("escalation_path"))
-                       or "No response plan was provided.",
-         "blocks": [_text("Escalation path", plan.get("escalation_path")),
-                    _text("Rollback and deactivation criteria", plan.get("deactivation_criteria")),
-                    _text("Feedback from users and affected communities", plan.get("affected_community_feedback")),
-                    _text("Recovery and communication", plan.get("recovery_and_communication"))]},
-    ]
-    kpi = {"label": "Drift alerts", "value": len(alerts),
-           "hint": f"trend {label(v.get('trend') or 'unknown')}, {plural(int(v.get('windows') or 0), 'window')}",
-           "tone": tone_of_priority(worst) if worst else "ok"}
-    return sections, kpi
-
-
 AGENT_SECTIONS = {
     "risk_classifier": _risk,
     "requirements_reviewer": _requirements,
     "story_refiner": _stories,
     "story_generate": _generated,
     "auditor": _audit,
-    "drift_monitor": _drift,
 }
 
 #: The Markdown heading of each agent's own sections, in order. The contract's
@@ -880,7 +843,6 @@ AGENT_MD_SECTIONS: Dict[str, List[str]] = {
     "auditor": ["Audit Opinion", "Where the Project Stands", "Progress Across Sprints", "Is the Backlog Enough",
                 "What Comes Next", "Strengths", "Risks", "Opportunities", "Pathway Forward",
                 "Verdict Register", "Accountability Documentation"],
-    "drift_monitor": ["Drift Alerts", "Fairness & Representativeness Analysis", "Response Plan"],
 }
 
 
@@ -891,14 +853,12 @@ AGENT_MD_SECTIONS: Dict[str, List[str]] = {
 # Every agent reads the same way, but each answers a different question, and
 # its summary opens with the picture of that answer: where the product sits on
 # the legal risk scales, which principles the requirements cover, how each
-# story came out, what the audit could verify, how the fairness gap moved
-# across windows. Only facts code computed (or the record's own verdict
+# story came out, what the audit could verify. Only facts code computed (or the record's own verdict
 # fields) are drawn; tones keep their shared meaning. Kinds:
 #
 # ``scale``   ``{"rows": [{"label", "steps": [str], "active": int, "tone", "note"}]}``
 # ``cells``   ``{"cells": [{"label", "state", "tone"}]}``
 # ``split``   ``{"segments": [{"label", "value": int, "tone"}]}`` — parts of one whole
-# ``series``  ``{"points": [{"label", "value": float, "tone", "note"}], "threshold": float, "unit"}``
 
 EU_STEPS = ["Minimal", "Limited", "High", "Prohibited"]
 BR_STEPS = ["Not listed", "High", "Excessive"]
@@ -1007,22 +967,6 @@ def _sig_audit(ext, data, record) -> Optional[Dict[str, Any]]:
             "caption": f"{plural(len(items), 'item')} audited. When in doubt an item stays Not verified."}
 
 
-def _sig_drift(ext, data, record) -> Optional[Dict[str, Any]]:
-    windows = ((data.get("analysis") or {}).get("windows")) or []
-    points = [w for w in windows if isinstance(w.get("dp_difference"), (int, float))]
-    if not points:
-        return None
-    threshold = ((data.get("thresholds") or {}).get("parity_difference") or {}).get("value")
-    trend = ((data.get("analysis") or {}).get("trend") or {}).get("direction")
-    return {"kind": "series", "title": "Parity gap by window",
-            "threshold": threshold, "unit": "",
-            "points": [{"label": str(w.get("window")), "value": float(w["dp_difference"]),
-                        "tone": "high" if w.get("parity_breach") else "ok",
-                        "note": "breach" if w.get("parity_breach") else ""} for w in points],
-            "caption": "Demographic-parity difference computed from the telemetry"
-                       + (f"; the trend is {trend}." if trend else ".")}
-
-
 def _sig_generated(ext, data, record) -> Optional[Dict[str, Any]]:
     scope = data.get("scope") or []
     if not scope:
@@ -1051,7 +995,6 @@ SIGNATURES = {
     "story_refiner": _sig_stories,
     "story_generate": _sig_generated,
     "auditor": _sig_audit,
-    "drift_monitor": _sig_drift,
 }
 
 
@@ -1080,11 +1023,6 @@ def signature_text(sig: Optional[Dict[str, Any]]) -> str:
         body = "; ".join(f"{c['label']}: {c['state']}" for c in sig["cells"])
     elif kind == "split":
         body = " · ".join(f"{s['label']} {s['value']}" for s in sig["segments"])
-    elif kind == "series":
-        thr = sig.get("threshold")
-        body = ((f"threshold {thr:g} — " if isinstance(thr, (int, float)) else "")
-                + " · ".join(f"{p['label']}: {p['value']:g}" + (f" ({p['note']})" if p["note"] else "")
-                             for p in sig["points"]))
     else:
         return ""
     return f"**{sig['title']}** — {body}. {sig.get('caption', '')}".strip()

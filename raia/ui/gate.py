@@ -36,7 +36,7 @@ from raia.agents import RUNNABLE as AGENTS
 from raia.contract import vocab as V
 from raia.contract.schema import record_model
 from raia.deploy import friendly_llm_error
-from raia.examples import EXAMPLES
+from raia.examples import CASES, DEFAULT_CASE, EXAMPLE_KEY, example_for
 from raia.fields import InputField
 from raia.rationale.coverage import ORIGIN_KEY, next_requirement
 from raia.projects import AccessDenied, Project, UsageLimitReached
@@ -268,7 +268,28 @@ def _snapshot(spec) -> Dict[str, Any]:
     recs = st.session_state.get(_recs_key(spec.key))
     if recs:
         out[RECS_KEY] = recs
+    case = st.session_state.get(_case_key(spec.key))
+    if case:
+        out[EXAMPLE_KEY] = case
     return out
+
+
+def _case_key(agent_key: str) -> str:
+    return pkey("example_case", agent_key)
+
+
+def _load_example(agent_key: str, case: str) -> None:
+    """Callback: fill every field of the form from one example case."""
+    agent = AGENTS[agent_key]
+    values = example_for(case, agent_key)
+    for f in agent.spec.input_fields:
+        if f.key in values:
+            # A story list arrives without card uids: new ones are minted, so
+            # the old cards' widget state is simply left unused.
+            st.session_state[_state_key(agent_key, f.key)] = copy.deepcopy(values[f.key])
+    st.session_state[_case_key(agent_key)] = case
+    st.session_state.pop(_origin_key(agent_key), None)
+    st.session_state.pop(_recs_key(agent_key), None)
 
 
 # ---------------------------------------------------------------------------
@@ -545,6 +566,8 @@ def _load_saved_intake(project: Project, spec) -> None:
         st.session_state[_origin_key(spec.key)] = saved[ORIGIN_KEY]
     if isinstance(saved.get(RECS_KEY), dict) and _recs_key(spec.key) not in st.session_state:
         st.session_state[_recs_key(spec.key)] = saved[RECS_KEY]
+    if saved.get(EXAMPLE_KEY) in CASES and _case_key(spec.key) not in st.session_state:
+        st.session_state[_case_key(spec.key)] = saved[EXAMPLE_KEY]
     for f in missing:
         value = saved.get(f.key)
         if value in (None, "", []):
@@ -606,15 +629,19 @@ def _intake_fields(project: Project, agent, can_run: bool) -> None:
     from the session.
     """
     spec = agent.spec
-    if can_run and st.button("Load example (resume-screening scenario)", key=pkey("ex", spec.key),
-                             icon=I.EXAMPLE, type="secondary"):
-        for f in spec.input_fields:
-            value = EXAMPLES.get(spec.key, {}).get(f.key)
-            if value is not None:
-                st.session_state[_state_key(spec.key, f.key)] = copy.deepcopy(value)
-        st.session_state.pop(_origin_key(spec.key), None)
-        st.session_state.pop(_recs_key(spec.key), None)
-        st.rerun()
+    if can_run:
+        # The project's own case first, when a demo project remembers one.
+        mine = st.session_state.get(_case_key(spec.key)) or DEFAULT_CASE
+        order = [mine] + [c for c in CASES if c != mine]
+        with st.popover("Load an example", icon=I.EXAMPLE):
+            st.caption("Fills every answer on this form. Your current answers are replaced.")
+            for case in order:
+                c = CASES[case]
+                if st.button(c["title"], key=pkey("ex", spec.key, case), help=c["shows"],
+                             type="primary" if case == mine else "secondary", width="stretch"):
+                    _load_example(spec.key, case)
+                    st.rerun()
+                st.caption(c["summary"])
 
     recommends = hasattr(agent, "recommend")
     if can_run and (spec.suggest is not None or recommends):
