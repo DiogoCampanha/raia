@@ -236,7 +236,7 @@ ISSUE_TYPE_LABELS: Dict[str, str] = {
     "value_tradeoff": "Values trade off against each other",
     "not_grounded": "Important claim not grounded in the retrieved excerpts",
     "missing_information": "Information only a person can supply",
-    "risk_acceptance": "A risk is proposed for acceptance",
+    "risk_acceptance": "A risk to treat or to accept",
     "prohibited_practice": "A prohibited or excessive-risk practice was declared",
 }
 

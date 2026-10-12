@@ -522,3 +522,21 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .rv-table { width: 100%; border-collapse: collapse; font-size: .875rem; margin: .5rem 0 1rem; }
 .rv-table th { text-align: left; font-weight: 600; padding: .4rem .6rem; border-bottom: 1px solid var(--raia-border, rgba(128,128,128,.35)); }
 .rv-table td { padding: .4rem .6rem; border-bottom: 1px solid var(--raia-border-soft, rgba(128,128,128,.18)); vertical-align: top; }
+
+/* Reviewing a draft: card verdicts and decisions */
+.rv-report-cont { border-top-width: 1px; margin-top: .5rem; }
+.rv-rejected { opacity: .78; border-left-style: dashed; }
+.rv-rejected .rv-card-title s { color: var(--raia-muted); }
+.rv-rejected .rv-need { color: #b45309; font-weight: 600; }
+.rv-decided .rv-decision {
+  font-size: .875rem; line-height: 1.5; padding: .45rem .6rem; border-radius: .4rem;
+  background: color-mix(in srgb, var(--tone) 10%, transparent);
+}
+.rv-crit-row { margin: 0 !important; padding: 0 !important; list-style: none; }
+.rv-overridden { border-left-style: dashed; }
+.rv-review-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem; font-size: .875rem;
+  border: 1px solid var(--raia-border); border-radius: var(--raia-radius); padding: .55rem .8rem;
+  background: var(--raia-surface); margin: .25rem 0 .75rem;
+}
+.rv-review-bar b { font-variant-numeric: tabular-nums; }

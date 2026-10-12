@@ -43,15 +43,66 @@ person clicks is a native Streamlit widget.
 from __future__ import annotations
 
 import html
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+import threading
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import streamlit as st
 
 from raia.contract import digest as D
+from raia.contract import review as RV
 from raia.contract import vocab as V
 from raia.contract.render import table as md_table
 
 from .theme import I, look
+
+
+# ---------------------------------------------------------------------------
+# What a person can do on a record: review its cards, take its decisions
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CardReview:
+    """Accept / Reject on each card of a draft at the gate.
+
+    ``state`` maps a card id to its verdict (``raia.contract.review``) and is
+    changed in place by the widgets; ``on_change`` keeps it with the draft.
+    """
+    state: Dict[str, Dict[str, Any]]
+    key: str
+    on_change: Callable[[], None]
+    by: str = ""
+    enabled: bool = True
+    titles: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class Decisions:
+    """The decisions on a record, taken where they are shown.
+
+    ``taken`` maps a decision's wording key to what was decided; ``record``
+    takes one (returns an error message, or ``None``); ``reopen`` undoes one
+    (owners, approved records only).
+    """
+    taken: Dict[str, Dict[str, Any]]
+    key: str
+    can_decide: bool
+    record: Callable[[Dict[str, Any], str, str], Optional[str]]
+    reopen: Optional[Callable[[Dict[str, Any]], None]] = None
+    where: str = "draft"
+
+
+_CTX = threading.local()
+
+
+def _rv() -> Optional[CardReview]:
+    return getattr(_CTX, "review", None)
+
+
+def _dc() -> Optional[Decisions]:
+    return getattr(_CTX, "decide", None)
 
 
 def esc(value: Any) -> str:
@@ -221,13 +272,109 @@ def obligation_card(o: Dict[str, Any], where: str) -> str:
 
 
 def evr_card(e: Dict[str, Any]) -> str:
-    chips = (chip(D.principle_name(e.get("value")), "neutral", quiet=True)
+    over = (e.get("review") or {}).get("status") == "overridden"
+    chips = ((chip("Overridden by " + str((e.get("review") or {}).get("by") or "a reviewer"), "neutral") if over else "")
+             + chip(D.principle_name(e.get("value")), "neutral", quiet=True)
              + "".join(chip(t, "neutral", quiet=True) for t in (e.get("traces_to") or [])[:3]))
     body = (_meta([("Fit criterion", e.get("fit_criterion")),
                    ("Verified by", str(e.get("verification_method") or "").capitalize()),
                    ("Stakeholders", ", ".join(e.get("stakeholders") or []))])
-            + (f'<div class="rv-card-foot">{_cites(e["citations"])}</div>' if e.get("citations") else ""))
-    return _dcard(e.get("id", ""), "neutral", chips, esc(e.get("statement") or ""), body)
+            + (f'<div class="rv-card-foot">{_cites(e["citations"])}</div>' if e.get("citations") else "")
+            + (f'<p class="rv-muted">Overridden: {esc((e.get("review") or {}).get("reason") or "")}</p>' if over else ""))
+    return _dcard(e.get("id", ""), "neutral", chips, esc(e.get("statement") or ""), body,
+                  cls="rv-overridden" if over else "")
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _on_verdict(rv: CardReview, cid: str, k: str) -> None:
+    value = st.session_state.get(k)
+    if value is None:
+        rv.state.pop(cid, None)
+    else:
+        s = dict(rv.state.get(cid) or {})
+        s.update(verdict=value, by=rv.by, at=_now())
+        rv.state[cid] = s
+    rv.on_change()
+
+
+def _on_reason(rv: CardReview, cid: str, k_code: str, k_why: str) -> None:
+    s = dict(rv.state.get(cid) or {})
+    s["reason_code"] = st.session_state.get(k_code) or "other"
+    s["reason"] = " ".join(str(st.session_state.get(k_why) or "").split())
+    rv.state[cid] = s
+    rv.on_change()
+
+
+def _reject_too(rv: CardReview, ids: Sequence[str], because: str) -> None:
+    for cid in ids:
+        rv.state[cid] = {"verdict": RV.REJECTED, "reason_code": "other", "reason": because, "by": rv.by, "at": _now()}
+    rv.on_change()
+
+
+def _rejected_html(cid: str, title: str, s: Dict[str, Any]) -> str:
+    reason = str(s.get("reason") or "").strip()
+    return (f'<div class="rv-card rv-rejected tone-neutral" id="card-{esc(cid)}"><div class="rv-card-top">'
+            + chip("Rejected", "neutral") + f'<span class="rv-id">{esc(cid)}</span></div>'
+            f'<div class="rv-card-title"><s>{esc(title)}</s></div>'
+            + (f'<div class="rv-card-sub">Why: {esc(reason)}</div>' if reason else
+               '<div class="rv-card-sub rv-need">Say why below: a rejection needs a reason.</div>')
+            + "</div>")
+
+
+def review_card(cid: str, card_html: str, title: str = "", extra: Optional[Callable[[], None]] = None) -> None:
+    """One card with Accept / Reject beside it (a reason under it, once rejected)."""
+    rv = _rv()
+    if rv is None:
+        st.html(card_html)
+        return
+    s = rv.state.get(cid) or {}
+    verdict = s.get("verdict")
+    k = f"{rv.key}::v::{cid}"
+    if k not in st.session_state:
+        st.session_state[k] = verdict
+    with st.container(key=f"{rv.key}::box::{cid}"):
+        left, right = st.columns([6, 1.45], vertical_alignment="top", gap="small")
+        with left:
+            st.html(_rejected_html(cid, title or rv.titles.get(cid, cid), s) if verdict == RV.REJECTED else card_html)
+        with right:
+            st.segmented_control(
+                f"Your review of {cid}", [RV.ACCEPTED, RV.REJECTED], key=k, label_visibility="collapsed",
+                format_func=lambda o: "Accept" if o == RV.ACCEPTED else "Reject", disabled=not rv.enabled,
+                on_change=_on_verdict, args=(rv, cid, k), width="stretch")
+        if verdict == RV.REJECTED:
+            k_code, k_why = f"{rv.key}::rc::{cid}", f"{rv.key}::why::{cid}"
+            if k_code not in st.session_state:
+                st.session_state[k_code] = s.get("reason_code") or RV.CARD_REASONS[0][0]
+            if k_why not in st.session_state:
+                st.session_state[k_why] = s.get("reason") or ""
+            c1, c2 = st.columns([1.4, 3], gap="small")
+            c1.selectbox("Reason", [c for c, _ in RV.CARD_REASONS], key=k_code, format_func=dict(RV.CARD_REASONS).get,
+                         on_change=_on_reason, args=(rv, cid, k_code, k_why), disabled=not rv.enabled)
+            c2.text_input("Why? (required)", key=k_why, placeholder="One line is enough",
+                          on_change=_on_reason, args=(rv, cid, k_code, k_why), disabled=not rv.enabled)
+            if extra:
+                extra()
+
+
+def _draw_cards(cards: Sequence[Tuple[str, str, str]], more_after: int, noun: str = "",
+                flat: bool = False, extra: Optional[Callable[[str], Optional[Callable[[], None]]]] = None) -> None:
+    """Cards as ``(id, html, title)``: plain HTML to read, or with Accept / Reject at the gate.
+
+    ``flat`` draws them all (inside an expander, where another cannot open).
+    """
+    if _rv() is None:
+        st.html(_cards_html([h for _, h, _ in cards], more_after, noun))
+        return
+    head, rest = (list(cards), []) if flat else (list(cards[:more_after]), list(cards[more_after:]))
+    for cid, h, title in head:
+        review_card(cid, h, title, extra(cid) if extra else None)
+    if rest:
+        with st.expander(f"Show {len(rest)} more{(' ' + noun) if noun else ''}"):
+            for cid, h, title in rest:
+                review_card(cid, h, title, extra(cid) if extra else None)
 
 
 def _cards_html(cards: Sequence[str], more_after: int, noun: str = "") -> str:
@@ -251,20 +398,43 @@ def _section_head(title: str, hint: str = "", count: Optional[int] = None) -> st
 # ---------------------------------------------------------------------------
 
 
-def _summary(dg: Dict[str, Any]) -> None:
-    st.html(_status_html(dg) + _signature(dg) + _kpis_html(dg) + _gaps_html(dg))
+def _summary(dg: Dict[str, Any], before=None) -> None:
+    st.html(_status_html(dg))
+    if before:
+        before(dg)
+    st.html(_signature(dg) + _kpis_html(dg) + _gaps_html(dg))
 
 
-def _findings(dg: Dict[str, Any], key: str) -> None:
+def _only_answers(dg: Dict[str, Any], fid: str) -> List[str]:
+    """Actions that answer this finding and no other."""
+    return [a["id"] for a in dg["actions"] if a["findings"] == [fid]]
+
+
+def _findings(dg: Dict[str, Any], key: str, flat: bool = False, title: str = "Risks found") -> None:
     findings = dg.get("findings") or []
     if not findings:
         return
-    body = _section_head("Risks found", "Most pressing first; open a card for the detail", len(findings))
-    body += _cards_html([finding_card(f) for f in findings], 3, "risks")
+    st.html(_section_head(title, "Most pressing first; open a card for the detail", len(findings)))
+    rv = _rv()
+
+    def extra(fid: str):
+        if rv is None:
+            return None
+        others = [a for a in _only_answers(dg, fid) if (rv.state.get(a) or {}).get("verdict") != RV.REJECTED]
+        if not others:
+            return None
+
+        def draw() -> None:
+            st.caption(f"{', '.join(others)} answer{'s' if len(others) == 1 else ''} only this risk.")
+            st.button(f"Reject {', '.join(others)} too", key=f"{rv.key}::too::{fid}", type="tertiary",
+                      on_click=_reject_too, args=(rv, others, f"Answers only {fid}, which was rejected"))
+        return draw
+
+    _draw_cards([(f.get("id", ""), finding_card(f), str(f.get("title") or "")) for f in findings], 3, "risks",
+                flat=flat, extra=extra)
     if dg["principles"]:
-        body += ('<div class="rv-tags"><span class="lbl">Risk areas</span>'
-                 + "".join(chip(name, "neutral", quiet=True, n=count) for name, count in dg["principles"]) + "</div>")
-    st.html(body)
+        st.html('<div class="rv-tags"><span class="lbl">Risk areas</span>'
+                + "".join(chip(name, "neutral", quiet=True, n=count) for name, count in dg["principles"]) + "</div>")
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +442,19 @@ def _findings(dg: Dict[str, Any], key: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _decision_card(d: Dict[str, Any]) -> str:
+def _decision_card(d: Dict[str, Any], interactive: bool = False) -> str:
+    taken = d.get("taken")
+    if taken:
+        return (
+            f'<div class="rv-card tone-ok rv-decided" id="card-{esc(d["id"])}">'
+            '<div class="rv-card-top">' + chip("Decided", "ok")
+            + (chip("Was blocking", "neutral", quiet=True) if d["blocking"] else "")
+            + chip(d["owner_label"], "neutral", quiet=True) + f'<span class="rv-id">{esc(d["id"])}</span></div>'
+            f'<div class="rv-card-text">{esc(d["text"])}</div>'
+            f'<div class="rv-decision"><b>{esc(taken.get("choice", ""))}</b>'
+            + (f' — {esc(taken.get("rationale", ""))}' if taken.get("rationale") else "")
+            + f'<span class="rv-muted"> · {esc(taken.get("by", ""))}'
+            + (f', {esc(str(taken.get("at", ""))[:10])}' if taken.get("at") else "") + "</span></div></div>")
     return (
         f'<div class="rv-card tone-{d["tone"]}" id="card-{esc(d["id"])}">'
         '<div class="rv-card-top">'
@@ -282,10 +464,50 @@ def _decision_card(d: Dict[str, Any]) -> str:
         + f'<span class="rv-id">{esc(d["id"])}</span></div>'
         f'<div class="rv-card-text">{esc(d["text"])}</div>'
         + ('<div class="rv-options">' + "".join(f'<span class="opt">{esc(o)}</span>' for o in d["options"]) + "</div>"
-           if d["options"] else "")
+           if d["options"] and not interactive else "")
         + f'<div class="rv-card-foot">{esc(d["type_label"])} · raised by {esc(d["origin"])}</div>'
         "</div>"
     )
+
+
+OTHER = "Something else"
+
+
+def decision_block(d: Dict[str, Any]) -> None:
+    """A decision card a person can act on: pick an option, say why, record it."""
+    dc = _dc()
+    if dc is None or (not dc.can_decide and not d.get("taken")):
+        st.html(_decision_card(d))
+        return
+    if d.get("taken"):
+        st.html(_decision_card(d))
+        if dc.reopen is not None and dc.can_decide:
+            if st.button("Reopen this decision", key=f"{dc.key}::reopen::{d['id']}", type="tertiary",
+                         icon=":material/undo:"):
+                dc.reopen(d)
+                st.rerun()
+        return
+    with st.container(border=True, key=f"{dc.key}::dbox::{d['id']}"):
+        st.html(_decision_card(d, interactive=True))
+        k = f"{dc.key}::d::{d['key'][:60]}"
+        options = list(d["options"]) + [OTHER]
+        choice = st.radio("Your decision", options, key=k + "::choice", index=None)
+        own = st.text_input("Your decision, in a few words", key=k + "::own") if choice == OTHER else ""
+        why = st.text_input("Why? (required)", key=k + "::why", placeholder="The reason, recorded with the decision")
+        if st.button("Record decision", key=k + "::go", type="primary", icon=":material/gavel:"):
+            final = (own or "").strip() if choice == OTHER else (choice or "")
+            if not final:
+                st.error("Choose an option, or write the decision.")
+            elif not (why or "").strip():
+                st.error("Say why: one line is enough.")
+            else:
+                err = dc.record(d, final, why.strip())
+                if err:
+                    st.error(err)
+                else:
+                    st.rerun()
+        if dc.where == "draft":
+            st.caption("Recorded with the draft, and written to the project's open issues when it is approved.")
 
 
 def _group_head(title: str, hint: str, tone: str, count: int) -> str:
@@ -293,7 +515,7 @@ def _group_head(title: str, hint: str, tone: str, count: int) -> str:
             f'<span class="rv-chip quiet tone-{tone}">{count}</span><span class="rv-muted">{esc(hint)}</span></div>')
 
 
-def _actions(dg: Dict[str, Any], key: str) -> None:
+def _actions(dg: Dict[str, Any], key: str, flat: bool = False) -> None:
     st.html('<div class="rv-h"><h4>What to do</h4>'
             '<span class="rv-muted">Grouped by the priority the software computed</span></div>')
     counts = D.owner_counts(dg)
@@ -313,11 +535,24 @@ def _actions(dg: Dict[str, Any], key: str) -> None:
         if not items:
             continue
         shown_any = True
+        if _rv() is not None:
+            # At the gate each card carries widgets, so groups are drawn with
+            # Streamlit, not inside an HTML <details>: the first open, the rest
+            # a click away.
+            cards = [(a["id"], action_card(a), a["text"]) for a in items]
+            if not groups or flat:
+                st.html(_group_head(g["title"], g["hint"], g["tone"], len(items)))
+                _draw_cards(cards, 5, "actions", flat=flat)
+            else:
+                with st.expander(f"{g['title']} ({len(items)}) — {g['hint'].lower()}"):
+                    _draw_cards(cards, 5, "actions", flat=True)
+            groups.append(g["key"])
+            continue
         # The first group with work in it is open; later groups are a click away.
         groups.append(f'<details class="rv-grp"{" open" if len(groups) == 0 else ""}><summary>'
                       + _group_head(g["title"], g["hint"], g["tone"], len(items)) + "</summary>"
                       + _cards_html([action_card(a) for a in items], 5, "actions") + "</details>")
-    if groups:
+    if groups and _rv() is None:
         st.html("".join(groups))
     if not shown_any:
         st.html('<div class="rv-empty">'
@@ -326,9 +561,15 @@ def _actions(dg: Dict[str, Any], key: str) -> None:
 
     decisions = [d for d in dg["decisions"] if keep(d["owner"])]
     if decisions:
-        st.html(_group_head("Decisions for a person", "Open issues the software will not settle", "decision",
-                            len(decisions))
-                + '<div class="rv-cards">' + "".join(_decision_card(d) for d in decisions) + "</div>")
+        open_n = sum(1 for d in decisions if not d.get("taken"))
+        hint = ("Choose an option and say why; the decision is recorded under your name"
+                if _dc() is not None and _dc().can_decide else "Open issues the software will not settle")
+        st.html(_group_head("Decisions for a person", hint, "decision", open_n if open_n else len(decisions)))
+        if _dc() is None:
+            st.html('<div class="rv-cards">' + "".join(_decision_card(d) for d in decisions) + "</div>")
+        else:
+            for d in decisions:
+                decision_block(d)
 
 
 def _agent_lists(dg: Dict[str, Any]) -> None:
@@ -343,10 +584,13 @@ def _agent_lists(dg: Dict[str, Any]) -> None:
                      + "".join(obligation_card(o, g["title"]) for o in g["items"]) + "</div></details>")
         st.html(body)
     if dg.get("evrs"):
-        body = _section_head("Ethical value requirements", "Each with a fit criterion; open one for how it is verified",
-                             len(dg["evrs"]))
-        body += _cards_html([evr_card(e) for e in dg["evrs"]], 6, "requirements")
-        st.html(body)
+        st.html(_section_head("Ethical value requirements", "Each with a fit criterion; open one for how it is verified",
+                              len(dg["evrs"])))
+        if _rv() is not None:
+            st.caption("Each requirement closes a gap the rule engine computed. Rejecting one does not delete it: "
+                       "it is kept, marked as overridden by you with your reason, and recorded in the open issues.")
+        _draw_cards([(e.get("id", ""), evr_card(e), str(e.get("statement") or "")) for e in dg["evrs"]], 6,
+                    "requirements")
 
 
 #: Deep-dive sections already drawn above the dropdown, so not repeated in it.
@@ -477,7 +721,7 @@ def _criterion(l: Dict[str, Any]) -> str:
             f'<span class="why">{esc(meta)}</span></span></li>')
 
 
-def _story_card(v: Dict[str, Any]) -> str:
+def _story_card(v: Dict[str, Any], skip_new: bool = False) -> str:
     tags = []
     if v["n_conflicts"]:
         tags.append(chip(D.plural(v["n_conflicts"], "conflict"), "high"))
@@ -493,18 +737,35 @@ def _story_card(v: Dict[str, Any]) -> str:
         + (f'<p class="rv-story-desc">{esc(v["description"])}</p>' if v["description"] else "")
         + (f'<div class="rv-muted">Implements {esc(", ".join(v.get("evr_ids") or []))}</div>' if v.get("evr_ids") else "")
         + '<div class="rv-story-lbl">Acceptance criteria</div>'
-        + '<ul class="rv-crits">' + "".join(_criterion(l) for l in v["lines"]) + "</ul>"
+        + '<ul class="rv-crits">' + "".join(_criterion(l) for l in v["lines"]
+                                           if not (skip_new and l["kind"] == "new")) + "</ul>"
         + (f'<div class="rv-story-why"><b>Why</b> {esc(v["why"])}</div>' if v["why"] else "")
         + (f'<div class="rv-tags">{cards}</div>' if cards else "")
         + "</div>"
     )
 
 
-def _story_choices(v: Dict[str, Any], key: str) -> Dict[str, str]:
-    """One choice per conflict that has a rewrite: which version goes in the copy."""
+def _story_choices(v: Dict[str, Any], key: str, dg: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    """One choice per conflict that has a rewrite: which version goes in the copy.
+
+    When the conflict's decision can be taken here, the decision is the choice:
+    choosing "Rewrite it" puts the rewrite in the copy, anything else keeps the
+    original. One control, not two.
+    """
     choices: Dict[str, str] = {}
+    by_id = {d["id"]: d for d in (dg or {}).get("decisions") or []}
     for l in v["lines"]:
         if l["kind"] != "conflict" or not l["rewrite"]:
+            continue
+        d = by_id.get(l.get("decision") or "")
+        if d is not None and _dc() is not None:
+            taken = d.get("taken")
+            if taken:
+                choices[l["id"]] = "rewrite" if str(taken.get("choice", "")).lower().startswith("rewrite") else "keep"
+            else:
+                st.markdown(f"**{l['id']}** — decide which version stands (the copy follows your decision):")
+                choices[l["id"]] = "rewrite"
+            decision_block(d)
             continue
         picked = st.radio(
             f"In the copy, {l['id']} reads", ["rewrite", "keep"], horizontal=True,
@@ -519,7 +780,10 @@ def _why(dg: Dict[str, Any], key: str) -> None:
     """The risks, actions and decisions behind the changes — secondary, on request."""
     if dg["summary"]:
         st.html(f'<div class="rv-text">{_lead_split(dg["summary"])}</div>')
-    if dg["top_issues"]:
+    if _rv() is not None:
+        # At the gate the risks are cards to review, like every other stage's.
+        _findings(dg, key, flat=True, title="Risks the new criteria answer")
+    elif dg["top_issues"]:
         st.html('<div class="rv-h"><h4>Main risks the new criteria answer</h4></div><div class="rv-issues">'
                 + "".join(
                     f'<div class="rv-issue tone-{D.tone_of_priority(f.get("priority"))}">'
@@ -528,7 +792,9 @@ def _why(dg: Dict[str, Any], key: str) -> None:
                     + chip(D.principle_name(f.get("principle")), "neutral", quiet=True)
                     + f'<span class="rv-id">{esc(f.get("id"))}</span></div>' for f in dg["top_issues"])
                 + "</div>")
-    _actions(dg, key)
+    conflicts = {l.get("decision") for v in dg["stories"] for l in v["lines"] if l["kind"] == "conflict"}
+    _actions({**dg, "decisions": [d for d in dg["decisions"] if not (_dc() and d["id"] in conflicts)]}, key,
+             flat=True)
     log = next((sec for sec in dg["deep"] if sec.get("key") == "log"), None)
     if log and log["blocks"] and log["blocks"][0].get("type") == "bullets":
         st.html('<div class="rv-h"><h4>Sprint ethics log</h4></div>')
@@ -538,8 +804,20 @@ def _why(dg: Dict[str, Any], key: str) -> None:
     _deep({**dg, "deep": [sec for sec in dg["deep"] if sec.get("key") not in ("log", "no_impact")]})
 
 
-def _story_layout(dg: Dict[str, Any], key: str, nested: bool) -> None:
+def _new_criteria_review(v: Dict[str, Any]) -> None:
+    """The story's new criteria, one row each, with Accept / Reject."""
+    new = [l for l in v["lines"] if l["kind"] == "new"]
+    if not new:
+        return
+    st.caption("New ethical criteria — accept or reject each one")
+    for l in new:
+        review_card(l["id"], '<ul class="rv-crits rv-crit-row">' + _criterion(l) + "</ul>", l["text"])
+
+
+def _story_layout(dg: Dict[str, Any], key: str, nested: bool, before=None) -> None:
     st.html(_counts_strip(dg))
+    if before:
+        before(dg)
     changed = [v for v in dg["stories"] if v["changed"]]
     plain = [v for v in dg["stories"] if not v["changed"]]
     if dg["agent_key"] == "story_generate":
@@ -553,10 +831,11 @@ def _story_layout(dg: Dict[str, Any], key: str, nested: bool) -> None:
     all_choices: Dict[str, Dict[str, str]] = {}
     for v in changed:
         with st.container(border=True):
-            st.html(_story_card(v))
+            st.html(_story_card(v, skip_new=_rv() is not None))
+            _new_criteria_review(v) if _rv() is not None else None
             left, right = st.columns([3, 1], vertical_alignment="bottom")
             with left:
-                all_choices[v["id"]] = _story_choices(v, key)
+                all_choices[v["id"]] = _story_choices(v, key, dg)
             with right:
                 with st.popover(f"Copy {v['id']}", icon=":material/content_copy:", width="stretch"):
                     st.caption("The story's new version. Use the copy button in the corner.")
@@ -612,7 +891,7 @@ def _blocks_html(blocks: List[Dict[str, Any]]) -> str:
     return "".join(out)
 
 
-def _report_html(dg: Dict[str, Any]) -> str:
+def _report_html(dg: Dict[str, Any], split: bool = False):
     rp = dg["report"]
     op = rp["opinion"]
     out = ['<div class="rv-report look-auditor">',
@@ -661,6 +940,7 @@ def _report_html(dg: Dict[str, Any]) -> str:
     # Risks
     n += 1
     out.append(_sec(n, "Risks", "What the audit found, and what to do about it"))
+    risk_cards: List[Tuple[str, str, str]] = []
     if rp["risks"]:
         cards = []
         for r in rp["risks"]:
@@ -680,7 +960,9 @@ def _report_html(dg: Dict[str, Any]) -> str:
                 + (f"<dt>Recommendation</dt><dd>{recs}</dd>" if recs else
                    "<dt>Recommendation</dt><dd>Decided by a person — see Decisions required.</dd>")
                 + "</dl>" + (f'<div class="rv-card-foot">{_cites(r["cites"])}</div>' if r["cites"] else "") + "</div>")
-        out.append('<div class="rv-cards one">' + "".join(cards) + "</div>")
+            risk_cards.append((r["id"], cards[-1].replace('<div class="rv-obs', f'<div id="card-{esc(r["id"])}" class="rv-obs', 1),
+                               r["title"]))
+        out.append("<!--RISKS-->" if split else '<div class="rv-cards one">' + "".join(c for _, c, _ in risk_cards) + "</div>")
     else:
         out.append('<div class="rv-empty">No risks were identified.</div>')
 
@@ -722,6 +1004,11 @@ def _report_html(dg: Dict[str, Any]) -> str:
     else:
         out.append('<div class="rv-empty">Nothing to do: the audit found no gap.</div>')
     out.append("</div>")
+    if split:
+        # The observations are drawn with Streamlit between the two halves, each
+        # half closed and reopened so both stay well-formed.
+        head, _, tail = "".join(out).partition("<!--RISKS-->")
+        return (head + "</div>", risk_cards, '<div class="rv-report look-auditor rv-report-cont">' + tail)
     return "".join(out)
 
 
@@ -750,8 +1037,16 @@ def _appendices(dg: Dict[str, Any]) -> None:
             st.code(dg["unparsed"][:6000], language=None, wrap_lines=True)
 
 
-def _audit_layout(dg: Dict[str, Any], key: str, nested: bool) -> None:
-    st.html(_report_html(dg))
+def _audit_layout(dg: Dict[str, Any], key: str, nested: bool, before=None) -> None:
+    if before:
+        before(dg)
+    if _rv() is None:
+        st.html(_report_html(dg))
+    else:
+        head, risks, tail = _report_html(dg, split=True)
+        st.html(head)
+        _draw_cards(risks, 50, "observations", flat=True)
+        st.html(tail)
     label = "Appendices — decisions, verdict register, accountability, traceability"
     if nested:
         if st.toggle(label, key=f"{key}::appx"):
@@ -767,24 +1062,42 @@ def _audit_layout(dg: Dict[str, Any], key: str, nested: bool) -> None:
 
 
 def record_view(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[str, Any]] = None,
-                *, key: str, nested: bool = False, fallback_markdown: str = "") -> None:
-    """Draw one record in the three tiers. ``key`` makes widget keys unique on the page."""
+                *, key: str, nested: bool = False, fallback_markdown: str = "",
+                review: Optional[CardReview] = None, decide: Optional[Decisions] = None,
+                before: Optional[Callable[[Dict[str, Any]], None]] = None) -> None:
+    """Draw one record in the three tiers. ``key`` makes widget keys unique on the page.
+
+    ``review`` puts Accept / Reject on every reviewable card (the gate);
+    ``decide`` lets a person take each decision where it is shown; ``before``
+    draws something between the status and the rest (the hand-off strip).
+    """
     if not record:
         # An artifact written before the standard record existed: shown as it was approved.
         st.markdown(fallback_markdown or "_Nothing to show._")
         return
-    dg = D.build(agent_key, record, computed_data or {})
+    if review is not None:
+        review.titles = {c["id"]: c["title"] for c in RV.cards(agent_key, record)}
+    _CTX.review, _CTX.decide = review, decide
+    try:
+        _record_view(agent_key, record, computed_data, key, nested, decide, before)
+    finally:
+        _CTX.review, _CTX.decide = None, None
+
+
+def _record_view(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[str, Any]], key: str,
+                 nested: bool, decide: Optional[Decisions], before) -> None:
+    dg = D.build(agent_key, record, computed_data or {}, taken=decide.taken if decide else None)
     for n in dg["notices"]:
         st.html(f'<div class="rv-notice">{esc(n)}</div>')
     # A reply that could not be read as a record has no stories and no report to
     # lead with: it is shown in the shared layout, with the notice above.
     if agent_key in D.STORY_KEYS and not record.get("schema_errors"):
-        _story_layout(dg, key, nested)
+        _story_layout(dg, key, nested, before)
         return
     if agent_key == "auditor" and not record.get("schema_errors"):
-        _audit_layout(dg, key, nested)
+        _audit_layout(dg, key, nested, before)
         return
-    _summary(dg)
+    _summary(dg, before)
     _findings(dg, key)
     _actions(dg, key)
     _agent_lists(dg)

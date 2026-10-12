@@ -41,7 +41,9 @@ from raia.fields import InputField
 from raia.rationale.coverage import ORIGIN_KEY, next_requirement
 from raia.projects import AccessDenied, Project, UsageLimitReached
 
-from .record_view import record_view
+from raia.contract import review as RV
+
+from .record_view import CardReview, Decisions, record_view
 from .state import current_user, flash, get_service, pkey
 from .theme import CHECK, I
 
@@ -985,6 +987,12 @@ def record_editor(agent_key: str, payload: Dict[str, Any]) -> Tuple[Optional[Dic
     return rec, errors
 
 
+def _core_differs(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+    from raia.pipeline import _core
+
+    return _core(a) != _core(b) or bool((b or {}).get("review"))
+
+
 def _edited_changes(original: Dict[str, Any], edited: Optional[Dict[str, Any]]) -> bool:
     if not edited or not original:
         return False
@@ -1006,16 +1014,122 @@ def _computed_data(payload: Dict[str, Any]) -> Dict[str, Any]:
     return dict((payload.get("rationale") or {}).get("data") or {})
 
 
-def draft_view(agent_key: str, payload: Dict[str, Any], record: Optional[Dict[str, Any]] = None) -> None:
+def draft_view(agent_key: str, payload: Dict[str, Any], record: Optional[Dict[str, Any]] = None,
+               review: Optional[CardReview] = None, decide: Optional[Decisions] = None,
+               before=None) -> None:
     """A draft in the three tiers every record is read in."""
     record = record if record is not None else (payload.get("record") or {})
     record_view(agent_key, record, _computed_data(payload),
                 key=pkey("draft", agent_key, str(payload.get("attempt", 1))),
-                fallback_markdown=payload.get("draft") or "")
+                fallback_markdown=payload.get("draft") or "", review=review, decide=decide, before=before)
     st.download_button("Download this draft (Markdown)", payload.get("draft") or "",
                        file_name=f"{payload.get('artifact_key', agent_key)}-draft.md", mime="text/markdown",
                        key=pkey("dl_draft", agent_key, str(payload.get("attempt", 1))), icon=I.DOWNLOAD,
                        type="tertiary")
+
+
+# ---------------------------------------------------------------------------
+# Card review and decisions on a draft
+# ---------------------------------------------------------------------------
+
+
+def _review_state(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """The reviewer's verdicts and decisions on this draft, kept on the payload itself."""
+    review = payload.get("review")
+    if not isinstance(review, dict):
+        review = RV.empty()
+        payload["review"] = review
+    review.setdefault("cards", {})
+    review.setdefault("decisions", {})
+    return review
+
+
+def _persist_review(project_id: str, agent_key: str, payload: Dict[str, Any]) -> None:
+    try:
+        get_service().save_review(current_user(), project_id, agent_key, payload.get("review") or RV.empty())
+    except AccessDenied:
+        pass
+
+
+def _card_review(project: Project, agent_key: str, payload: Dict[str, Any]) -> CardReview:
+    review = _review_state(payload)
+    user = current_user()
+    return CardReview(state=review["cards"], key=pkey("cr", agent_key, str(payload.get("attempt", 1))),
+                      on_change=lambda: _persist_review(project.id, agent_key, payload),
+                      by=user.label, enabled=project.can("review"))
+
+
+def _draft_decisions(project: Project, agent_key: str, payload: Dict[str, Any]) -> Decisions:
+    review = _review_state(payload)
+    user = current_user()
+
+    def take(d: Dict[str, Any], choice: str, why: str) -> Optional[str]:
+        review["decisions"][d["key"]] = {"choice": choice, "rationale": why, "by": user.label,
+                                         "at": RV._now(), "issue": d["id"]}
+        _persist_review(project.id, agent_key, payload)
+        return None
+
+    def reopen(d: Dict[str, Any]) -> None:
+        review["decisions"].pop(d["key"], None)
+        _persist_review(project.id, agent_key, payload)
+
+    return Decisions(taken=review["decisions"], key=pkey("dc", agent_key, str(payload.get("attempt", 1))),
+                     can_decide=project.can("review"), record=take, reopen=reopen, where="draft")
+
+
+def approved_decisions(project: Project, agent_key: str, artifact_key: str, record: Dict[str, Any],
+                       key: str) -> Decisions:
+    """Decisions on an approved record: read from, and written to, the project's register."""
+    svc, user = get_service(), current_user()
+    register = svc.open_issues(user, project.id)
+    mine = {RV.issue_key(i): i for i in register}
+    taken: Dict[str, Dict[str, Any]] = {}
+    for k, i in mine.items():
+        if i.get("status") not in (None, "", "open"):
+            taken[k] = {"choice": i.get("decision") or {"resolved": "Resolved", "accepted": "Risk accepted"}.get(
+                            i.get("status"), str(i.get("status"))),
+                        "rationale": i.get("rationale") or i.get("resolution_note") or "",
+                        "by": i.get("decided_by") or i.get("resolved_by") or "",
+                        "at": i.get("decided_at") or i.get("resolved_at") or "", "issue": i.get("id")}
+
+    def take(d: Dict[str, Any], choice: str, why: str) -> Optional[str]:
+        entry = mine.get(d["key"])
+        if entry is None:
+            return "This decision is not in the project's register, so it cannot be recorded here."
+        try:
+            svc.decide_issue(user, project.id, entry["id"], choice, why)
+        except (AccessDenied, ValueError) as exc:
+            return str(exc)
+        flash(f"{d['id']} decided ({entry['id']} in the open issues), recorded as {user.label}.")
+        return None
+
+    def reopen(d: Dict[str, Any]) -> None:
+        entry = mine.get(d["key"])
+        if entry is not None:
+            svc.reopen_issue(user, project.id, entry["id"])
+
+    return Decisions(taken=taken, key=key, can_decide=project.can("review"), record=take,
+                     reopen=reopen if project.can("manage") else None, where="approved")
+
+
+def _review_bar(agent_key: str, record: Dict[str, Any], review: CardReview) -> Dict[str, Any]:
+    """Progress through the cards, and "Accept the rest"."""
+    t = RV.tally(agent_key, record, {"cards": review.state})
+    if not t["total"]:
+        return t
+    with st.container(horizontal=True, vertical_alignment="center", key=review.key + "::bar"):
+        st.html(f'<div class="rv-review-bar"><span class="raia-icon" aria-hidden="true">rule</span>'
+                f'<span><b>{t["accepted"]}</b> accepted</span><span><b>{t["rejected"]}</b> rejected</span>'
+                f'<span><b>{t["unmarked"]}</b> not reviewed yet</span>'
+                '<span class="rv-muted">Cards you leave unmarked are accepted as they are when you approve.</span></div>')
+        if t["unmarked"] and review.enabled:
+            if st.button("Accept the rest", key=review.key + "::rest", type="tertiary", icon=I.OK):
+                for c in RV.cards(agent_key, record):
+                    if c["id"] not in review.state:
+                        review.state[c["id"]] = {"verdict": RV.ACCEPTED, "by": review.by, "at": RV._now()}
+                review.on_change()
+                st.rerun()
+    return t
 
 
 def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> None:
@@ -1040,22 +1154,39 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
 
     validation_panel(payload.get("validation") or {})
 
+    original = payload.get("record") or {}
+    cards = _card_review(project, agent_key, payload)
+    decisions = _draft_decisions(project, agent_key, payload)
+
     tab_read, tab_edit, tab_evidence, tab_reason = st.tabs(
         [":material/article: Draft", ":material/edit: Edit the record",
          ":material/menu_book: Evidence", ":material/calculate: What the code computed"]
     )
     with tab_edit:
         edited_record, edit_errors = record_editor(agent_key, payload)
-    changed = _edited_changes(payload.get("record") or {}, edited_record) and not edit_errors
+    changed = _edited_changes(original, edited_record) and not edit_errors
+    base = edited_record if changed else original
+    # What will be approved: the record with the reviewer's edits, and the
+    # cards they rejected taken out (or, if computed, marked overridden).
+    to_approve = RV.apply(agent_key, base, payload.get("review"), by=user.label) if base else base
+    reviewed = bool(base) and _core_differs(base, to_approve)
     with tab_read:
+        tally = _review_bar(agent_key, original, cards) if original else {}
+        shown = original
         if changed:
             st.caption("Showing your edits, re-computed. Nothing is saved until you approve.")
             try:
-                draft_view(agent_key, payload, _preview(agent_key, payload, edited_record))
+                shown = _preview(agent_key, payload, edited_record)
             except Exception as exc:  # noqa: BLE001 - shown to the reviewer
                 st.error(f"The edited record could not be rendered: {exc}")
+        if reviewed and st.toggle("Preview the version you will approve", key=pkey("pv", agent_key),
+                                  help="With the cards you rejected taken out and everything re-computed."):
+            try:
+                draft_view(agent_key, payload, _preview(agent_key, payload, to_approve), decide=decisions)
+            except Exception as exc:  # noqa: BLE001 - shown to the reviewer
+                st.error(f"The reviewed record could not be rendered: {exc}")
         else:
-            draft_view(agent_key, payload)
+            draft_view(agent_key, payload, shown, review=cards if original else None, decide=decisions)
     with tab_evidence:
         evidence_panel(payload.get("evidence") or [])
     with tab_reason:
@@ -1083,13 +1214,21 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
                        "**People** tab.", icon=I.LOCK)
         if edit_errors:
             st.caption("Fix the edited record before approving, or reject to regenerate.")
-        if st.button("Approve and commit", type="primary", key=pkey("approve", agent_key),
-                     disabled=blocked_by_four_eyes or bool(edit_errors), icon=I.APPROVE):
+        missing = (tally or {}).get("missing_reason") or []
+        if missing:
+            st.warning("Say why you rejected **" + "**, **".join(missing) + "** before approving: a rejection "
+                       "needs a reason.", icon=I.WARN)
+        counts = ""
+        if tally and tally.get("total"):
+            counts = (f": {tally['accepted'] + tally['unmarked']} accepted, {tally['rejected']} rejected"
+                      if tally["rejected"] else ": every card accepted")
+        if st.button("Approve and commit" + counts, type="primary", key=pkey("approve", agent_key),
+                     disabled=blocked_by_four_eyes or bool(edit_errors) or bool(missing), icon=I.APPROVE):
             with st.spinner("Committing to the audit trail"):
                 try:
-                    decision = {"action": "approve"}
-                    if changed:
-                        decision["record"] = edited_record
+                    decision = {"action": "approve", "review": payload.get("review") or RV.empty()}
+                    if changed or reviewed:
+                        decision["record"] = to_approve
                     result = svc.resume(user, project.id, agent_key, decision)
                 except AccessDenied as exc:
                     st.error(str(exc))
@@ -1112,8 +1251,14 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
             format_func=lambda c: dict(REJECTION_REASONS)[c],
             key=pkey("reason", agent_key),
         )
+        rejected = [(cid, v) for cid, v in (payload.get("review") or {}).get("cards", {}).items()
+                    if v.get("verdict") == RV.REJECTED and v.get("reason")]
+        fb_key = pkey("fb", agent_key)
+        if rejected and not st.session_state.get(fb_key):
+            st.session_state[fb_key] = "Rejected at review:\n" + "\n".join(
+                f"- {cid}: {v['reason']}" for cid, v in rejected)
         feedback = st.text_area(
-            "What should the agent fix?", key=pkey("fb", agent_key), height=90,
+            "What should the agent fix?", key=fb_key, height=90,
             placeholder="Be specific: this goes straight into the next attempt.",
         )
         if st.button("Reject and regenerate", key=pkey("reject", agent_key), icon=I.REJECT):

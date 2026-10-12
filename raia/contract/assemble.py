@@ -274,6 +274,24 @@ def frameworks_for(sources: Sequence[str]) -> List[Dict[str, str]]:
 # ---------------------------------------------------------------------------
 
 
+def _numberer(prefix: str, kind: str, ids: Sequence[Any]):
+    """Assign record ids: keep ``<prefix>-<kind><n>`` ids already given (once each), number the rest after them."""
+    pattern = re.compile(rf"^{re.escape(prefix)}-{kind}(\d+)$")
+    kept = [str(i) for i in ids if i and pattern.match(str(i))]
+    taken = {k for k in kept if kept.count(k) == 1}
+    used: set = set()
+    counter = [max([int(pattern.match(k).group(1)) for k in taken] + [0])]
+
+    def assign(current: Any) -> str:
+        c = str(current or "")
+        if c in taken and c not in used:
+            used.add(c)
+            return c
+        counter[0] += 1
+        return f"{prefix}-{kind}{counter[0]}"
+    return assign
+
+
 def priority_floors(agent_key: str, rationale: RationaleResult) -> Dict[str, rubric.Floor]:
     data = rationale.data or {}
     verdict = rationale.verdict or {}
@@ -437,10 +455,14 @@ def finalize(
     prune = _Pruner(evidence, rec.get("pruned_citations") or [])
 
     # -- findings -------------------------------------------------------------
+    # An id code already assigned is kept, so a card a reviewer accepted or
+    # rejected keeps its name when the record is finalised again; anything else
+    # gets the next free number.
     fmap: Dict[str, str] = {}
     findings = rec.get("findings") or []
-    for i, f in enumerate(findings, 1):
-        new = f"{prefix}-F{i}"
+    next_f = _numberer(prefix, "F", [f.get("id") for f in findings])
+    for f in findings:
+        new = next_f(f.get("id"))
         fmap[str(f.get("id") or new)] = new
         fmap[new] = new
         f["id"] = new
@@ -454,8 +476,9 @@ def finalize(
     # -- actions --------------------------------------------------------------
     amap: Dict[str, str] = {}
     actions = rec.get("actions") or []
-    for i, a in enumerate(actions, 1):
-        new = f"{prefix}-A{i}"
+    next_a = _numberer(prefix, "A", [a.get("id") for a in actions])
+    for a in actions:
+        new = next_a(a.get("id"))
         amap[str(a.get("id") or new)] = new
         a["id"] = new
         linked, unknown = [], []

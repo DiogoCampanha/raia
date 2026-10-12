@@ -172,6 +172,8 @@ class RecordCore(_Model):
     not_grounded: List[str] = Field(default_factory=list, description=(
         "Claims you believe matter that the retrieved excerpts do not support."))
     coverage: List[CoverageItem] = Field(default_factory=list)
+    review: Optional[Dict[str, Any]] = computed()
+    pruned_citations: Optional[List[str]] = computed()
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +230,7 @@ class EthicalValueRequirement(_Model):
     verification_method: Verification
     traces_to: List[str] = Field(default_factory=list, description="Obligation codes or principle refs it derives from.")
     citations: List[str] = Citations
+    review: Optional[Dict[str, Any]] = computed()
 
 
 class HarmBenefit(_Model):

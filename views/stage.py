@@ -16,7 +16,7 @@ from raia.ui import routes
 from raia.ui.components import (agent_header, artifact_body, next_step_card, stage_footer,
                                 stage_rail)
 from raia.rationale.coverage import ORIGIN_KEY
-from raia.ui.gate import intake_form, pending_suggestions, prefill, review_gate
+from raia.ui.gate import approved_decisions, intake_form, pending_suggestions, prefill, review_gate
 from raia.ui.record_view import record_from_data, record_view
 from raia.ui.state import current_user, flash, get_service, open_project, pkey, show_flash
 from raia.ui.theme import I, look_key
@@ -198,7 +198,9 @@ def body() -> None:
                        "version history are in the project's Documents and Activity tabs.")
         record, computed = record_from_data(data)
         record_view(agent_key, record, computed, key=pkey("approved", agent_key),
-                    fallback_markdown=artifact_body(current))
+                    fallback_markdown=artifact_body(current),
+                    decide=approved_decisions(proj, agent_key, spec.output_key, record,
+                                              pkey("adc", agent_key)) if record else None)
         st.download_button("Download (Markdown)", artifact_body(current), file_name=f"{spec.output_key}.md",
                            mime="text/markdown", key=pkey("dl_approved", agent_key), icon=I.DOWNLOAD,
                            type="tertiary")

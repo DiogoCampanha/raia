@@ -722,6 +722,36 @@
       "title": "Coverage",
       "type": "array"
     },
+    "review": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "computed": true,
+      "default": null,
+      "title": "Review"
+    },
+    "pruned_citations": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "computed": true,
+      "default": null,
+      "title": "Pruned Citations"
+    },
     "extension": {
       "$ref": "#/$defs/RefinedStoriesExt"
     }

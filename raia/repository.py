@@ -70,7 +70,18 @@ REGISTERS = ("open_issues", "backlog", "sprints")
 OPEN = "open"
 RESOLVED = "resolved"
 ACCEPTED = "accepted"
-ISSUE_STATUSES = (OPEN, RESOLVED, ACCEPTED)
+#: A person chose one of the issue's options (or wrote their own), with a reason.
+DECIDED = "decided"
+ISSUE_STATUSES = (OPEN, DECIDED, RESOLVED, ACCEPTED)
+
+
+def _apply_decision(issue: Dict[str, Any], decision: Dict[str, Any]) -> None:
+    """Record a person's decision on a register entry."""
+    issue["status"] = DECIDED
+    issue["decision"] = str(decision.get("choice") or "").strip()[:300]
+    issue["rationale"] = str(decision.get("rationale") or "").strip()[:1000]
+    issue["decided_by"] = decision.get("by") or "human"
+    issue["decided_at"] = decision.get("at") or _now()
 
 
 def _sidecar(filename: str) -> str:
@@ -310,16 +321,30 @@ class BaseRepository:
         a plain string is accepted and typed conservatively. Duplicates of an
         already-recorded issue are skipped so a rejected-and-regenerated draft
         does not multiply the register.
+
+        An issue may arrive already decided — a person took the decision on the
+        draft before approving it — as ``issue["decision"] = {"choice",
+        "rationale", "by", "at"}``. It is recorded decided; if the same issue is
+        already in the register and still open, the decision is applied to it.
         """
         existing = self.open_issues()
         known = {_fingerprint(i.get("text", "")) for i in existing}
         stamp = _now()
         added = 0
 
+        decided_existing = 0
         for item in issues:
             meta = item if isinstance(item, dict) else {"description": item}
             text = str(meta.get("description") or meta.get("text") or "").strip()
-            if not text or _fingerprint(text) in known:
+            decision = meta.get("decision") if isinstance(meta.get("decision"), dict) else None
+            if not text:
+                continue
+            if _fingerprint(text) in known:
+                if decision and decision.get("choice"):
+                    for old in existing:
+                        if _fingerprint(old.get("text", "")) == _fingerprint(text) and old.get("status") == OPEN:
+                            _apply_decision(old, decision)
+                            decided_existing += 1
                 continue
             known.add(_fingerprint(text))
             existing.append(
@@ -340,18 +365,35 @@ class BaseRepository:
                     "status": OPEN,
                 }
             )
+            if decision and decision.get("choice"):
+                _apply_decision(existing[-1], decision)
             added += 1
 
-        if added:
-            self._write_open_issues(existing, f"raia(open_issues): {added} raised by {raised_by}")
+        if added or decided_existing:
+            self._write_open_issues(existing, f"raia(open_issues): {added} raised by {raised_by}"
+                                    + (f", {decided_existing} decided" if decided_existing else ""))
         return added
 
-    def set_issue_status(self, issue_id: str, status: str, note: str = "", by: str = "human") -> bool:
+    def set_issue_status(self, issue_id: str, status: str, note: str = "", by: str = "human",
+                         decision: str = "") -> bool:
+        """Settle (or reopen) one register entry. ``decision`` is the option chosen, for DECIDED."""
         if status not in ISSUE_STATUSES:
             raise ValueError(f"Unknown status '{status}'. Use one of {ISSUE_STATUSES}.")
         issues = self.open_issues()
         for issue in issues:
             if issue.get("id") == issue_id:
+                if status == OPEN:
+                    for k in ("decision", "rationale", "decided_by", "decided_at",
+                              "resolution_note", "resolved_by", "resolved_at"):
+                        issue.pop(k, None)
+                    issue["status"] = OPEN
+                    issue["reopened_by"], issue["reopened_at"] = by, _now()
+                    self._write_open_issues(issues, f"raia(open_issues): {issue_id} reopened by {by}")
+                    return True
+                if status == DECIDED:
+                    _apply_decision(issue, {"choice": decision, "rationale": note, "by": by, "at": _now()})
+                    self._write_open_issues(issues, f"raia(open_issues): {issue_id} decided by {by}")
+                    return True
                 issue["status"] = status
                 issue["resolution_note"] = note
                 issue["resolved_by"] = by
@@ -376,6 +418,7 @@ class BaseRepository:
         ]
         for status, title in (
             (OPEN, "Open"),
+            (DECIDED, "Decided"),
             (ACCEPTED, "Accepted risk"),
             (RESOLVED, "Resolved"),
         ):
@@ -392,6 +435,8 @@ class BaseRepository:
                     f"{' · blocking' if i.get('blocking') else ''}_  \n"
                     f"  _raised by {i.get('raised_by', '?')} on {i.get('raised_at', '?')}_"
                     + (f" · _{i.get('resolution_note')}_" if i.get("resolution_note") else "")
+                    + (f"  \n  **Decided:** {i.get('decision')} — {i.get('rationale') or 'no reason given'} "
+                       f"_({i.get('decided_by', '?')}, {i.get('decided_at', '?')})_" if i.get("status") == DECIDED else "")
                 )
             lines.append("")
 

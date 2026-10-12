@@ -590,12 +590,57 @@ def test_blocked_and_gaps() -> None:
     check(not calm["gaps"] or calm["status"]["key"] == "blocked", "a record that is not blocked has no gaps")
 
 
+def test_card_review() -> None:
+    print("== a reviewer accepts or rejects each card; computed ones are overridden, not deleted ==")
+    from raia.contract import review as RV
+
+    spec = AGENTS["risk_classifier"].spec
+    out = assemble.finalize("risk_classifier", _record(), _rationale("risk_classifier"), EVIDENCE, spec)
+    ids = [c["id"] for c in RV.cards("risk_classifier", out)]
+    check(ids[:2] == ["RC-F1", "RC-F2"] and "RC-A1" in ids, "risks and actions are reviewable cards")
+    review = {"cards": {"RC-F1": {"verdict": "rejected", "reason_code": "duplicate", "reason": "Same as RC-F2"},
+                        "RC-A1": {"verdict": "accepted"}}, "decisions": {}}
+    t = RV.tally("risk_classifier", out, review)
+    check(t["rejected"] == 1 and t["accepted"] == 1 and t["unmarked"] == len(ids) - 2 and not t["missing_reason"],
+          "the tally counts accepted, rejected and left as they are")
+    check(RV.tally("risk_classifier", out, {"cards": {"RC-F1": {"verdict": "rejected"}}})["missing_reason"] == ["RC-F1"],
+          "a rejection without a reason is caught")
+    applied = RV.apply("risk_classifier", out, review, by="Ana")
+    again = assemble.finalize("risk_classifier", applied, _rationale("risk_classifier"), EVIDENCE, spec)
+    check(all(f["id"] != "RC-F1" for f in again["findings"]) and any(f["id"] == "RC-F2" for f in again["findings"]),
+          "a rejected model card leaves the record, and the others keep their names")
+    check(again["review"]["rejected"][0]["reason"] == "Same as RC-F2" and again["review"]["rejected"][0]["by"] == "Ana",
+          "…kept in the review block with who and why")
+    check(RV.apply("risk_classifier", applied, review, by="Ana")["review"]["rejected"] == applied["review"]["rejected"],
+          "applying the same review twice changes nothing")
+    a2 = next(a for a in again["actions"] if a["id"] == "RC-A2")
+    check("RC-F1" not in a2["finding_ids"], "an action no longer points at a rejected risk")
+
+    evr_rec = {"findings": [], "actions": [], "open_issues": [], "extension": {"evrs": [
+        {"id": "EVR-1", "statement": "s", "fit_criterion": "f", "value": "fairness"}]}}
+    over = RV.apply("requirements_reviewer", evr_rec, {"cards": {"EVR-1": {"verdict": "rejected", "reason": "Policy"}}},
+                    by="Ana")
+    check(over["extension"]["evrs"][0]["review"]["status"] == "overridden" and over["review"]["overridden"],
+          "a computed requirement is kept and marked overridden, never deleted")
+    issues = RV.override_issues(over)
+    check(len(issues) == 1 and issues[0]["decision"]["choice"].startswith("Override EVR-1"),
+          "…and the override reaches the register as a decided disagreement")
+
+    blocked = {"overall_status": "blocked", "open_issues": [
+        {"id": "RC-I1", "description": "Design oversight before release.", "blocking": True}]}
+    check(RV.effective_status(blocked, set())[0] == "blocked", "an open blocking decision keeps it blocked")
+    status, was = RV.effective_status(blocked, {RV.issue_key(blocked["open_issues"][0])})
+    check(status == "needs_attention" and "RC-I1" in was, "taking it lifts Blocked, and says which decision did")
+    check(RV.issue_key({"description": "Design  oversight, before release!"}) == RV.issue_key(blocked["open_issues"][0]),
+          "a decision is named by its wording, so renumbering cannot lose it")
+
+
 def main() -> None:
     for fn in (test_vocabularies_come_from_the_corpus, test_rubric, test_parse_and_fallback,
                test_finalize, test_render_and_schema, test_published_schemas_are_current, test_action_plan,
                test_reading_order, test_length_overflow, test_story_conflicts, test_signatures,
                test_refined_stories_lead, test_audit_report, test_citations_pruned_and_checks_explained,
-               test_blocked_and_gaps):
+               test_blocked_and_gaps, test_card_review):
         fn()
     print()
     if FAILURES:

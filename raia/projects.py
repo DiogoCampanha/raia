@@ -699,6 +699,43 @@ class ProjectService:
             repo.record_event("issue_arbitrated", {"user": user.id, "issue": issue_id, "status": status})
         return ok
 
+    def decide_issue(self, user: User, project_id: str, issue_id: str, choice: str, rationale: str) -> bool:
+        """A person takes a decision on a register entry: the option chosen, and why."""
+        choice, rationale = " ".join((choice or "").split()), " ".join((rationale or "").split())
+        if not choice:
+            raise ValueError("Choose an option, or write the decision.")
+        if not rationale:
+            raise ValueError("Say why: one line is enough.")
+        repo = self.repository(user, project_id, "review")
+        ok = repo.set_issue_status(issue_id, "decided", rationale, user.label, decision=choice)
+        if ok:
+            repo.record_event("issue_decided", {"user": user.id, "issue": issue_id, "where": "output"})
+        return ok
+
+    def reopen_issue(self, user: User, project_id: str, issue_id: str) -> bool:
+        """Undo a decision (owners only): the issue is open again."""
+        repo = self.repository(user, project_id, "manage")
+        ok = repo.set_issue_status(issue_id, "open", "", user.label)
+        if ok:
+            repo.record_event("issue_reopened", {"user": user.id, "issue": issue_id})
+        return ok
+
+    def open_issues(self, user: User, project_id: str) -> List[Dict[str, Any]]:
+        return self.repository(user, project_id, "view").open_issues()
+
+    def save_review(self, user: User, project_id: str, agent_key: str, review: Dict[str, Any]) -> None:
+        """Keep a reviewer's card verdicts and decisions with the draft waiting for review.
+
+        Only the draft's stored copy changes, so a restored review keeps them;
+        nothing reaches an artifact or the register until the draft is approved.
+        """
+        repo = self.repository(user, project_id, "review")
+        pending = repo.load_pending(agent_key)
+        if pending is None:
+            return
+        pending["review"] = review
+        repo.save_pending(agent_key, pending)
+
     # -- Backlog, sprints and roadmap ------------------------------------------------------------
     #
     # Owners and editors manage the backlog and plan sprints ("run"); every member,

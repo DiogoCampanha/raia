@@ -236,7 +236,7 @@ sprint produced, not the quality of the controls themselves.
 
 **ECCOLA cards**: `#0` Stakeholder Analysis; `#1` Types of Transparency; `#2` Regulation; `#3` Traceability; `#4` Communication; `#5` Explainability; `#6` Privacy and Data; `#7` Data Quality; `#8` Access to Data; `#9` Human Agency; `#10` Human Oversight; `#11` System Reliability; `#12` System Security; `#13` System Safety; `#14` Accessibility; `#15` Stakeholder Participation; `#16` Non-Discrimination / Fairness; `#17` Societal and Environmental Impact; `#18` Auditability; `#19` Ability to Redress; `#20` Accountability
 
-**Open-issue types**: `normative_conflict` Conflict between norms of the same authority level; `engine_disagreement` The agent disagrees with the rule engine; `value_tradeoff` Values trade off against each other; `not_grounded` Important claim not grounded in the retrieved excerpts; `missing_information` Information only a person can supply; `risk_acceptance` A risk is proposed for acceptance; `prohibited_practice` A prohibited or excessive-risk practice was declared
+**Open-issue types**: `normative_conflict` Conflict between norms of the same authority level; `engine_disagreement` The agent disagrees with the rule engine; `value_tradeoff` Values trade off against each other; `not_grounded` Important claim not grounded in the retrieved excerpts; `missing_information` Information only a person can supply; `risk_acceptance` A risk to treat or to accept; `prohibited_practice` A prohibited or excessive-risk practice was declared
 <!-- VOCABULARY:END -->
 
 ## 6. Risk level and priority

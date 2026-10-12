@@ -1033,16 +1033,29 @@ def signature_text(sig: Optional[Dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Everything the three tiers show, in reading order."""
+def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[str, Any]] = None,
+          taken: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Everything the three tiers show, in reading order.
+
+    ``taken`` maps a decision's wording key (:func:`raia.contract.review.issue_key`)
+    to the decision a person took — on the draft, or in the register. Taken
+    decisions are marked on their cards, leave Gaps to close, and can lift a
+    Blocked status (:func:`raia.contract.review.effective_status`).
+    """
+    from . import review as RV
+
     record = record or {}
     data = computed_data or {}
+    taken = taken or {}
     findings = record.get("findings") or []
     blocking_findings = {f.get("id") for f in findings if f.get("blocking")}
     actions = [_action_view(a, blocking_findings) for a in record.get("actions") or []]
     actions.sort(key=lambda a: (-int(a["blocking"]), -priority_rank(a["priority"])))
     decisions = [_decision_view(i) for i in record.get("open_issues") or []]
-    decisions.sort(key=lambda d: -int(d["blocking"]))
+    for d, i in zip(decisions, record.get("open_issues") or []):
+        d["key"] = RV.issue_key(i)
+        d["taken"] = taken.get(d["key"])
+    decisions.sort(key=lambda d: (bool(d["taken"]), -int(d["blocking"])))
 
     status = record.get("overall_status") or "needs_attention"
     headline = str(record.get("headline") or "").strip() or first_sentence(record.get("summary"))
@@ -1079,12 +1092,16 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
                        + "; ".join(str(e) for e in record["schema_errors"][:8]))
 
     meta = record.get("meta") or {}
-    gap_list = gaps(findings, actions, decisions)
+    effective, was = RV.effective_status(record, set(taken))
+    gap_list = gaps(findings, actions, [d for d in decisions if not d["taken"]]) if effective == "blocked" else []
+    status_v = status_view(effective, len(gap_list))
+    if was:
+        status_v["was"] = was
     return {
         "signature": signature(agent_key, record, data),
         "agent_key": agent_key,
         "meta": meta,
-        "status": status_view(status, len(gap_list)),
+        "status": status_v,
         "gaps": gap_list,
         "findings": _findings_sorted(findings),
         "obligations": obligation_groups(record, data) if agent_key == "risk_classifier" else [],

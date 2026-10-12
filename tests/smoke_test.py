@@ -164,6 +164,17 @@ def main() -> None:
     check(repo.set_issue_status(issues[0]["id"], RESOLVED, "settled by legal", "smoke-tester"),
           "an issue can be arbitrated")
     check(repo.open_issues()[0]["status"] == RESOLVED, "arbitration is recorded")
+    first = repo.open_issues()[0]
+    repo.append_open_issues([{"description": first["text"], "decision": {"choice": "x", "rationale": "y"}}], "t")
+    check(repo.open_issues()[0]["status"] == RESOLVED, "a settled issue is not decided again by a later draft")
+    repo.append_open_issues([{"description": "A brand-new question.", "type": "value_tradeoff",
+                              "decision": {"choice": "Option A", "rationale": "Because", "by": "Ana"}}], "smoke")
+    new = next(i for i in repo.open_issues() if i["text"] == "A brand-new question.")
+    check(new["status"] == "decided" and new["decision"] == "Option A" and new["decided_by"] == "Ana",
+          "a decision taken on a draft reaches the register already decided")
+    check(repo.set_issue_status(new["id"], OPEN, by="owner") and
+          next(i for i in repo.open_issues() if i["id"] == new["id"]).get("decision") is None,
+          "a decision can be reopened, and its record is cleared")
 
     print("== 9. The remaining agents ==")
     for key in ("requirements_reviewer", "story_refiner", "auditor"):

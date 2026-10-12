@@ -75,6 +75,38 @@ def text(at: AppTest) -> str:
     return "\n".join(str(p) for p in parts)
 
 
+def review_and_decide(at: AppTest, pid: str) -> None:
+    """At the Risk Classifier's gate: reject a card with a reason, and take the blocking decision."""
+    body = text(at)
+    check("Blocked in its current form" in body and "Gaps to close" in body and 'href="#gaps-to-close"' in body,
+          "an automated decision with no oversight on a high-risk system blocks it, and links to the gaps")
+    check("Before you approve" not in body or "to look at" in body, "the checks speak only when there is something to do")
+    seg = f"{pid}::cr::risk_classifier::1::v::RC-F1"
+    check(any(s.key == seg for s in at.segmented_control), "every card carries Accept and Reject")
+    at.segmented_control(key=seg).set_value("rejected")
+    ok(at.run(), "a card is rejected")
+    check("a rejection needs a reason" in text(at) and button(at, f"{pid}::approve::risk_classifier").disabled,
+          "…and approval waits for the reason")
+    at.text_input(key=f"{pid}::cr::risk_classifier::1::why::RC-F1").set_value("Duplicates RC-F2")
+    ok(at.run(), "the reason is given")
+    check("1 rejected" in button(at, f"{pid}::approve::risk_classifier").label,
+          "the approve button says what will be approved")
+    check("Rejected at review" in (at.session_state[f"{pid}::fb::risk_classifier"] or ""),
+          "regenerating would carry the rejections as feedback")
+    radios = [r for r in at.radio if r.label == "Your decision"]
+    check(bool(radios), "a decision for a person is a choice made in the output")
+    first = radios[0]
+    first.set_value(first.options[0])
+    ok(at.run(), "an option is chosen")
+    base = first.key[: -len("::choice")]
+    at.text_input(key=base + "::why").set_value("Oversight is being designed")
+    button(at, base + "::go").click()
+    ok(at.run(), "the decision is recorded")
+    body = text(at)
+    check("Decided" in body and "Oversight is being designed" in body, "…and shown decided, with the reason")
+    check("Was blocked in its current form" in body, "taking the blocking decision lifts Blocked, and says so")
+
+
 def goto(at: AppTest, view: str, **params: str) -> AppTest:
     at.query_params.clear()
     for k, v in params.items():
@@ -207,9 +239,26 @@ def main() -> None:
               "the stage page wears its agent's own header")
         check(has_button(at, "foot_next") and (has_button(at, "foot_prev") or has_button(at, "foot_project_l")),
               "…and ends with the previous and next stage, even before anything is approved")
+        if agent == "risk_classifier":
+            review_and_decide(at, pid1)
         button(at, f"{pid1}::approve::{agent}").click()
         ok(at.run(), "the draft is approved")
         check("Approved and committed" in text(at), "approval is confirmed")
+        if agent == "risk_classifier":
+            from raia.storage import open_repository as _open
+
+            r1 = _open(pid1)
+            rec = (r1.read_data("risk_classification").get("structured") or {}).get("record") or {}
+            check([x["id"] for x in (rec.get("review") or {}).get("rejected") or []] == ["RC-F1"]
+                  and all(f["id"] != "RC-F1" for f in rec.get("findings") or []),
+                  "the rejected risk left the approved record, kept in its review block with the reason")
+            check(any(f["id"] == "RC-F2" for f in rec.get("findings") or []),
+                  "…and the other cards kept their names")
+            decided = [i for i in r1.open_issues() if i.get("status") == "decided"]
+            check(decided and decided[0].get("decision") and decided[0].get("rationale") == "Oversight is being designed",
+                  "the decision taken on the draft reached the register, decided, with its reason")
+            check(any(e["kind"] == "card_reviewed" and e.get("verdict") == "rejected" for e in r1.events()),
+                  "each card verdict is in the activity log for the research data")
         following = {"risk_classifier": "requirements_reviewer", "requirements_reviewer": "story_refiner"}[agent]
         check('class="next-label"' in text(at) and has_button(at, f"next_{following}")
               and button(at, f"next_{following}").label.startswith("Continue to"),
@@ -419,12 +468,19 @@ def main() -> None:
           "…each criterion marked new or in conflict, the original struck through")
     check("Risks identified" not in body and "Why these changes" in str(at._tree),
           "the risks and actions are secondary, behind Why these changes")
-    choice = next(r for r in at.radio if r.key and "::copy::" in r.key)
     codes = [c.value for c in at.code]
     check(any("[MOCK MODE] Placeholder rewrite." in c for c in codes), "the copy of a story uses the rewrite by default")
-    choice.set_value("keep")
-    ok(at.run(), "the person keeps the original instead")
-    check(not any("[MOCK MODE] Placeholder rewrite." in c for c in at.code), "…and every copy follows that choice")
+    conflict = next(r for r in at.radio if r.label == "Your decision" and any(o.startswith("Keep it") for o in r.options))
+    conflict.set_value(next(o for o in conflict.options if o.startswith("Keep it")))
+    ok(at.run(), "the person decides to keep the original")
+    base = conflict.key[: -len("::choice")]
+    at.text_input(key=base + "::why").set_value("The threshold is contractual")
+    button(at, base + "::go").click()
+    ok(at.run(), "…and records why")
+    check(not any("[MOCK MODE] Placeholder rewrite." in c for c in at.code),
+          "…and every copy follows that decision: one control, not two")
+    crit = next((s for s in at.segmented_control if s.key and "::cr::story_refiner::" in s.key), None)
+    check(crit is not None, "each new criterion can be accepted or rejected")
     button(at, f"{pid2}::approve::{sr}").click()
     ok(at.run(), "the refined stories are approved")
 

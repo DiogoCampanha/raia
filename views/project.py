@@ -10,7 +10,7 @@ from raia.contract import vocab as V
 from raia.export import bundle_name, session_bundle
 from raia.lineage import next_steps
 from raia.projects import EDITOR, OWNER, REVIEWER, ROLE_LABELS
-from raia.repository import ACCEPTED, ARTIFACT_FILES, OPEN, RESOLVED, RETIRED_ARTIFACTS
+from raia.repository import ACCEPTED, ARTIFACT_FILES, DECIDED, OPEN, RESOLVED, RETIRED_ARTIFACTS
 from raia.ui import routes
 from raia.ui.board import board_tab, sprint_step
 from raia.ui.components import (artifact_body, empty_state, page_header, risk_md, role_badge,
@@ -228,13 +228,14 @@ with tab_plan:
 with tab_issues:
     st.caption("Conflicts the system refused to resolve on its own: normative conflicts at the "
                "same authority level, disagreements between a rule engine and an agent, and gaps "
-               "only a person can close. Nothing here is settled by the software.")
+               "only a person can close. Nothing here is settled by the software. A decision can also "
+               "be taken where it is raised — on the draft, or on the approved stage — and it lands here.")
     issues = repo.open_issues()
     if not issues:
         empty_state("No open issues",
                     "They are raised when a decision procedure or an agent finds a conflict, and "
                     "recorded when you approve the stage that raised them.")
-    groups = [(OPEN, "Open", "red"), (ACCEPTED, "Accepted risk", "orange"),
+    groups = [(OPEN, "Open", "red"), (DECIDED, "Decided", "violet"), (ACCEPTED, "Accepted risk", "orange"),
               (RESOLVED, "Resolved", "green")]
     for status, title, color in groups:
         group = [i for i in issues if i.get("status") == status]
@@ -256,9 +257,27 @@ with tab_issues:
                     + (f" · artifact `{issue['artifact']}`" if issue.get("artifact") else "")
                     + (f" · commit `{issue['commit']}`" if issue.get("commit") else "")
                 )
-                if issue.get("resolution_note"):
+                if status == DECIDED:
+                    st.markdown(f"**Decided:** {issue.get('decision', '')}"
+                                + (f" — {issue['rationale']}" if issue.get("rationale") else ""))
+                    st.caption(f"{issue.get('decided_by', '')} · {str(issue.get('decided_at', ''))[:16]}")
+                    if proj.can("manage") and st.button("Reopen", key=pkey("reopen", issue["id"]), type="tertiary",
+                                                       icon=":material/undo:"):
+                        svc.reopen_issue(user, proj.id, issue["id"])
+                        flash(f"{issue['id']} is open again.")
+                        st.rerun()
+                elif issue.get("resolution_note"):
                     st.caption(f"_{issue['resolution_note']}_ — {issue.get('resolved_by', '')}")
                 if status == OPEN and proj.can("review"):
+                    if issue.get("options"):
+                        with st.expander("Take this decision"):
+                            pick = st.radio("Decision", issue["options"], key=pkey("dpick", issue["id"]), index=None)
+                            why = st.text_input("Why?", key=pkey("dwhy", issue["id"]))
+                            if st.button("Record decision", key=pkey("dgo", issue["id"]), type="primary",
+                                         disabled=not (pick and why.strip())):
+                                svc.decide_issue(user, proj.id, issue["id"], pick, why)
+                                flash(f"{issue['id']} decided.")
+                                st.rerun()
                     with st.expander("Arbitrate this issue"):
                         note = st.text_input(
                             "What was decided, and on what basis?", key=pkey("note", issue["id"]),

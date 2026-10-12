@@ -215,11 +215,30 @@ def _persist(state: StageState) -> StageState:
     # deciding role and blocking flag — the engine's, the agent's and the ones
     # code opened for a disagreement or an accepted risk. None evaporates
     # because a record was edited: engine issues are re-inserted by finalisation.
-    issues = list(record.get("open_issues") or [])
+    #
+    # Decisions a person took on the draft arrive already decided, and a computed
+    # card a person overrode is recorded as a decided disagreement with code.
+    from .contract import review as RV
+
+    rv = decision.get("review") or {}
+    taken = rv.get("decisions") or {}
+    issues = []
+    for i in record.get("open_issues") or []:
+        d = taken.get(RV.issue_key(i))
+        issues.append({**i, "decision": d} if d and d.get("choice") else dict(i))
+    issues += RV.override_issues(record)
     if issues:
         repo.append_open_issues(
             issues, raised_by=agent.spec.name, artifact=agent.spec.output_key, commit=commit
         )
+    kinds = {c["id"]: c for c in RV.cards(agent.spec.key, run.get("record") or {})}
+    for cid, verdict in (rv.get("cards") or {}).items():
+        if verdict.get("verdict") in (RV.ACCEPTED, RV.REJECTED) and cid in kinds:
+            repo.record_event("card_reviewed", {
+                "user": decision.get("approver_id", ""), "agent": agent.spec.key, "card": cid,
+                "card_kind": kinds[cid]["kind"], "origin": kinds[cid]["origin"], "verdict": verdict["verdict"],
+                "reason_code": verdict.get("reason_code", "") if verdict["verdict"] == RV.REJECTED else "",
+                "commit": commit})
 
     if agent.spec.key == "risk_classifier":
         _persist_product_brief(repo, agent, run.get("inputs") or state.get("inputs") or {},
@@ -235,6 +254,9 @@ def _persist(state: StageState) -> StageState:
             "edited": edited,
             "validation": report.headline(),
             "restored": bool(run.get("restored")),
+            "cards": {k: v for k, v in RV.tally(agent.spec.key, run.get("record") or {}, rv).items()
+                      if k != "missing_reason"},
+            "decisions_taken": sum(1 for d in taken.values() if (d or {}).get("choice")),
         },
     )
     return {"commit": commit, "approved_content": content}
