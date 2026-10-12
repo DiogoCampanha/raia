@@ -93,7 +93,8 @@ class RationaleResult:
     query_terms: List[str] = field(default_factory=list)
 
     def raise_issue(self, text: str, type: str = "missing_information",
-                    decision_owner: str = "product", blocking: bool = False) -> None:
+                    decision_owner: str = "product", blocking: bool = False,
+                    options: Optional[List[str]] = None) -> None:
         """Escalate something only a person can settle, with its type and owner.
 
         The text is what the reviewer reads; the type, the deciding role and the
@@ -101,7 +102,8 @@ class RationaleResult:
         """
         self.open_issues.append(text)
         self.issue_meta.append(
-            {"text": text, "type": type, "decision_owner": decision_owner, "blocking": blocking}
+            {"text": text, "type": type, "decision_owner": decision_owner, "blocking": blocking,
+             "options": list(options or [])}
         )
 
     def typed_issues(self) -> List[Dict[str, Any]]:

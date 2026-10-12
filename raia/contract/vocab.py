@@ -240,13 +240,34 @@ ISSUE_TYPE_LABELS: Dict[str, str] = {
     "prohibited_practice": "A prohibited or excessive-risk practice was declared",
 }
 
+#: The choices a person is offered for an issue that names none of its own.
+#: Every decision card also accepts a written answer of its own.
+DEFAULT_ISSUE_OPTIONS: Dict[str, Tuple[str, ...]] = {
+    "normative_conflict": ("Apply the stricter rule", "Record which rule governs here, and why"),
+    "engine_disagreement": ("Keep the computed verdict", "Adopt the agent's verdict and record why"),
+    "value_tradeoff": ("Find a design that serves both values", "Give one value priority and record why"),
+    "not_grounded": ("Find a source that supports it", "Drop the claim"),
+    "missing_information": ("Supply the information and run the stage again", "Record the answer here"),
+    "risk_acceptance": ("Accept the risk and record the decision", "Require a treatment"),
+    "prohibited_practice": ("Remove the practice from the design", "Record the legal exception that applies"),
+}
+
 # -- Priority and overall status ----------------------------------------------
 
 PRIORITIES: Tuple[str, ...] = ("low", "medium", "high", "critical")
 PRIORITY_LABELS: Dict[str, str] = {"low": "Low", "medium": "Medium", "high": "High", "critical": "Critical"}
 OVERALL_STATUSES: Tuple[str, ...] = ("on_track", "needs_attention", "blocked")
 STATUS_LABELS: Dict[str, str] = {"on_track": "On track", "needs_attention": "Needs attention",
-                                 "blocked": "Blocked"}
+                                 "blocked": "Blocked in its current form"}
+
+#: What each overall status means, in one line shown under it. ``{n}`` is the
+#: number of blocking items.
+STATUS_HELP: Dict[str, str] = {
+    "on_track": "Nothing found needs action before the next stage.",
+    "needs_attention": "There are high risks or open decisions. The next stage can start, but they travel with it.",
+    "blocked": ("{n} item(s) must be resolved before this product can go ahead as described. "
+                "They are listed under Gaps to close, each with what unblocks it."),
+}
 
 #: How the action plan is read at a glance: what to do now, what to plan, what
 #: to keep an eye on. Grouping follows the computed priority only.

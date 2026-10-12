@@ -622,15 +622,18 @@ class ProjectService:
 
     def record_recommendation_decision(self, user: User, project_id: str, agent_key: str,
                                        candidate: Dict[str, Any], decision: str,
-                                       requirement_id: str = "", edited: bool = False) -> None:
-        """Log one person's decision on one candidate: adopted, or rejected."""
-        if decision not in ("adopted", "rejected"):
-            raise ValueError("A recommendation is adopted or rejected.")
+                                       requirement_id: str = "", edited: bool = False,
+                                       reason: str = "") -> None:
+        """Log one person's decision on one candidate: adopted, or rejected with a reason."""
+        if decision not in ("adopted", "rejected", "undone"):
+            raise ValueError("A recommendation is adopted, rejected or undone.")
+        if decision == "rejected" and not (reason or "").strip():
+            raise ValueError("Say why the recommendation is rejected.")
         repo = self.repository(user, project_id, "run")
         repo.record_event(f"recommendation_{decision}", {
             "agent": agent_key, "user": user.id, "candidate": candidate.get("id", ""),
             "addresses": candidate.get("addresses", ""), "requirement_id": requirement_id,
-            "edited": bool(edited),
+            "edited": bool(edited), "reason": (reason or "").strip()[:500],
         })
 
     def start_run(self, user: User, project_id: str, agent_key: str, inputs: Dict[str, Any]) -> dict:

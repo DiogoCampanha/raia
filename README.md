@@ -147,8 +147,9 @@ artifact.
   including on the restart-recovery path.
 - **(b) Grounded recommendations, verified** — each retrieved excerpt carries
   its source, section, authority level and a stable id. Every citation tag in a
-  draft is **checked against the excerpts that were actually retrieved**, and
-  unresolvable tags are reported at the gate. Excerpts the decision procedure
+  draft is **checked against the excerpts that were actually retrieved**; a tag
+  that resolves to none is removed from the record by code, and the removal is
+  recorded in the artifact's provenance. Excerpts the decision procedure
   depends on are *pinned*: they are in the prompt whatever the similarity score.
 - **(c) Conflict handling** — authority precedence (**legal > standard >
   advisory**) for cross-level conflicts; same-level conflicts, rule-engine
@@ -349,7 +350,7 @@ inputs, every decision procedure, the human-review interrupt, the rejection
 loop, approval, provenance, sidecars, the open-issues register, restart
 recovery, the export bundle, and the deterministic unit checks. It asserts the
 two invariants directly: nothing persists without a human approval, and a
-fabricated citation is detected.
+fabricated citation is detected, removed and recorded.
 
 ## Roadmap (next developments)
 

@@ -181,18 +181,18 @@ class RecordCore(_Model):
 
 class ObligationNote(_Model):
     code: str = Field(description="An obligation code from the computed table, exactly.")
-    meaning_for_this_product: str = Field(max_length=300, description="One sentence: what the team must do or show for this product.")
+    meaning_for_this_product: str = Field(max_length=220, description="One sentence: what the team must do or show for this product.")
     citations: List[str] = Citations
 
 
 class RiskClassificationExt(_Model):
-    prohibited_screen: str = Field(max_length=400, description="Result of the EU AI Act Art. 5 and PL 2338 excessive-risk screen, conclusion first.")
-    eu_tier_justification: str = Field(max_length=400, description="Why the EU tier holds, naming the area or article; at most two sentences.")
-    br_tier_justification: str = Field(max_length=400, description="Why the Brazilian tier holds, naming the area; at most two sentences.")
+    prohibited_screen: str = Field(max_length=300, description="Result of the EU AI Act Art. 5 and PL 2338 excessive-risk screen, conclusion first.")
+    eu_tier_justification: str = Field(max_length=300, description="Why the EU tier holds, naming the area or article; at most two sentences.")
+    br_tier_justification: str = Field(max_length=300, description="Why the Brazilian tier holds, naming the area; at most two sentences.")
     obligations: List[ObligationNote] = Field(default_factory=list, description="One note per computed obligation code.")
-    human_oversight_assessment: str = Field(max_length=450, description="Whether the declared oversight design meets the oversight obligations, conclusion first.")
-    affected_persons_rights: str = Field(max_length=450, description="How affected persons' rights are operationalised in the product, conclusion first.")
-    impact_assessments: str = Field(max_length=400, description="Which impact assessments the instruments require (fundamental rights / algorithmic).")
+    human_oversight_assessment: str = Field(max_length=300, description="Whether the declared oversight design meets the oversight obligations, conclusion first; at most two sentences.")
+    affected_persons_rights: str = Field(max_length=300, description="How affected persons' rights are operationalised in the product, conclusion first; at most two sentences.")
+    impact_assessments: str = Field(max_length=300, description="Which impact assessments the instruments require (fundamental rights / algorithmic); at most two sentences.")
 
 
 # ---------------------------------------------------------------------------

@@ -518,11 +518,84 @@ def test_audit_report() -> None:
     check("Not assessed in this record version" in old_md, "an audit approved before the report still renders, and says so")
 
 
+def test_citations_pruned_and_checks_explained() -> None:
+    print("== a fabricated citation is removed by code, and checks say who they are for ==")
+    from raia import validators as VAL
+
+    fake = "[Source: EU AI Act — Article 99 | authority: legal]"
+    rec = _record()
+    rec["findings"][0]["citations"] = [ADVISORY, fake]
+    rec["actions"][0]["citations"] = [fake]
+    out = assemble.finalize("risk_classifier", rec, _rationale("risk_classifier"), EVIDENCE, AGENTS["risk_classifier"].spec)
+    f1 = out["findings"][0]
+    check(fake not in json.dumps(out["findings"]) and fake not in json.dumps(out["actions"]),
+          "a citation that matches no retrieved excerpt is removed from the record")
+    check(f1["citations"] == [ADVISORY], "…and a real one beside it is kept")
+    check(any(n.startswith("PRUNED_CITATION:") and "RC-F1" in n for n in out["contract_notes"]),
+          "…and the removal is recorded, with where it was")
+    again = assemble.finalize("risk_classifier", out, _rationale("risk_classifier"), EVIDENCE, AGENTS["risk_classifier"].spec)
+    check(sum(n.startswith("PRUNED_CITATION:") for n in again["contract_notes"]) == 2,
+          "finalising again keeps the record of what was removed, once")
+    items = checks.check_corrections(out)
+    pruned = next((i for i in items if i.code == "citations.pruned"), None)
+    check(pruned is not None and VAL.audience(pruned.to_dict()) == VAL.HANDLED,
+          "the removal is a technical-log item, not a warning for the reviewer")
+    none = assemble.finalize("risk_classifier", _record(), _rationale("risk_classifier"), [], AGENTS["risk_classifier"].spec)
+    check(none["findings"][0]["citations"] == [ADVISORY], "with no evidence to check against, nothing is removed")
+
+    report = {"items": [
+        {"code": "findings.unanswered", "level": FAIL, "title": "Risk responses", "detail": "d", "items": ["RC-F1 (high): t"]},
+        {"code": "contract.shortened", "level": "warn", "title": "Length limits", "detail": "d", "items": []},
+        {"code": "verdict.disagreement", "level": "warn", "title": "Verdict", "detail": "d", "items": []},
+        {"code": "obligations.mismatch", "level": FAIL, "title": "Obligations", "detail": "d", "items": ["missing: eu.art9"]},
+        {"code": "cards.mismatch", "level": FAIL, "title": "Cards", "detail": "d", "items": ["unknown: X9"]},
+        {"code": "citations.resolved", "level": PASS, "title": "Citations", "detail": "d", "items": []},
+    ]}
+    parts = VAL.partition(report)
+    check([i["code"] for i in parts[VAL.ACT]] == ["findings.unanswered", "obligations.mismatch"],
+          "the reviewer is asked to act only on what needs a person")
+    check([i["code"] for i in parts[VAL.HANDLED]] == ["contract.shortened", "cards.mismatch"],
+          "what code handled, or only invented ids, goes to the technical log")
+    check([i["code"] for i in parts[VAL.DECISION]] == ["verdict.disagreement"], "a disagreement is a decision card")
+    check(all(i["why"] and i["todo"] for i in parts[VAL.ACT]), "every instruction says why the check exists and what to do")
+
+
+def test_blocked_and_gaps() -> None:
+    print("== Blocked in its current form, and the gaps that make it so ==")
+    rec = _record()
+    rec["findings"][1]["links"] = ["eu.art5"]
+    rationale = _rationale("risk_classifier")
+    out = assemble.finalize("risk_classifier", rec, rationale, EVIDENCE, AGENTS["risk_classifier"].spec)
+    out["findings"][1]["blocking"] = True
+    out["overall_status"] = "blocked"
+    out["open_issues"].append({"id": "RC-I9", "type": "value_tradeoff", "description": "Pick one. Then more.",
+                               "options": ["a", "b"], "decision_owner": "product", "blocking": True, "links": []})
+    dg = digest.build("risk_classifier", out, rationale.data)
+    check(dg["status"]["label"] == "Blocked in its current form", "the status says blocked in its current form")
+    blocking_ids = [g["id"] for g in dg["gaps"]]
+    check("RC-F2" in blocking_ids and "RC-I9" in blocking_ids, "every blocking finding and decision is a gap")
+    gap_f = next(g for g in dg["gaps"] if g["id"] == "RC-F2")
+    check("RC-A1" in gap_f["unblock"], "a gap says what unblocks it: the actions that answer it")
+    check(next(g for g in dg["gaps"] if g["id"] == "RC-I9")["unblock"] == "Take decision RC-I9.",
+          "…or the decision to take")
+    check(str(len(dg["gaps"])) in dg["status"]["help"] and "Gaps to close" in dg["status"]["help"],
+          "the status line counts them and says where they are")
+    md = render.render("risk_classifier", out, rationale.data, rationale.checklist_keys())
+    check("**Gaps to close**" in md and "_Unblocks it:_" in md, "the document lists the gaps under the summary")
+    check(len(dg["kpis"]) == 3, "the Risk Classifier shows three numbers: its tiers are its picture")
+    check(sum(len(g["items"]) for g in dg["obligations"]) == len(rationale.data.get("obligations") or []),
+          "every computed obligation is listed, grouped by instrument")
+    calm = digest.build("risk_classifier", assemble.finalize("risk_classifier", _record(), rationale, EVIDENCE,
+                                                             AGENTS["risk_classifier"].spec), rationale.data)
+    check(not calm["gaps"] or calm["status"]["key"] == "blocked", "a record that is not blocked has no gaps")
+
+
 def main() -> None:
     for fn in (test_vocabularies_come_from_the_corpus, test_rubric, test_parse_and_fallback,
                test_finalize, test_render_and_schema, test_published_schemas_are_current, test_action_plan,
                test_reading_order, test_length_overflow, test_story_conflicts, test_signatures,
-               test_refined_stories_lead, test_audit_report):
+               test_refined_stories_lead, test_audit_report, test_citations_pruned_and_checks_explained,
+               test_blocked_and_gaps):
         fn()
     print()
     if FAILURES:

@@ -218,6 +218,68 @@ h1, h2, h3 { letter-spacing: -0.015em; }
 .rv-text .lead { font-weight: 600; }
 .rv-notice { border: 1px solid rgba(220, 38, 38, .45); background: rgba(220, 38, 38, .07); border-radius: .5rem; padding: .6rem .8rem; margin-bottom: .6rem; }
 
+/* Status: what it means here, and where to go */
+.rv-status-top { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; }
+.rv-status-help { font-size: .875rem; line-height: 1.45; flex: 1 1 22rem; }
+.rv-jump { font-size: .8125rem; font-weight: 600; color: var(--tone) !important; text-decoration: none; white-space: nowrap; }
+.rv-jump::after { content: " \2193"; }
+.rv-status-was { font-size: .8125rem; color: var(--raia-muted); margin: .4rem 0 0; }
+.rv-more-summary { margin-top: .35rem; }
+.rv-more-summary > summary { cursor: pointer; font-size: .8125rem; font-weight: 600; color: var(--raia-muted); }
+.rv-more-summary .rv-summary { margin-top: .35rem !important; }
+
+/* Gaps to close */
+.rv-gaps ul { list-style: none; margin: 0 !important; padding: 0 !important; display: flex; flex-direction: column; gap: .4rem; }
+.rv-gap {
+  display: grid; grid-template-columns: max-content 1fr; gap: .15rem .7rem; align-items: baseline;
+  border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent); border-left: 4px solid var(--tone);
+  border-radius: .5rem; padding: .5rem .75rem; background: color-mix(in srgb, var(--tone) 6%, transparent);
+  margin: 0 !important;
+}
+.rv-gap .t { font-weight: 600; }
+.rv-gap .u { grid-column: 2; font-size: .8125rem; }
+.rv-gap a.rv-id { color: var(--tone); font-weight: 650; text-decoration: none; }
+
+/* Compact cards: one line closed, the detail on click */
+.rv-dcard { gap: 0; padding: 0; scroll-margin-top: 5rem; }
+.rv-dcard > summary { list-style: none; cursor: pointer; padding: .6rem .9rem; display: flex; flex-direction: column; gap: .3rem; }
+.rv-dcard > summary::-webkit-details-marker { display: none; }
+.rv-dcard > summary .rv-card-top::after {
+  content: "expand_more"; font-family: "Material Symbols Rounded"; font-size: 1.15rem; line-height: 1;
+  color: var(--raia-muted); margin-left: .25rem;
+}
+.rv-dcard[open] > summary .rv-card-top::after { content: "expand_less"; }
+.rv-dcard .rv-card-sub { font-size: .8125rem; color: var(--raia-muted); }
+.rv-dcard .rv-dbody { padding: 0 .9rem .7rem; display: flex; flex-direction: column; gap: .45rem; }
+.rv-dcard .rv-dbody .rv-card-text { margin: 0; }
+.rv-dcard.rv-slim > summary { padding: .45rem .8rem; }
+.rv-dcard:target, .rv-card:target { outline: 2px solid var(--tone); outline-offset: 2px; }
+.rv-showmore > summary, .rv-grp > summary { list-style: none; cursor: pointer; }
+.rv-showmore > summary::-webkit-details-marker, .rv-grp > summary::-webkit-details-marker { display: none; }
+.rv-showmore { margin-top: .5rem; }
+.rv-showmore > summary { font-size: .8125rem; font-weight: 600; color: var(--raia-accent); padding: .25rem 0; }
+.rv-showmore[open] > summary { margin-bottom: .5rem; }
+.rv-grp > summary .rv-group::after {
+  content: "expand_more"; font-family: "Material Symbols Rounded"; font-size: 1.15rem; color: var(--raia-muted);
+}
+.rv-grp[open] > summary .rv-group::after { content: "expand_less"; }
+.rv-grp { margin-bottom: .25rem; }
+
+/* Automated checks: what to act on */
+.rv-checks {
+  border: 1px solid rgba(217, 119, 6, .45); background: rgba(217, 119, 6, .06);
+  border-radius: var(--raia-radius); padding: .75rem .9rem; margin-bottom: .75rem;
+}
+.rv-checks-h { display: flex; align-items: center; gap: .4rem; font-weight: 650; margin-bottom: .4rem; }
+.rv-checks-h .raia-icon { color: #d97706; }
+.rv-check { padding: .4rem 0; border-top: 1px solid var(--raia-border); }
+.rv-check:first-of-type { border-top: none; }
+.rv-check-h { line-height: 1.45; }
+.rv-check-do { font-size: .875rem; font-weight: 600; margin-top: .15rem; }
+.rv-check-why { font-size: .75rem; color: var(--raia-muted); margin-top: .2rem; }
+.rv-check ul { margin: .25rem 0 0 !important; padding-left: 1.1rem !important; font-size: .8125rem; }
+.rv-check li { margin: .05rem 0 !important; }
+
 /* ---- Agent identity ------------------------------------------------------ */
 /*
  * Each agent has its own colour, icon and header pattern (raia/ui/theme.py,

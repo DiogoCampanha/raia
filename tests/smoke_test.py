@@ -122,7 +122,10 @@ def main() -> None:
           "employment scenario computed as high-risk")
     check(len(payload["evidence"]) > 0 and any(e["pinned"] for e in payload["evidence"]),
           "the gate is given its evidence, including the required excerpts")
-    check(payload["validation"]["level"] == "pass", "automated checks pass on the mock draft")
+    from raia import validators as VAL
+
+    act = [(i["code"], i["items"][:3]) for i in VAL.partition(payload["validation"])[VAL.ACT]]
+    check(not act, f"the mock draft leaves the reviewer nothing to act on ({act or 'nothing'})")
 
     repo = ArtifactRepository(PROJECT)
     check(repo.read_artifact("risk_classification") is None,
@@ -189,6 +192,19 @@ def main() -> None:
     fake = "## Risk Classification\nHigh risk. [Source: EU AI Act — Article 99 | authority: legal]"
     report = V.check_citations(fake, NormativeRetriever.citation_index(chunks))
     check(report.level == V.FAIL, "a citation to an excerpt that was not retrieved is flagged")
+    from raia.contract import assemble as A
+
+    evidence = [{"citation": c, "authority": "legal"} for c in NormativeRetriever.citation_index(chunks)]
+    forged = {"summary": "s", "overall_status": "on_track", "agrees_with_rule_engine": True,
+              "findings": [{"id": "F1", "title": "t", "statement": "x", "principle": "fairness",
+                            "nist_category": "MAP 5", "magnitude": "limited", "likelihood": "possible",
+                            "placement_rationale": "r",
+                            "citations": ["[Source: EU AI Act — Article 99 | authority: legal]"]}],
+              "actions": [], "open_issues": [], "coverage": [], "extension": {}}
+    kept = A.finalize("risk_classifier", forged, empty_rationale("t"), evidence, agent.spec)
+    check(not kept["findings"][0]["citations"], "INVARIANT: code removes a fabricated citation from the record")
+    check(any(n.startswith("PRUNED_CITATION:") for n in kept["contract_notes"]),
+          "INVARIANT: …and records the removal in the record's provenance notes")
 
     print("== 12. Restart recovery still goes through the gate ==")
     fresh = ArtifactRepository("restart-project")

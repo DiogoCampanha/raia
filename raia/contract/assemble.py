@@ -233,6 +233,35 @@ def _authorities(citations: Iterable[str], index: Dict[str, str]) -> List[str]:
     return out
 
 
+class _Pruner:
+    """Removes citation tags that match no excerpt retrieved for the run.
+
+    A tag that resolves to nothing is a fabricated ground. It is not shown to
+    the reviewer as a warning: code takes it out of the record and records
+    what it took, in ``pruned_citations`` (kept across re-finalisation) and in
+    the contract notes that reach provenance and the research export. With no
+    evidence to check against (a record finalised outside a run), nothing is
+    removed.
+    """
+
+    def __init__(self, evidence: Sequence[Dict[str, Any]], already: Sequence[str]) -> None:
+        self.allowed = [e.get("citation", "") for e in evidence or [] if e.get("citation")]
+        self.removed: List[str] = list(already or [])
+
+    def __call__(self, where: str, tags: Iterable[str]) -> List[str]:
+        tags = [normalize_citation(c) for c in tags or [] if c]
+        if not self.allowed:
+            return tags
+        from ..validators import resolve_citations
+
+        kept, dropped = resolve_citations(tags, self.allowed)
+        for d in dropped:
+            line = f"{where}: {d}"
+            if line not in self.removed:
+                self.removed.append(line)
+        return kept
+
+
 def frameworks_for(sources: Sequence[str]) -> List[Dict[str, str]]:
     return [
         {"id": s, "name": config.SOURCE_NAMES.get(s, s), "authority": config.AUTHORITY_LEVELS.get(s, "")}
@@ -286,7 +315,8 @@ def priority_floors(agent_key: str, rationale: RationaleResult) -> Dict[str, rub
 
 def _engine_issues(rationale: RationaleResult) -> List[Dict[str, Any]]:
     return [
-        {"type": m["type"], "description": m["text"], "options": [],
+        {"type": m["type"], "description": m["text"],
+         "options": list(m.get("options") or V.DEFAULT_ISSUE_OPTIONS.get(m["type"], ())),
          "decision_owner": m["decision_owner"], "blocking": bool(m["blocking"]),
          "links": [], "origin": "engine"}
         for m in rationale.typed_issues()
@@ -404,6 +434,7 @@ def finalize(
     notes: List[str] = []
     index = authority_index(evidence)
     floors = priority_floors(agent_key, rationale)
+    prune = _Pruner(evidence, rec.get("pruned_citations") or [])
 
     # -- findings -------------------------------------------------------------
     fmap: Dict[str, str] = {}
@@ -413,7 +444,7 @@ def finalize(
         fmap[str(f.get("id") or new)] = new
         fmap[new] = new
         f["id"] = new
-        f["citations"] = [normalize_citation(c) for c in f.get("citations") or [] if c]
+        f["citations"] = prune(new, f.get("citations"))
         f.update(rubric.prioritise(
             f.get("magnitude", ""), f.get("likelihood", ""), f.get("links") or [],
             _authorities(f["citations"], index), floors,
@@ -433,7 +464,7 @@ def finalize(
         if unknown:
             notes.append(f"{new} referenced unknown finding id(s) {', '.join(unknown)}; removed.")
         a["finding_ids"] = linked
-        a["citations"] = [normalize_citation(c) for c in a.get("citations") or [] if c]
+        a["citations"] = prune(new, a.get("citations"))
         a["priority"] = rubric.action_priority([priority_by_id[x] for x in linked])
         for link in a.get("links") or []:
             if link in floors:
@@ -520,7 +551,8 @@ def finalize(
     for key in ("obligations", "gap_analysis", "evrs", "items"):
         for entry in ext.get(key) or []:
             if isinstance(entry, dict) and "citations" in entry:
-                entry["citations"] = [normalize_citation(c) for c in entry["citations"] if c]
+                where = str(entry.get("code") or entry.get("id") or entry.get("evr_id") or entry.get("item_id") or key)
+                entry["citations"] = prune(where, entry["citations"])
 
     # -- overall status floor --------------------------------------------------
     floor = "on_track"
@@ -534,6 +566,9 @@ def finalize(
         rec["overall_status"] = floor
 
     notes += [f"SHORTENED: {n}" for n in rec.get("shortened") or []]
+    if prune.removed:
+        rec["pruned_citations"] = prune.removed
+    notes += [f"PRUNED_CITATION: {n}" for n in prune.removed]
 
     rec["meta"] = {
         "schema_version": V.SCHEMA_VERSION,

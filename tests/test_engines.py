@@ -53,6 +53,11 @@ def test_risk_screen() -> None:
     check("eu.art26" not in codes, "deployer-only obligations not assembled for a provider")
     check(any("oversight" in i.lower() or "automated" in i.lower() for i in r.open_issues),
           "automation without oversight raises an open issue")
+    oversight = next(m for m in r.typed_issues() if "case-level human" in m["text"])
+    check(oversight["blocking"] and len(oversight["options"]) >= 2,
+          "on a high-risk system it blocks the product in its current form, and offers the ways out")
+    calm = risk_screen.run({**RESUME_INTAKE, "human_oversight": "override_possible"})
+    check(not any(m["blocking"] for m in calm.typed_issues()), "…and designing case-level oversight clears it")
 
     banned = risk_screen.run({**RESUME_INTAKE, "prohibited_practices": ["social_scoring"]})
     check(banned.verdict["eu_tier"] == risk_screen.TIER_UNACCEPTABLE,
@@ -442,10 +447,24 @@ def test_temperature_fallback() -> None:
         config.LLM_TEMPERATURE, llm.get_chat_model = saved_temp, saved_factory
 
 
+def test_second_example_case() -> None:
+    print("== the customer-support example takes the limited-risk path ==")
+    from raia.examples import CASES, example_for
+
+    r = risk_screen.run(example_for("support_assistant", "risk_classifier"))
+    check(r.verdict["eu_tier"] == risk_screen.TIER_LIMITED, "EU AI Act: limited risk (transparency duties)")
+    check(r.verdict["br_tier"] == risk_screen.BR_NOT_LISTED, "PL 2338/2023: not in the listed high-risk areas")
+    check(sorted(o["code"] for o in r.data["obligations"]) == ["br.governance", "br.rights", "eu.art50"],
+          "a deployer of a chat assistant: transparency, governance and rights obligations only")
+    check(not any(m["blocking"] for m in r.typed_issues()), "nothing blocks it")
+    check(set(CASES) == {"resume_screening", "support_assistant"} and all(
+        example_for(c, "requirements_reviewer") for c in CASES), "both cases fill every stage")
+
+
 def main() -> None:
     for fn in (test_risk_screen, test_risk_screen_how_the_ai_works, test_coverage, test_suggestions,
                test_recommendation_checks, test_story_map, test_traceability,
-               test_validators, test_sanitize, test_principles,
+               test_validators, test_second_example_case, test_sanitize, test_principles,
                test_temperature_fallback):
         fn()
     print()

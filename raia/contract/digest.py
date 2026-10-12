@@ -1055,7 +1055,9 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
         record.get("extension") or {}, data, record)
     for s in agent_sections:
         s.setdefault("group", "analysis")
-    kpis = _kpis_common(findings, actions, decisions) + ([agent_kpi] if agent_kpi else [])
+    # The Risk Classifier's tiers are its signature; a fourth tile would repeat them.
+    kpis = _kpis_common(findings, actions, decisions) + (
+        [agent_kpi] if agent_kpi and agent_key != "risk_classifier" else [])
 
     principles: Dict[str, int] = {}
     for f in findings:
@@ -1077,12 +1079,16 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
                        + "; ".join(str(e) for e in record["schema_errors"][:8]))
 
     meta = record.get("meta") or {}
+    gap_list = gaps(findings, actions, decisions)
     return {
         "signature": signature(agent_key, record, data),
         "agent_key": agent_key,
         "meta": meta,
-        "status": {"key": status, "label": V.STATUS_LABELS.get(status, label(status)),
-                   "tone": STATUS_TONE.get(status, "neutral")},
+        "status": status_view(status, len(gap_list)),
+        "gaps": gap_list,
+        "findings": _findings_sorted(findings),
+        "obligations": obligation_groups(record, data) if agent_key == "risk_classifier" else [],
+        "evrs": list((record.get("extension") or {}).get("evrs") or []) if agent_key == "requirements_reviewer" else [],
         "headline": headline,
         "summary": summary,
         "kpis": kpis,
@@ -1101,6 +1107,58 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
         "story_counts": story_counts(stories) if agent_key in STORY_KEYS else {},
         "report": audit_report(record, data, actions, decisions) if agent_key == "auditor" else {},
     }
+
+
+def gaps(findings: Sequence[Dict[str, Any]], actions: Sequence[Dict[str, Any]],
+         decisions: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """What makes a record Blocked, each with what unblocks it.
+
+    Read only from what code already marks blocking: a blocking finding (with
+    the actions that answer it) and a blocking decision. Nothing is judged here.
+    """
+    out: List[Dict[str, Any]] = []
+    for f in _findings_sorted(findings):
+        if not f.get("blocking"):
+            continue
+        answers = [a["id"] for a in actions if f.get("id") in a["findings"]]
+        deciding = [d["id"] for d in decisions if f.get("id") in d["links"]]
+        if answers:
+            unblock = "Do " + " and ".join(answers) + (", or take decision " + ", ".join(deciding) if deciding else "")
+        elif deciding:
+            unblock = "Take decision " + " or ".join(deciding)
+        else:
+            unblock = "Nothing answers it yet: add an action in Edit the record, or reject the card with a reason."
+        out.append({"kind": "finding", "id": f.get("id", ""), "title": str(f.get("title") or "").rstrip("."),
+                    "tone": "critical", "unblock": unblock + ("." if not unblock.endswith(".") else "")})
+    for d in decisions:
+        if d["blocking"]:
+            out.append({"kind": "decision", "id": d["id"], "title": first_sentence(d["text"]).rstrip("."),
+                        "tone": "critical", "unblock": f"Take decision {d['id']}."})
+    return out
+
+
+def status_view(status: str, n_blocking: int) -> Dict[str, Any]:
+    """The overall status as shown: label, tone and what it means here."""
+    help_text = V.STATUS_HELP.get(status, "")
+    if status == "blocked":
+        help_text = (f"{plural(n_blocking, 'item')} must be resolved before this product can go ahead as described. "
+                     "They are listed under Gaps to close, each with what unblocks it.") if n_blocking else (
+            "Something in this record was marked blocking. See Gaps to close.")
+    return {"key": status, "label": V.STATUS_LABELS.get(status, label(status)),
+            "tone": STATUS_TONE.get(status, "neutral"), "help": help_text, "blocking": n_blocking}
+
+
+def obligation_groups(record: Dict[str, Any], data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The computed legal obligations grouped by instrument, with the agent's note on each."""
+    notes = {o.get("code"): o for o in (record.get("extension") or {}).get("obligations") or []}
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for o in data.get("obligations") or []:
+        where = "EU AI Act" if str(o.get("jurisdiction")).upper() == "EU" else "PL 2338/2023"
+        n = notes.get(o.get("code"), {})
+        groups.setdefault(where, []).append({
+            "code": o.get("code", ""), "title": o.get("title", ""),
+            "meaning": n.get("meaning_for_this_product", ""), "cites": list(n.get("citations") or [])})
+    return [{"title": k, "items": v} for k, v in groups.items()]
 
 
 def owner_counts(digest: Dict[str, Any]) -> Dict[str, int]:

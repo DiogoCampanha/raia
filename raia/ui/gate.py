@@ -417,17 +417,34 @@ def _adopt(project_id: str, agent_key: str, cid: str) -> None:
         "addresses": cand["addresses"], "edited": edited,
     }]
     cand["status"], cand["requirement_id"] = "adopted", added["id"]
+    st.session_state[pkey("just_adopted", agent_key)] = added["id"]
     get_service().record_recommendation_decision(current_user(), project_id, agent_key, cand,
                                                  "adopted", added["id"], edited)
 
 
 def _reject(project_id: str, agent_key: str, cid: str) -> None:
+    """Callback: set a candidate aside. A reason is required, as for any rejected card."""
     recs = st.session_state.get(_recs_key(agent_key)) or {}
     cand = next((c for c in recs.get("candidates") or [] if c["id"] == cid), None)
     if not cand or cand.get("status") != "open":
         return
-    cand["status"] = "rejected"
-    get_service().record_recommendation_decision(current_user(), project_id, agent_key, cand, "rejected")
+    reason = " ".join((st.session_state.get(pkey("cand", agent_key, cid, "why")) or "").split())
+    if not reason:
+        st.session_state[pkey("cand_err", agent_key, cid)] = "Say why you reject it: one line is enough."
+        return
+    cand["status"], cand["reason"] = "rejected", reason
+    get_service().record_recommendation_decision(current_user(), project_id, agent_key, cand, "rejected",
+                                                 reason=reason)
+
+
+def _undo_reject(project_id: str, agent_key: str, cid: str) -> None:
+    recs = st.session_state.get(_recs_key(agent_key)) or {}
+    cand = next((c for c in recs.get("candidates") or [] if c["id"] == cid), None)
+    if not cand or cand.get("status") != "rejected":
+        return
+    cand["status"] = "open"
+    cand.pop("reason", None)
+    get_service().record_recommendation_decision(current_user(), project_id, agent_key, cand, "undone")
 
 
 def _clear_recs(agent_key: str) -> None:
@@ -463,57 +480,80 @@ def _recommend_more(project: Project, agent) -> None:
 
 
 def _candidate_panel(project: Project, agent, can_run: bool) -> None:
+    """Recommended requirements, each folded to one line, decided where it stands.
+
+    A candidate opens only when a person wants to read its fit criterion and
+    grounds or edit it; adopting or rejecting takes it off the list, into one
+    summary line. When every candidate is decided, the panel is that line.
+    """
     spec = agent.spec
     recs = st.session_state.get(_recs_key(spec.key)) or {}
     cands = recs.get("candidates") or []
     dropped = recs.get("dropped") or []
     if not cands and not dropped:
         return
-    with st.container(border=True):
-        st.markdown(f"{I.SUGGEST} **Recommended requirements — adopt, edit or reject each one**")
-        st.caption("RAIA proposed these for gaps your current answers leave. None of them counts "
-                   "until you adopt it; an adopted one is added to your requirements and is marked in "
-                   "the record as a recommendation you adopted, not one the team wrote.")
-        evidence = recs.get("evidence") or {}
-        for c in cands:
+    open_ = [c for c in cands if c.get("status") == "open"]
+    adopted = [c for c in cands if c.get("status") == "adopted"]
+    rejected = [c for c in cands if c.get("status") == "rejected"]
+    evidence = recs.get("evidence") or {}
+    with st.container(border=True, key=pkey("recs_panel", spec.key)):
+        tally = " · ".join(x for x in (
+            f"{len(adopted)} adopted" + (f" ({', '.join(c.get('requirement_id', '') for c in adopted)})" if adopted else "")
+            if adopted else "",
+            f"{len(rejected)} rejected" if rejected else "",
+            f"{len(open_)} to review" if open_ else "") if x)
+        st.markdown(f"{I.SUGGEST} **Recommended requirements**" + (f" — {tally}" if tally else ""))
+        if open_:
+            st.caption("Each one addresses a gap your answers leave. Adopt it as it reads, open it to read the "
+                       "fit criterion and grounds or to edit it, or reject it with a reason. An adopted one is "
+                       "added to your requirements and marked in the record as a recommendation you adopted.")
+        for c in open_:
             cid = c["id"]
-            if c.get("status") == "adopted":
-                st.markdown(f"{I.OK} `{c['addresses']}` — adopted as **{c.get('requirement_id', '')}**.")
-                continue
-            if c.get("status") == "rejected":
-                st.markdown(f"{I.DISCARD} {c['addresses']} — rejected.")
-                continue
-            with st.container(border=True):
-                st.markdown(f"**{cid}** · addresses `{c['addresses']}` — {c.get('gap_subject', '')}")
-                sk, fk = pkey("cand", spec.key, cid, "statement"), pkey("cand", spec.key, cid, "fit")
-                if sk not in st.session_state:
-                    st.session_state[sk] = c["statement"]
-                if fk not in st.session_state:
-                    st.session_state[fk] = c["fit_criterion"]
-                st.text_area("Requirement", key=sk, height=80, disabled=not can_run)
-                st.text_input("Fit criterion (how it is verified)", key=fk, disabled=not can_run)
-                meta = [f"Verified by {c.get('verification_method', 'inspection')}"]
-                if c.get("value"):
-                    meta.append(f"protects {c['value'].replace('_', ' ')}")
-                st.caption(" · ".join(meta))
-                with st.expander("Grounds", icon=I.EVIDENCE):
+            sk, fk = pkey("cand", spec.key, cid, "statement"), pkey("cand", spec.key, cid, "fit")
+            if sk not in st.session_state:
+                st.session_state[sk] = c["statement"]
+            if fk not in st.session_state:
+                st.session_state[fk] = c["fit_criterion"]
+            with st.container(border=True, key=pkey("cand_box", spec.key, cid)):
+                top = st.columns([6, 1.1, 1.1], vertical_alignment="center")
+                top[0].markdown(f"**{cid}** · `{c['addresses']}` — {st.session_state[sk]}")
+                if can_run:
+                    top[1].button("Adopt", key=pkey("cand_adopt", spec.key, cid), type="primary",
+                                  icon=I.APPROVE, on_click=_adopt, args=(project.id, spec.key, cid), width="stretch")
+                    with top[2].popover("Reject", icon=I.DISCARD, width="stretch"):
+                        st.text_input("Why do you reject it?", key=pkey("cand", spec.key, cid, "why"),
+                                      placeholder="e.g. already covered by R3")
+                        st.button("Reject it", key=pkey("cand_reject", spec.key, cid),
+                                  on_click=_reject, args=(project.id, spec.key, cid))
+                err = st.session_state.pop(pkey("cand_err", spec.key, cid), None)
+                if err:
+                    st.error(err)
+                with st.expander("Review or edit", icon=I.EVIDENCE):
+                    st.caption(f"Addresses {c.get('gap_subject', '') or c['addresses']} · verified by "
+                               f"{c.get('verification_method', 'inspection')}"
+                               + (f" · protects {c['value'].replace('_', ' ')}" if c.get("value") else ""))
+                    st.text_area("Requirement", key=sk, height=80, disabled=not can_run)
+                    st.text_input("Fit criterion (how it is verified)", key=fk, disabled=not can_run)
+                    st.markdown("**Grounds**")
                     for tag in c.get("citations") or []:
                         st.markdown(f"`{tag}`")
                         ex = evidence.get(tag)
                         if ex:
                             st.caption(ex.get("text", "")[:600])
-                err = st.session_state.pop(pkey("cand_err", spec.key, cid), None)
-                if err:
-                    st.error(err)
-                if can_run:
-                    row = st.container(horizontal=True)
-                    row.button("Adopt", key=pkey("cand_adopt", spec.key, cid), type="primary",
-                               icon=I.APPROVE, on_click=_adopt, args=(project.id, spec.key, cid))
-                    row.button("Reject", key=pkey("cand_reject", spec.key, cid), icon=I.DISCARD,
-                               on_click=_reject, args=(project.id, spec.key, cid))
+        if adopted or rejected:
+            with st.expander(f"Show decided ({len(adopted) + len(rejected)})"):
+                for c in adopted:
+                    st.markdown(f"{I.OK} **{c.get('requirement_id', '')}** · `{c['addresses']}` — adopted. "
+                                "To undo, delete it from your requirements above.")
+                for c in rejected:
+                    row = st.columns([6, 1], vertical_alignment="center")
+                    row[0].markdown(f"{I.DISCARD} **{c['id']}** · `{c['addresses']}` — rejected"
+                                    + (f": {c['reason']}" if c.get("reason") else "."))
+                    if can_run:
+                        row[1].button("Undo", key=pkey("cand_undo", spec.key, c["id"]), type="tertiary",
+                                      on_click=_undo_reject, args=(project.id, spec.key, c["id"]))
         if dropped:
-            with st.expander(f"{len(dropped)} candidate(s) failed the checks and were not shown",
-                             icon=I.WARN):
+            with st.expander(f"{len(dropped)} candidate(s) failed the checks and were not shown", icon=I.WARN):
                 for d in dropped:
                     st.markdown(f"- `{d.get('addresses') or '?'}` — {d.get('reason', '')}")
         if can_run:
@@ -528,6 +568,10 @@ def _candidate_panel(project: Project, agent, can_run: bool) -> None:
 
 def _field_origin_note(agent_key: str, f: InputField) -> None:
     """Say, under a field, that its answer was suggested — and why — until a person changes it."""
+    if f.key == "requirements":
+        rid = st.session_state.pop(pkey("just_adopted", agent_key), None)
+        if rid:
+            st.caption(f"{I.OK} **{rid}** was added at the end of your requirements, in your format.")
     origin = st.session_state.get(_origin_key(agent_key)) or {}
     if f.key == "existing_controls" and origin.get("control_hints"):
         hints = origin["control_hints"]
@@ -687,25 +731,87 @@ def _intake_fields(project: Project, agent, can_run: bool) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _card_link(text: str) -> str:
+    """An item line with its leading record id (RC-F2, EVR-1, S3) linked to that card on the page."""
+    import html as _html
+    import re as _re
+
+    m = _re.match(r"^(missing: |unknown: )?([A-Z]{1,4}-[A-Z]?\d+|EVR-\d+|[A-Z]+-\d+)(.*)$", str(text))
+    if not m:
+        return _html.escape(str(text))
+    lead, rid, rest = m.groups()
+    return (_html.escape(lead or "") + f'<a href="#card-{_html.escape(rid)}">{_html.escape(rid)}</a>'
+            + _html.escape(rest))
+
+
 def validation_panel(validation: Dict[str, Any]) -> None:
-    items = validation.get("items") or []
+    """What the automated checks mean for the reviewer.
+
+    Only what a person should act on is shown as an instruction; what code
+    already corrected goes to the technical log (:func:`technical_log`), and a
+    disagreement is not repeated here because it is a decision card. Passing
+    checks are counted in one line and explained on request.
+    """
+    import html as _html
+
+    from raia import validators as VAL
+
+    if not (validation or {}).get("items"):
+        return
+    parts = VAL.partition(validation)
+    act, handled, passed = parts[VAL.ACT], parts[VAL.HANDLED], parts[VAL.PASSED]
+    if act:
+        lines = []
+        for item in act:
+            subs = "".join(f"<li>{_card_link(x)}</li>" for x in (item.get("items") or [])[:8])
+            more = len(item.get("items") or []) - 8
+            lines.append(
+                '<div class="rv-check">'
+                f'<div class="rv-check-h"><b>{_html.escape(item["name"])}</b> '
+                f'<span class="rv-muted">{_html.escape(item.get("detail") or "")}</span></div>'
+                + (f'<div class="rv-check-do">{_html.escape(item["todo"])}</div>' if item.get("todo") else "")
+                + (f'<ul>{subs}{f"<li>…and {more} more</li>" if more > 0 else ""}</ul>' if subs else "")
+                + (f'<div class="rv-check-why">Why RAIA checks this: {_html.escape(item["why"])}</div>'
+                   if item.get("why") else "")
+                + "</div>")
+        st.html('<div class="rv-checks"><div class="rv-checks-h"><span class="raia-icon" aria-hidden="true">'
+                f'fact_check</span>Before you approve · {len(act)} thing{"s" if len(act) != 1 else ""} to look at'
+                "</div>" + "".join(lines) + "</div>")
+    summary = (f"RAIA ran {len(passed) + len(handled) + len(act) + len(parts[VAL.DECISION])} automated checks: "
+               f"{len(passed)} passed"
+               + (f", {len(handled)} found something code corrected on its own" if handled else "")
+               + (f", {len(act)} need{'s' if len(act) == 1 else ''} your attention" if act else "") + ".")
+    with st.expander(summary, icon=CHECK.get("pass" if not act else "warn", I.INFO)):
+        st.caption(VAL.CHECKS_PURPOSE)
+        if handled:
+            st.markdown("**Corrected by code** — nothing for you to do; the details are in the technical log "
+                        "under *What the code computed*.")
+            for item in handled:
+                st.markdown(f"- {item['name']}" + (f" — {item['why']}" if item.get("why") else ""))
+        if passed:
+            st.markdown("**Passed**")
+            for item in passed:
+                st.markdown(f"- {item.get('title', '')} — {item.get('detail', '')}")
+
+
+def technical_log(validation: Dict[str, Any]) -> None:
+    """Every check result, with what code corrected: for whoever wants the detail."""
+    from raia import validators as VAL
+
+    items = (validation or {}).get("items") or []
     if not items:
         return
-    level = validation.get("level", "pass")
-    headline = validation.get("headline", "")
-    box = st.error if level == "fail" else (st.warning if level == "warn" else st.success)
-    box(f"**Automated checks — {headline}**", icon=CHECK.get(level, I.INFO))
-    with st.expander("What was checked", expanded=level == "fail"):
-        for item in items:
-            mark = {"pass": ":green[Pass]", "warn": ":orange[Warning]", "fail": ":red[Fail]"}.get(
-                item["level"], item["level"])
-            st.markdown(f"{mark} **{item['title']}** — {item['detail']}")
-            for sub in item.get("items", [])[:12]:
-                st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;• `{sub}`")
-        st.caption(
-            "Checks inform; they never block. A failed check on an otherwise sound draft "
-            "is a reason to look closely, not a reason for the software to overrule you."
-        )
+    parts = VAL.partition(validation)
+    st.markdown("**Technical log of the automated checks**")
+    st.caption("What code found and corrected before you saw the draft. It is recorded with the "
+               "artifact's provenance; none of it needs action.")
+    shown = parts[VAL.HANDLED] + parts[VAL.DECISION]
+    if not shown:
+        st.caption("Code had nothing to correct in this draft.")
+    for item in shown:
+        st.markdown(f"- **{item['name']}** — {item.get('detail', '')}")
+        for sub in (item.get("items") or [])[:12]:
+            st.markdown(f"    - `{sub}`")
 
 
 def evidence_panel(evidence: List[Dict[str, Any]]) -> None:
@@ -958,6 +1064,8 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
             "ground truth for the agent: it may argue with a verdict, but it cannot restate one."
         )
         st.markdown(payload.get("rationale_md") or "_No rule engine for this agent._")
+        st.divider()
+        technical_log(payload.get("validation") or {})
 
     blocked_by_four_eyes = svc.second_approver_blocks(user, project.id, payload)
     impact = svc.revision_impact(user, project.id, agent_key)

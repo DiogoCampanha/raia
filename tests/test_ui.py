@@ -366,11 +366,20 @@ def main() -> None:
     ok(at.run(), "a candidate is adopted")
     reqs = state[f"{pid2}::in::{rr}::requirements"]
     check("R3." in reqs and "Fit criterion:" in reqs, "…and added to the requirements with the next id")
-    check("adopted as **R3**" in text(at), "…and marked as adopted")
+    check("1 adopted (R3)" in text(at), "…and folded into the panel's summary line")
+    check(not has_button(at, f"{pid2}::cand_adopt::{rr}::C1"), "…so the decided candidate leaves the list")
     if has_button(at, f"{pid2}::cand_reject::{rr}::C2"):
         button(at, f"{pid2}::cand_reject::{rr}::C2").click()
-        ok(at.run(), "another is rejected")
-        check("rejected" in text(at), "…and marked as rejected")
+        ok(at.run(), "rejecting without a reason")
+        check("Say why you reject it" in text(at) and has_button(at, f"{pid2}::cand_reject::{rr}::C2"),
+              "…is refused: a rejection needs a reason")
+        at.text_input(key=f"{pid2}::cand::{rr}::C2::why").set_value("Already covered by R2")
+        button(at, f"{pid2}::cand_reject::{rr}::C2").click()
+        ok(at.run(), "another is rejected with a reason")
+        check("1 rejected" in text(at) and "Already covered by R2" in text(at), "…and folded away, reason kept")
+        button(at, f"{pid2}::cand_undo::{rr}::C2").click()
+        ok(at.run(), "a rejection can be undone")
+        check(has_button(at, f"{pid2}::cand_adopt::{rr}::C2"), "…and the candidate is back on the list")
 
     ack = f"{pid2}::suggest_ack::{rr}"
     check(any(c.key == ack for c in at.checkbox), "running asks the person to confirm the pre-filled answers")

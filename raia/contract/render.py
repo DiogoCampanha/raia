@@ -294,8 +294,13 @@ def markdown_from_digest(dg: Dict[str, Any]) -> Dict[str, str]:
 
     kpis = dg["kpis"]
     summary = [f"**{dg['status']['label']}** — {dg['headline']}".rstrip(" —")]
+    if dg["status"].get("help"):
+        summary += ["", f"_{dg['status']['help']}_"]
     if dg["summary"]:
         summary += ["", dg["summary"]]
+    if dg.get("gaps"):
+        summary += ["", "**Gaps to close**", ""]
+        summary += [f"- **{g['id']}** — {cell(g['title'])}. _Unblocks it:_ {g['unblock']}" for g in dg["gaps"]]
     if dg.get("signature"):
         summary += ["", D.signature_text(dg["signature"])]
     summary += ["", table([k["label"] for k in kpis], [[f"{k['value']} — {k['hint']}" for k in kpis]])]

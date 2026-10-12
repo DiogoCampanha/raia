@@ -101,9 +101,9 @@ Schema `raia-record/1.3` — `docs/schema/risk_classifier.schema.json`. Identifi
 | `obligations[].code` | An obligation code from the computed table, exactly. |
 | `obligations[].meaning_for_this_product` | One sentence: what the team must do or show for this product. |
 | `obligations[].citations` | Citation tags copied exactly from the retrieved excerpts, e.g. "[Source: ... / authority: legal]". Never invent one. |
-| `human_oversight_assessment` | Whether the declared oversight design meets the oversight obligations, conclusion first. |
-| `affected_persons_rights` | How affected persons' rights are operationalised in the product, conclusion first. |
-| `impact_assessments` | Which impact assessments the instruments require (fundamental rights / algorithmic). |
+| `human_oversight_assessment` | Whether the declared oversight design meets the oversight obligations, conclusion first; at most two sentences. |
+| `affected_persons_rights` | How affected persons' rights are operationalised in the product, conclusion first; at most two sentences. |
+| `impact_assessments` | Which impact assessments the instruments require (fundamental rights / algorithmic); at most two sentences. |
 
 Rendered sections: Summary → Action Plan → Open Issues → Findings → Risk Classification → Applicable Legal Obligations → Human Oversight and Affected Persons → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
 

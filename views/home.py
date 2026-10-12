@@ -150,7 +150,7 @@ with st.expander("New project", icon=I.ADD, expanded=not projects):
                 routes.go(routes.PROJECT, id=p.id)
 
 if not projects:
-    empty_state("No projects yet", "Create a project or the demo project above, or accept an "
+    empty_state("No projects yet", "Create a project or one of the demo projects above, or accept an "
                 "invitation from a colleague.")
     st.stop()
 

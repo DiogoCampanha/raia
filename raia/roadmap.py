@@ -268,7 +268,8 @@ def suggest(bl: Dict[str, Any], sp: Dict[str, Any], review: Dict[str, Any],
         refs = [s["id"], *(s.get("evr_ids") or [])]
         hit = next((r for r in refs if r in blocked_by), None)
         if hit:
-            blocked.append({"id": s["id"], "reason": f"blocked by open issue {blocked_by[hit]} ({hit})"})
+            blocked.append({"id": s["id"], "reason": f"held by open issue {blocked_by[hit]} ({hit}); taking that "
+                                                      "decision releases it"})
             continue
         legal = [e for e in s.get("evr_ids") or [] if facts.get(e, {}).get("legal")]
         prio = ""

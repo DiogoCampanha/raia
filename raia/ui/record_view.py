@@ -9,12 +9,18 @@ in the project.
 RAIA is a work tool. The record is read top to bottom and can be put down at
 any point:
 
-1. **Summary** — status and headline, four numbers, the main issues and the
-   principles they touch.
-2. **What to do** — action cards grouped Do now / Plan / Track, then the
-   decisions only a person can take; a filter shows one owner's share.
+1. **Summary** — the status with what it means here (and, when blocked, a
+   link to the gaps), the headline, the agent's picture, a few numbers, and
+   **Gaps to close** when something blocks; then the risks found as compact
+   cards, most pressing first.
+2. **What to do** — action cards grouped Do now / Plan / Track (the first
+   group open), then the decisions only a person can take; a filter shows one
+   owner's share. The Risk Classifier adds its legal obligations by
+   instrument, the Requirements Reviewer its requirements.
 3. **Deep dive** — behind a dropdown, one tab per topic, each opening with its
    conclusion; the traceability appendix last.
+
+Every card is compact: one line of main information, the rest on a click.
 
 Two agents lead with what their users take away instead:
 
@@ -118,44 +124,147 @@ def _signature(dg: Dict[str, Any]) -> str:
     return "".join(out)
 
 
-def _summary(dg: Dict[str, Any]) -> None:
+def _status_html(dg: Dict[str, Any]) -> str:
+    """The status banner: what the status is, what it means here, and where to go."""
     status = dg["status"]
-    parts = [
-        f'<div class="rv rv-status tone-{status["tone"]}">',
-        chip(status["label"], status["tone"]),
-        f'<p class="rv-headline">{esc(dg["headline"])}</p>' if dg["headline"] else "",
-        f'<p class="rv-summary">{esc(dg["summary"])}</p>' if dg["summary"] else "",
-        "</div>",
-        _signature(dg),
-        '<div class="rv-kpis">',
-    ]
-    for k in dg["kpis"]:
-        parts.append(
-            f'<div class="rv-kpi tone-{esc(k["tone"])}" role="group" aria-label="{esc(k["label"])}">'
-            f'<div class="rv-kpi-label">{esc(k["label"])}</div>'
-            f'<div class="rv-kpi-value">{esc(k["value"])}</div>'
-            f'<div class="rv-kpi-hint">{esc(k["hint"])}</div></div>'
-        )
-    parts.append("</div>")
+    jump = ('<a class="rv-jump" href="#gaps-to-close">Go to the gaps</a>' if dg.get("gaps") else "")
+    out = [f'<div class="rv rv-status tone-{esc(status["tone"])}">',
+           '<div class="rv-status-top">' + chip(status["label"], status["tone"])
+           + (f'<span class="rv-status-help">{esc(status.get("help", ""))}</span>' if status.get("help") else "")
+           + jump + "</div>"]
+    if status.get("was"):
+        out.append(f'<p class="rv-status-was">{esc(status["was"])}</p>')
+    if dg["headline"]:
+        out.append(f'<p class="rv-headline">{esc(dg["headline"])}</p>')
+    if dg["summary"]:
+        out.append('<details class="rv-more-summary"><summary>Read the full summary</summary>'
+                   f'<p class="rv-summary">{esc(dg["summary"])}</p></details>')
+    out.append("</div>")
+    return "".join(out)
 
-    if dg["top_issues"]:
-        parts.append('<div class="rv-h"><h4>Main issues</h4></div><div class="rv-issues">')
-        for f in dg["top_issues"]:
-            tone = D.tone_of_priority(f.get("priority"))
-            parts.append(
-                f'<div class="rv-issue tone-{tone}">'
-                + chip(V.PRIORITY_LABELS.get(f.get("priority"), D.label(f.get("priority"))), tone)
-                + (chip("Blocking", "critical") if f.get("blocking") else "")
-                + f'<span class="t">{esc(str(f.get("title") or "").rstrip("."))}</span>'
-                + chip(D.principle_name(f.get("principle")), "neutral", quiet=True)
-                + f'<span class="rv-id">{esc(f.get("id"))}</span></div>'
-            )
-        parts.append("</div>")
+
+def _kpis_html(dg: Dict[str, Any]) -> str:
+    return '<div class="rv-kpis">' + "".join(
+        f'<div class="rv-kpi tone-{esc(k["tone"])}" role="group" aria-label="{esc(k["label"])}">'
+        f'<div class="rv-kpi-label">{esc(k["label"])}</div>'
+        f'<div class="rv-kpi-value">{esc(k["value"])}</div>'
+        f'<div class="rv-kpi-hint">{esc(k["hint"])}</div></div>' for k in dg["kpis"]) + "</div>"
+
+
+def _gaps_html(dg: Dict[str, Any]) -> str:
+    if not dg.get("gaps"):
+        return ""
+    rows = "".join(
+        f'<li class="rv-gap tone-{esc(g["tone"])}"><a class="rv-id" href="#card-{esc(g["id"])}">{esc(g["id"])}</a>'
+        f'<span class="t">{esc(g["title"])}</span><span class="u"><b>Unblocks it:</b> {esc(g["unblock"])}</span></li>'
+        for g in dg["gaps"])
+    return ('<div class="rv-gaps" id="gaps-to-close"><div class="rv-h"><h4>Gaps to close</h4>'
+            '<span class="rv-muted">Why this is blocked in its current form, and what unblocks each item</span></div>'
+            f'<ul>{rows}</ul></div>')
+
+
+# ---- Compact cards ----------------------------------------------------------
+#
+# A card shows one line of main information and opens on click. It is a native
+# <details> element, so opening it costs no rerun. Every card carries an anchor
+# (``#card-<id>``) the gaps, the checks and the hand-off link to.
+
+
+def _dcard(cid: str, tone: str, chips: str, title: str, body: str, sub: str = "",
+           cls: str = "", open_: bool = False) -> str:
+    return (f'<details class="rv-card rv-dcard tone-{esc(tone)} {cls}" id="card-{esc(cid)}"'
+            + (" open" if open_ else "") + ">"
+            f'<summary><div class="rv-card-top">{chips}<span class="rv-id">{esc(cid)}</span></div>'
+            f'<div class="rv-card-title">{title}</div>'
+            + (f'<div class="rv-card-sub">{sub}</div>' if sub else "")
+            + f'</summary><div class="rv-dbody">{body}</div></details>')
+
+
+def _meta(rows: Sequence[Tuple[str, Any]]) -> str:
+    cells = "".join(f"<dt>{esc(k)}</dt><dd>{esc(v)}</dd>" for k, v in rows if v not in (None, "", []))
+    return f'<dl class="rv-meta">{cells}</dl>' if cells else ""
+
+
+def finding_card(f: Dict[str, Any]) -> str:
+    tone = D.tone_of_priority(f.get("priority"))
+    chips = (chip(V.PRIORITY_LABELS.get(f.get("priority"), D.label(f.get("priority"))), tone)
+             + (chip("Blocking", "critical") if f.get("blocking") else "")
+             + chip(D.principle_name(f.get("principle")), "neutral", quiet=True))
+    basis = str(f.get("priority_basis") or "")
+    body = (f'<p class="rv-card-text">{esc(f.get("statement") or "")}</p>'
+            + _meta([("Affected", ", ".join(f.get("stakeholders") or [])),
+                     ("Why this priority", f"{D.label(f.get('magnitude')).capitalize()} impact, "
+                                           f"{D.label(f.get('likelihood'))} — {str(f.get('placement_rationale') or '').strip()}".rstrip(" —")),
+                     ("Raised because", basis.split(";", 1)[1].strip() if ";" in basis else ""),
+                     ("Concerns", ", ".join(f.get("links") or [])),
+                     ("NIST AI RMF", f.get("nist_category"))])
+            + (f'<div class="rv-card-foot">{_cites(f["citations"])}</div>' if f.get("citations")
+               else '<div class="rv-card-foot">No source in the retrieved norms</div>'))
+    return _dcard(f.get("id", ""), tone, chips, esc(str(f.get("title") or "").rstrip(".")), body)
+
+
+def action_card(a: Dict[str, Any]) -> str:
+    chips = (chip(V.PRIORITY_LABELS.get(a["priority"], a["priority"]), a["tone"])
+             + (chip("Blocking", "critical") if a["blocking"] else "")
+             + chip(a["owner_label"], "neutral", quiet=True))
+    body = (_meta([("Done when", a["done_when"]), ("Answers", ", ".join(a["findings"])), ("Response", a["response"])])
+            + (f'<div class="rv-card-foot">{_cites(a["cites"])}</div>' if a["cites"] else ""))
+    return _dcard(a["id"], a["tone"], chips, esc(a["text"]), body, sub=esc(a["when"]))
+
+
+def obligation_card(o: Dict[str, Any], where: str) -> str:
+    body = ((f'<p class="rv-card-text">{esc(o["meaning"])}</p>' if o.get("meaning")
+             else '<p class="rv-muted">No note from the agent for this obligation.</p>')
+            + (f'<div class="rv-card-foot">{_cites(o["cites"])}</div>' if o.get("cites") else ""))
+    return _dcard(o["code"], "neutral", chip(where, "neutral", quiet=True), esc(o.get("title") or o["code"]), body,
+                  cls="rv-slim")
+
+
+def evr_card(e: Dict[str, Any]) -> str:
+    chips = (chip(D.principle_name(e.get("value")), "neutral", quiet=True)
+             + "".join(chip(t, "neutral", quiet=True) for t in (e.get("traces_to") or [])[:3]))
+    body = (_meta([("Fit criterion", e.get("fit_criterion")),
+                   ("Verified by", str(e.get("verification_method") or "").capitalize()),
+                   ("Stakeholders", ", ".join(e.get("stakeholders") or []))])
+            + (f'<div class="rv-card-foot">{_cites(e["citations"])}</div>' if e.get("citations") else ""))
+    return _dcard(e.get("id", ""), "neutral", chips, esc(e.get("statement") or ""), body)
+
+
+def _cards_html(cards: Sequence[str], more_after: int, noun: str = "") -> str:
+    """Cards one under the other; past ``more_after``, the rest behind one click."""
+    head, rest = list(cards[:more_after]), list(cards[more_after:])
+    out = '<div class="rv-cards one">' + "".join(head) + "</div>"
+    if rest:
+        out += (f'<details class="rv-showmore"><summary>Show {len(rest)} more{(" " + noun) if noun else ""}</summary>'
+                f'<div class="rv-cards one">{"".join(rest)}</div></details>')
+    return out
+
+
+def _section_head(title: str, hint: str = "", count: Optional[int] = None) -> str:
+    return (f'<div class="rv-h"><h4>{esc(title)}</h4>'
+            + (f'<span class="rv-chip quiet tone-neutral">{count}</span>' if count is not None else "")
+            + (f'<span class="rv-muted">{esc(hint)}</span>' if hint else "") + "</div>")
+
+
+# ---------------------------------------------------------------------------
+# Tier 1 — Summary
+# ---------------------------------------------------------------------------
+
+
+def _summary(dg: Dict[str, Any]) -> None:
+    st.html(_status_html(dg) + _signature(dg) + _kpis_html(dg) + _gaps_html(dg))
+
+
+def _findings(dg: Dict[str, Any], key: str) -> None:
+    findings = dg.get("findings") or []
+    if not findings:
+        return
+    body = _section_head("Risks found", "Most pressing first; open a card for the detail", len(findings))
+    body += _cards_html([finding_card(f) for f in findings], 3, "risks")
     if dg["principles"]:
-        parts.append('<div class="rv-tags"><span class="lbl">Risk areas</span>'
-                     + "".join(chip(name, "neutral", quiet=True, n=count) for name, count in dg["principles"])
-                     + "</div>")
-    st.html("".join(parts))
+        body += ('<div class="rv-tags"><span class="lbl">Risk areas</span>'
+                 + "".join(chip(name, "neutral", quiet=True, n=count) for name, count in dg["principles"]) + "</div>")
+    st.html(body)
 
 
 # ---------------------------------------------------------------------------
@@ -163,30 +272,9 @@ def _summary(dg: Dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _action_card(a: Dict[str, Any]) -> str:
-    return (
-        f'<div class="rv-card tone-{a["tone"]}">'
-        '<div class="rv-card-top">'
-        + chip(V.PRIORITY_LABELS.get(a["priority"], a["priority"]), a["tone"])
-        + (chip("Blocking", "critical") if a["blocking"] else "")
-        + chip(a["owner_label"], "neutral", quiet=True)
-        + f'<span class="rv-id">{esc(a["id"])}</span></div>'
-        f'<div class="rv-card-title">{esc(a["text"])}</div>'
-        '<dl class="rv-meta">'
-        f'<dt>When</dt><dd>{esc(a["when"])}</dd>'
-        f'<dt>Done when</dt><dd>{esc(a["done_when"])}</dd>'
-        "</dl>"
-        '<div class="rv-card-foot">'
-        + (f'Answers {esc(", ".join(a["findings"]))} · ' if a["findings"] else "")
-        + f'Response: {esc(a["response"])}</div>'
-        + (f'<div class="rv-card-foot">{_cites(a["cites"])}</div>' if a["cites"] else "")
-        + "</div>"
-    )
-
-
 def _decision_card(d: Dict[str, Any]) -> str:
     return (
-        f'<div class="rv-card tone-{d["tone"]}">'
+        f'<div class="rv-card tone-{d["tone"]}" id="card-{esc(d["id"])}">'
         '<div class="rv-card-top">'
         + chip("Decision needed", "decision")
         + (chip("Blocking", "critical") if d["blocking"] else "")
@@ -219,13 +307,18 @@ def _actions(dg: Dict[str, Any], key: str) -> None:
     keep = (lambda owner: owner in picked) if picked else (lambda owner: True)
 
     shown_any = False
+    groups = []
     for g in dg["action_groups"]:
         items = [a for a in g["actions"] if keep(a["owner"])]
         if not items:
             continue
         shown_any = True
-        st.html(_group_head(g["title"], g["hint"], g["tone"], len(items))
-                + '<div class="rv-cards">' + "".join(_action_card(a) for a in items) + "</div>")
+        # The first group with work in it is open; later groups are a click away.
+        groups.append(f'<details class="rv-grp"{" open" if len(groups) == 0 else ""}><summary>'
+                      + _group_head(g["title"], g["hint"], g["tone"], len(items)) + "</summary>"
+                      + _cards_html([action_card(a) for a in items], 5, "actions") + "</details>")
+    if groups:
+        st.html("".join(groups))
     if not shown_any:
         st.html('<div class="rv-empty">'
                 + ("No actions for the selected owners." if picked and dg["actions"] else "No actions at this stage.")
@@ -237,6 +330,27 @@ def _actions(dg: Dict[str, Any], key: str) -> None:
                             len(decisions))
                 + '<div class="rv-cards">' + "".join(_decision_card(d) for d in decisions) + "</div>")
 
+
+def _agent_lists(dg: Dict[str, Any]) -> None:
+    """What an agent produces besides risks and actions: obligations, requirements."""
+    if dg.get("obligations"):
+        body = _section_head("Legal obligations", "Computed from your answers; open one for what it means here",
+                             sum(len(g["items"]) for g in dg["obligations"]))
+        for g in dg["obligations"]:
+            body += (f'<details class="rv-grp"><summary><div class="rv-group tone-neutral"><span class="dot"></span>'
+                     f'<span class="name">{esc(g["title"])}</span><span class="rv-chip quiet tone-neutral">'
+                     f'{len(g["items"])}</span></div></summary><div class="rv-cards one">'
+                     + "".join(obligation_card(o, g["title"]) for o in g["items"]) + "</div></details>")
+        st.html(body)
+    if dg.get("evrs"):
+        body = _section_head("Ethical value requirements", "Each with a fit criterion; open one for how it is verified",
+                             len(dg["evrs"]))
+        body += _cards_html([evr_card(e) for e in dg["evrs"]], 6, "requirements")
+        st.html(body)
+
+
+#: Deep-dive sections already drawn above the dropdown, so not repeated in it.
+_SHOWN_ABOVE = {"findings", "obligations", "evrs"}
 
 
 # ---------------------------------------------------------------------------
@@ -295,8 +409,8 @@ def _section(sec: Dict[str, Any]) -> None:
     _blocks(sec["blocks"])
 
 
-def _deep(dg: Dict[str, Any]) -> None:
-    analysis = [s for s in dg["deep"] if s.get("group") != "trace"]
+def _deep(dg: Dict[str, Any], skip: Sequence[str] = ()) -> None:
+    analysis = [s for s in dg["deep"] if s.get("group") != "trace" and s.get("key") not in skip]
     trace = [s for s in dg["deep"] if s.get("group") == "trace"]
     tabs = st.tabs([s["title"] for s in analysis] + ["Traceability"])
     for tab, sec in zip(tabs, analysis):
@@ -319,10 +433,10 @@ def _deep_dive(dg: Dict[str, Any], key: str, nested: bool) -> None:
     if nested:
         # Streamlit does not nest expanders; inside one, a toggle opens the deep dive.
         if st.toggle(label, key=f"{key}::deep"):
-            _deep(dg)
+            _deep(dg, _SHOWN_ABOVE)
         return
     with st.expander(label, icon=":material/manage_search:", expanded=False):
-        _deep(dg)
+        _deep(dg, _SHOWN_ABOVE)
 
 
 # ---------------------------------------------------------------------------
@@ -671,7 +785,9 @@ def record_view(agent_key: str, record: Dict[str, Any], computed_data: Optional[
         _audit_layout(dg, key, nested)
         return
     _summary(dg)
+    _findings(dg, key)
     _actions(dg, key)
+    _agent_lists(dg)
     _deep_dive(dg, key, nested)
 
 
