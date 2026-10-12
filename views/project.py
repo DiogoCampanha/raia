@@ -98,7 +98,8 @@ tab_board, tab_overview, tab_docs, tab_plan, tab_trace, tab_issues, tab_activity
     else ":material/gavel: Open issues",
     ":material/history: Activity",
     ":material/group: People and settings",
-], default=TAB_BOARD if board_ready else ":material/dashboard: Overview")
+], default=TAB_BOARD if board_ready else ":material/dashboard: Overview",
+   key=f"project_tabs_{proj.id}", on_change="rerun")
 
 # ---- Board -------------------------------------------------------------------------
 
@@ -226,33 +227,35 @@ with tab_plan:
 
 # ---- Traceability --------------------------------------------------------------------
 
-with tab_trace:
-    st.caption("The thread from the risk classification to the audit, one row per legal obligation and "
-               "per requirement: which requirement answers it, which stories implement that, and what the "
-               "audit verified. Highlighted rows are the gaps still open.")
-    rows = svc.thread(user, proj.id)
-    if not rows:
-        empty_state("Nothing to trace yet",
-                    "Approve the risk classification and the requirements review, and the thread appears here.")
-    else:
-        n = len(rows)
-        with_req = sum(1 for r in rows if r["requirement"] not in ("gap", "not reviewed yet")
-                       and "overridden" not in r["requirement"])
-        with_story = sum(1 for r in rows if r["stories"] not in ("—", "no story yet"))
-        verified = sum(1 for r in rows if r["verified"])
-        stat_tiles([
-            ("Items traced", n, "obligations and requirements", False),
-            ("With a requirement or control", with_req, "", with_req < n),
-            ("With a story", with_story, "", False),
-            ("Verified by an audit", verified, "", False),
-        ])
-        head = "".join(f"<th>{h}</th>" for h in ("Obligation", "What it requires", "Requirement", "Stories", "Audit"))
-        body = "".join(
-            f'<tr class="{"tr-gap" if r["gap"] else ("tr-ok" if r["verified"] else "")}">'
-            f'<td><code>{esc(r["obligation"]) or "—"}</code></td><td>{esc(r["label"][:160])}</td>'
-            f'<td>{esc(r["requirement"])}</td><td>{esc(r["stories"])}</td><td>{esc(r["audit"])}</td></tr>'
-            for r in rows)
-        st.html(f'<table class="rv-table tr-table"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>')
+# Drawn only while its tab is open: it reads every stage's record.
+if tab_trace.open:
+    with tab_trace:
+        st.caption("The thread from the risk classification to the audit, one row per legal obligation and "
+                   "per requirement: which requirement answers it, which stories implement that, and what the "
+                   "audit verified. Highlighted rows are the gaps still open.")
+        rows = svc.thread(user, proj.id, board_data)
+        if not rows:
+            empty_state("Nothing to trace yet",
+                        "Approve the risk classification and the requirements review, and the thread appears here.")
+        else:
+            n = len(rows)
+            with_req = sum(1 for r in rows if r["requirement"] not in ("gap", "not reviewed yet")
+                           and "overridden" not in r["requirement"])
+            with_story = sum(1 for r in rows if r["stories"] not in ("—", "no story yet"))
+            verified = sum(1 for r in rows if r["verified"])
+            stat_tiles([
+                ("Items traced", n, "obligations and requirements", False),
+                ("With a requirement or control", with_req, "", with_req < n),
+                ("With a story", with_story, "", False),
+                ("Verified by an audit", verified, "", False),
+            ])
+            head = "".join(f"<th>{h}</th>" for h in ("Obligation", "What it requires", "Requirement", "Stories", "Audit"))
+            body = "".join(
+                f'<tr class="{"tr-gap" if r["gap"] else ("tr-ok" if r["verified"] else "")}">'
+                f'<td><code>{esc(r["obligation"]) or "—"}</code></td><td>{esc(r["label"][:160])}</td>'
+                f'<td>{esc(r["requirement"])}</td><td>{esc(r["stories"])}</td><td>{esc(r["audit"])}</td></tr>'
+                for r in rows)
+            st.html(f'<table class="rv-table tr-table"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>')
 
 # ---- Open issues -------------------------------------------------------------------
 

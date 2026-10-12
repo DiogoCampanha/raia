@@ -16,6 +16,8 @@ Audits the whole project at each sprint close: the sprint's work against the evi
 | Requires approved | Requirements Reviewer |
 | Reads | Risk Classifier, Requirements Reviewer, User Story Refiner, backlog, sprints |
 | Produces | `05_audit_report.md` — audit record |
+| Receives | The requirements, the backlog and the sprint's evidence — each requirement shown verified or still open. |
+| Hands on | The audit verdicts that close a sprint, and the pathway forward. |
 
 ## 3. Normative grounding
 
@@ -63,11 +65,12 @@ Excerpts pinned for the canonical scenario:
 - Whether the backlog is enough, where code found it covered: the agent may only lower that judgement.
 - The decisions the pathway forward opens with, and who carries each recommendation.
 - What becomes an ethical checkpoint for the next iteration.
-- Every open issue the record raises, and whether to approve, edit or reject the record.
+- Whether to accept or reject each card of the draft (a rejection carries a reason); cards left unmarked are accepted as they are.
+- Every decision the record raises, taken on the card where it is shown (an option and why), and whether to approve, edit or reject the record.
 
 ## 7. The record it produces
 
-Schema `raia-record/1.3` — `docs/schema/auditor.schema.json`. Identifier prefix `AU`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.4` — `docs/schema/auditor.schema.json`. Identifier prefix `AU`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
@@ -111,7 +114,7 @@ Verdict keys the agent declares: `items_audited`, `opinion_ceiling`.
 ## 8. Checks
 
 - The record conforms to the schema (one repair attempt, then a fallback record)
-- Every citation resolves to an excerpt retrieved for this run
+- Every citation resolves to an excerpt retrieved for this run; one that does not is removed by code and logged
 - Every checklist item is declared covered, not applicable or not grounded
 - Every finding has an action or an open issue
 - The rule engine's issues are carried forward; the verdict is reconciled

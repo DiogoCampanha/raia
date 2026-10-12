@@ -322,12 +322,17 @@ def hands_on(repo, agent_key: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def thread(repo) -> List[Dict[str, Any]]:
-    """One row per legal obligation and per requirement: classification → requirement → story → audit."""
+def thread(repo, backlog: Optional[List[Dict[str, Any]]] = None,
+           review: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """One row per legal obligation and per requirement: classification → requirement → story → audit.
+
+    ``backlog`` and ``review`` may be passed by a page that has already read
+    them, to save a round trip each on a hosted database.
+    """
     rc = _data(repo, "risk_classification")
-    rr = _data(repo, "requirements_review")
+    rr = review if review is not None else _data(repo, "requirements_review")
     audit = _record(repo, "audit_report")
-    backlog = _backlog(repo)
+    backlog = backlog if backlog is not None else _backlog(repo)
     coverage = rr.get("obligation_coverage") or {}
     evr_of: Dict[str, str] = {str(g.get("ref")): str(g.get("evr_id")) for g in rr.get("gaps") or []}
     excluded = set(str(x) for x in rr.get("excluded_evrs") or [])

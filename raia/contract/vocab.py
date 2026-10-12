@@ -33,7 +33,7 @@ from typing import Dict, List, Tuple
 
 from ..rationale.principles import PRINCIPLES
 
-SCHEMA_VERSION = "raia-record/1.3"
+SCHEMA_VERSION = "raia-record/1.4"
 
 # -- The seven principles -----------------------------------------------------
 

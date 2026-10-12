@@ -54,15 +54,17 @@ Every record, for every agent, has these fields.
 |---|---|---|
 | `headline` | The bottom line in one sentence (at most 200 characters): the verdict and what it means for the team (required of the model; older records fall back to the summary's first sentence) | Human oversight: the reviewer reads it first |
 | `summary` | At most three sentences that add to the headline | Human oversight |
-| `overall_status` | `on_track` · `needs_attention` · `blocked` (code raises, never lowers) | Human oversight |
+| `overall_status` | `on_track` · `needs_attention` · `blocked` (code raises, never lowers); shown as *On track*, *Needs attention*, *Blocked in its current form* with what each means (section 8) | Human oversight |
 | `declared_verdict`, `agrees_with_rule_engine`, `disagreement_rationale` | The agent's verdict per key, and whether it agrees with the rule engine | RAIA reconciliation channel; conflicts reach a human |
 | `findings[]` | `title`, `statement`, `principle`, `nist_category`, `magnitude`, `likelihood`, `placement_rationale`, `stakeholders`, `citations`, `links`; computed: `risk_level`, `priority`, `blocking`, `priority_basis` | Seven principles; NIST AI RMF categories; NIST AI RMF MAP 5 (likelihood and magnitude) |
 | `actions[]` | `action`, `finding_ids`, `response`, `owner_role`, `lifecycle_stage`, `review_cadence`, `verification_method`, `evidence_artifact`, `citations`, `links`; computed: `priority` | NIST AI RMF MANAGE 1 (responses) and lifecycle; Microsoft RAI Standard v2 requirement pattern (owner, review cadence, evidence artifact); IEEE 7000 (verification) |
-| `open_issues[]` | `type`, `description`, `options`, `decision_owner`, `blocking`, `links`; computed: `origin` (`engine`, `agent`, `code`) | Authority precedence and same-level conflicts; NIST AI RMF GOVERN 2 (roles) |
+| `open_issues[]` | `type`, `description`, `options`, `decision_owner`, `blocking`, `links`; computed: `origin` (`engine`, `agent`, `code`). An issue the engine raises without options gets the default options for its type, so every decision can be taken on its card | Authority precedence and same-level conflicts; NIST AI RMF GOVERN 2 (roles) |
 | `not_grounded[]` | Claims that matter but that the retrieved excerpts do not support | Grounded recommendations |
 | `coverage[]` | `key`, `status` (`covered` · `not-applicable` · `not-grounded`), `justification` | Declared completeness |
 | `extension` | The agent-specific part (section 4) | The agent's normative source |
 | computed `meta`, `computed_verdict`, `contract_notes` | Schema version, record type, agent, layer, SDLC phase, the frameworks grounding the agent; the rule engine's verdict; corrections code applied | Provenance |
+| computed `pruned_citations` | Citation tags code removed because they matched no excerpt retrieved for the run, with where they were (also `PRUNED_CITATION:` lines in `contract_notes`) | Grounded recommendations, verified |
+| computed `review` | What the person at the gate did with each card: `accepted[]`, `rejected[]` and `overridden[]`, each `{id, kind, origin, title, reason_code, reason, by, at}`. A rejected card the model wrote is no longer in the active lists; an overridden computed card stays, marked (an EVR carries `review.status = overridden`) | Human oversight; accountability |
 
 ## 4. The agent extensions
 
@@ -267,11 +269,17 @@ An action takes the highest priority of the findings it answers. The overall
 status is at least `needs_attention` when any issue is open or any finding is
 high, and `blocked` when anything is blocking.
 
+The status shown is derived from the record and the decisions taken, never
+written back: once every blocking decision is taken (on the draft, or in the
+register), a blocked record reads as needing attention and says which decision
+lifted it. A blocking risk with no decision to take stays blocked until the
+stage is revised.
+
 ## 7. Identifiers
 
 | Kind | Form | Assigned by |
 |---|---|---|
-| Finding, action, issue in a record | `<agent prefix>-F<n>`, `-A<n>`, `-I<n>` with prefixes `RC`, `RR`, `SR`, `SG`, `AU` | code |
+| Finding, action, issue in a record | `<agent prefix>-F<n>`, `-A<n>`, `-I<n>` with prefixes `RC`, `RR`, `SR`, `SG`, `AU`; a finding or action keeps the id code gave it when the record is finalised again, so a reviewed card keeps its name | code |
 | Ethical value requirement | `EVR-<n>` | Requirements Reviewer rule engine |
 | Story in a record | as given, or `S<n>`; `G<n>` in the generate mode | User Story Refiner rule engine |
 | Story in the backlog | `RAI-<n>` (from requirements), `US-<n>` (product) — stable for the project | backlog register |
@@ -295,11 +303,15 @@ it) and ends with the traceability appendix and the machine block (`schema`,
 
 **Summary**
 
-1. **Summary** — status, headline, summary; the stage's own picture; four
-   figures (risks identified by priority, actions to take and how many are
-   urgent, decisions needed and how many block, one figure specific to the
-   stage); the three main issues (blocking first, then by priority); the
-   principles the findings touch.
+1. **Summary** — status with what it means here, headline (the summary paragraph
+   one click away); the stage's own picture; the figures (risks identified by
+   priority, actions to take and how many are urgent, decisions needed and how
+   many block, and — for the Requirements Reviewer — the requirements; the Risk
+   Classifier's tiers are its picture, so it shows three); **Gaps to close**
+   when the record is blocked, each blocking finding or decision with what
+   unblocks it; the risks found as compact cards, most pressing first; the
+   principles the findings touch. In the Markdown document the gaps are listed
+   under the summary.
 
 **What to do**
 
@@ -308,6 +320,12 @@ it) and ends with the traceability appendix and the machine block (`schema`,
    what shows it is done, and the findings it answers. On screen a filter shows
    one owner's share.
 3. **Open Issues** — the decisions only a person can take, with their options.
+   On screen each is taken on its card: an option (or one written by the
+   person) and why. The Risk Classifier then lists its legal obligations by
+   instrument, the Requirements Reviewer its requirements, as compact cards.
+
+Every card on screen is compact: one line closed, the detail on a click. At the
+approval gate each reviewable card carries Accept and Reject.
 
 **Deep dive** (on screen, behind a dropdown; one tab per section)
 
@@ -391,18 +409,22 @@ with.
 
 Run after every generation and again on what a person approves:
 
-| Check | Level when it fails |
-|---|---|
-| The record conforms to the schema | fail |
-| Code had to restore an upgraded verdict or a restated severity | fail |
-| Every finding has an action or an open issue (NIST AI RMF MANAGE 1) | fail for high or critical, otherwise warning |
-| Every computed identifier is accounted for, and no invented one appears | fail |
-| Citations resolve to excerpts retrieved for this run | fail |
-| Every checklist key declared | fail |
-| Engine issues carried, verdict reconciled | fail / warning |
-| Agent-specific: requirement verifiability, criterion ids, figures come from the computed set | warning / fail |
+| Check | Level when it fails | Shown to the reviewer as |
+|---|---|---|
+| The record conforms to the schema | fail | something to act on |
+| Code had to restore an upgraded verdict | fail | technical log (code corrected it) |
+| Every finding has an action or an open issue (NIST AI RMF MANAGE 1) | fail for high or critical, otherwise warning | something to act on |
+| Every computed identifier is accounted for | fail | something to act on when computed ids are missing; technical log when only invented ids appeared |
+| Citations resolve to excerpts retrieved for this run | a tag that does not is removed by code (`citations.pruned`) | technical log |
+| The reply was not cut off; no claim at all is ungrounded | fail | something to act on |
+| Every checklist key declared | fail | something to act on |
+| Engine issues carried, verdict reconciled | fail / warning | technical log; a disagreement is a decision card |
+| Agent-specific: requirement verifiability, criterion ids | warning / fail | something to act on / technical log |
 
-Checks inform and never block; the person at the gate decides.
+Checks inform and never block; the person at the gate decides. Each check code
+has a plain name, why it exists, what to do and an audience in
+`raia.validators.CHECKS`; every result is persisted with the artifact
+whatever its audience.
 
 ## 11. Editing at the approval gate
 
@@ -428,7 +450,9 @@ included in the project download.
 free-text caps; 1.2 added the Auditor's `strengths`, `opportunities`,
 `pathway_summary` and computed `opinion`; 1.3 added the generate mode's record,
 the refine mode's `evr_ids`, and the Auditor's `backlog_assessment`,
-`trajectory_comment`, `next_focus` and computed `project_state` and `progress`);
+`trajectory_comment`, `next_focus` and computed `project_state` and `progress`;
+1.4 added the computed `review` and `pruned_citations` and an EVR's computed
+`review`, and shortened the Risk Classifier's free-text caps);
 removing or renaming a field, or changing a vocabulary or the matrix, is a major
 change. Records keep the version they were written with. After any change run
 `python -m raia.contract.export_schema` and commit `docs/schema/`.

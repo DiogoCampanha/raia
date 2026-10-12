@@ -744,10 +744,15 @@ class ProjectService:
 
         return H.hands_on(self.repository(user, project_id, "view"), agent_key)
 
-    def thread(self, user: User, project_id: str) -> List[Dict[str, Any]]:
+    def thread(self, user: User, project_id: str, board: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """The Traceability thread; ``board`` (from :meth:`board`) saves re-reading the registers."""
         from . import handoff as H
 
-        return H.thread(self.repository(user, project_id, "view"))
+        repo = self.repository(user, project_id, "view")
+        if board and board.get("ready"):
+            return H.thread(repo, backlog=list((board.get("backlog") or {}).get("stories") or []),
+                            review=board.get("review") or {})
+        return H.thread(repo)
 
     def open_issues(self, user: User, project_id: str) -> List[Dict[str, Any]]:
         return self.repository(user, project_id, "view").open_issues()

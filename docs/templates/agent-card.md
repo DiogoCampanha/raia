@@ -11,12 +11,14 @@ One or two sentences: what the agent produces and for whom.
 ## 2. Place in the lifecycle
 | | |
 |---|---|
-| Layer | Product · Dev · Ops |
+| Layer | Product · Dev (· Ops, planned) |
 | SDLC phase | |
 | When to run | |
 | Requires approved | Stages that must be approved first (stage gate) |
 | Reads | Upstream artifacts it reads from the blackboard |
 | Produces | Artifact file — record type |
+| Receives | What it builds on from earlier stages, on stable identifiers |
+| Hands on | What the next stage receives from it |
 
 ## 3. Normative grounding
 | Source | Authority |
@@ -33,7 +35,9 @@ Every question is read by a rule, a retrieval facet or a check — or it does no
 - The checklist the record must declare, and the excerpts pinned.
 
 ## 6. What a person decides
-- The open-textured judgements left to people, and every open issue.
+- The open-textured judgements left to people.
+- Accept or reject each card of the draft, with a reason for each rejection.
+- Every decision the record raises, taken where it is shown.
 
 ## 7. The record it produces
 Schema version and file, identifier prefix, the extension fields (field — content),

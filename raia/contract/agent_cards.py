@@ -86,9 +86,27 @@ CHECKS: Dict[str, List[str]] = {
                 "The opinion is rated by code and never rises above the best the declared evidence allows"],
 }
 
+#: What each stage receives from earlier stages, and what it hands on (raia.handoff).
+HANDOFF: Dict[str, tuple] = {
+    "risk_classifier": ("The product answers only: it is the first stage.",
+                        "Legal obligations (codes such as `eu.art14`), the principles its risks touch, its "
+                        "open decisions."),
+    "requirements_reviewer": ("The Risk Classifier's obligations and principles — each shown addressed by a "
+                              "requirement, a control or a new EVR, or still open — and its open decisions.",
+                              "Ethical value requirements (`EVR-n`); one a reviewer overrode is not handed on."),
+    "story_refiner": ("The approved requirements, each shown with the stories that implement it, and the open "
+                      "decisions from earlier stages.",
+                      "Ethical acceptance criteria on the backlog stories (`AC-<story>-n`)."),
+    "story_generate": ("The approved requirements without a live story.",
+                       "RAI stories (`RAI-n`) in the backlog, each implementing at least one requirement."),
+    "auditor": ("The requirements, the backlog and the sprint's evidence — each requirement shown verified or "
+                "still open.",
+                "The audit verdicts that close a sprint, and the pathway forward."),
+}
+
 COMMON_CHECKS = [
     "The record conforms to the schema (one repair attempt, then a fallback record)",
-    "Every citation resolves to an excerpt retrieved for this run",
+    "Every citation resolves to an excerpt retrieved for this run; one that does not is removed by code and logged",
     "Every checklist item is declared covered, not applicable or not grounded",
     "Every finding has an action or an open issue",
     "The rule engine's issues are carried forward; the verdict is reconciled",
@@ -150,6 +168,8 @@ def card(key: str) -> str:
         f"| Requires approved | {', '.join(producers.get(u, u) for u in spec.required_upstream) or 'nothing — first stage'} |",
         f"| Reads | {', '.join(producers.get(u, u) for u in spec.upstream_keys) or 'nothing'} |",
         f"| Produces | `{ARTIFACT_FILES.get(spec.output_key, spec.output_key)}` — {RECORD_TYPES[key].lower()} |",
+        f"| Receives | {HANDOFF.get(key, ('—', '—'))[0]} |",
+        f"| Hands on | {HANDOFF.get(key, ('—', '—'))[1]} |",
         "",
         "## 3. Normative grounding",
         "",
@@ -182,7 +202,10 @@ def card(key: str) -> str:
         "## 6. What a person decides",
         "",
         *[f"- {d}" for d in docs.get("you", [])],
-        "- Every open issue the record raises, and whether to approve, edit or reject the record.",
+        "- Whether to accept or reject each card of the draft (a rejection carries a reason); cards left "
+        "unmarked are accepted as they are.",
+        "- Every decision the record raises, taken on the card where it is shown (an option and why), "
+        "and whether to approve, edit or reject the record.",
         "",
         "## 7. The record it produces",
         "",
