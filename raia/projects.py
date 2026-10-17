@@ -622,15 +622,18 @@ class ProjectService:
 
     def record_recommendation_decision(self, user: User, project_id: str, agent_key: str,
                                        candidate: Dict[str, Any], decision: str,
-                                       requirement_id: str = "", edited: bool = False) -> None:
-        """Log one person's decision on one candidate: adopted, or rejected."""
-        if decision not in ("adopted", "rejected"):
-            raise ValueError("A recommendation is adopted or rejected.")
+                                       requirement_id: str = "", edited: bool = False,
+                                       reason: str = "") -> None:
+        """Log one person's decision on one candidate: adopted, or rejected with a reason."""
+        if decision not in ("adopted", "rejected", "undone"):
+            raise ValueError("A recommendation is adopted, rejected or undone.")
+        if decision == "rejected" and not (reason or "").strip():
+            raise ValueError("Say why the recommendation is rejected.")
         repo = self.repository(user, project_id, "run")
         repo.record_event(f"recommendation_{decision}", {
             "agent": agent_key, "user": user.id, "candidate": candidate.get("id", ""),
             "addresses": candidate.get("addresses", ""), "requirement_id": requirement_id,
-            "edited": bool(edited),
+            "edited": bool(edited), "reason": (reason or "").strip()[:500],
         })
 
     def start_run(self, user: User, project_id: str, agent_key: str, inputs: Dict[str, Any]) -> dict:
@@ -695,6 +698,77 @@ class ProjectService:
         if ok:
             repo.record_event("issue_arbitrated", {"user": user.id, "issue": issue_id, "status": status})
         return ok
+
+    def decide_issue(self, user: User, project_id: str, issue_id: str, choice: str, rationale: str) -> bool:
+        """A person takes a decision on a register entry: the option chosen, and why."""
+        choice, rationale = " ".join((choice or "").split()), " ".join((rationale or "").split())
+        if not choice:
+            raise ValueError("Choose an option, or write the decision.")
+        if not rationale:
+            raise ValueError("Say why: one line is enough.")
+        repo = self.repository(user, project_id, "review")
+        ok = repo.set_issue_status(issue_id, "decided", rationale, user.label, decision=choice)
+        if ok:
+            repo.record_event("issue_decided", {"user": user.id, "issue": issue_id, "where": "output"})
+        return ok
+
+    def reopen_issue(self, user: User, project_id: str, issue_id: str) -> bool:
+        """Undo a decision (owners only): the issue is open again."""
+        repo = self.repository(user, project_id, "manage")
+        ok = repo.set_issue_status(issue_id, "open", "", user.label)
+        if ok:
+            repo.record_event("issue_reopened", {"user": user.id, "issue": issue_id})
+        return ok
+
+    # -- Hand-off between stages (read only; see raia.handoff) --------------------------------
+
+    def handoff(self, user: User, project_id: str, agent_key: str, draft: Optional[Dict[str, Any]] = None,
+                computed: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        from . import handoff as H
+
+        return H.inherited(self.repository(user, project_id, "view"), agent_key, draft, computed)
+
+    def handoff_delta(self, user: User, project_id: str, agent_key: str, draft: Dict[str, Any],
+                      computed: Dict[str, Any]) -> Dict[str, Any]:
+        """What a draft changes against the approved version of the same stage."""
+        from . import handoff as H
+        from .agents import RUNNABLE
+
+        repo = self.repository(user, project_id, "view")
+        key = RUNNABLE[agent_key].spec.output_key
+        prev = (repo.read_data(key) or {}).get("structured") or {}
+        return H.delta(agent_key, prev.get("record") or {}, prev, draft, computed) if prev else {}
+
+    def hands_on(self, user: User, project_id: str, agent_key: str) -> str:
+        from . import handoff as H
+
+        return H.hands_on(self.repository(user, project_id, "view"), agent_key)
+
+    def thread(self, user: User, project_id: str, board: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """The Traceability thread; ``board`` (from :meth:`board`) saves re-reading the registers."""
+        from . import handoff as H
+
+        repo = self.repository(user, project_id, "view")
+        if board and board.get("ready"):
+            return H.thread(repo, backlog=list((board.get("backlog") or {}).get("stories") or []),
+                            review=board.get("review") or {})
+        return H.thread(repo)
+
+    def open_issues(self, user: User, project_id: str) -> List[Dict[str, Any]]:
+        return self.repository(user, project_id, "view").open_issues()
+
+    def save_review(self, user: User, project_id: str, agent_key: str, review: Dict[str, Any]) -> None:
+        """Keep a reviewer's card verdicts and decisions with the draft waiting for review.
+
+        Only the draft's stored copy changes, so a restored review keeps them;
+        nothing reaches an artifact or the register until the draft is approved.
+        """
+        repo = self.repository(user, project_id, "review")
+        pending = repo.load_pending(agent_key)
+        if pending is None:
+            return
+        pending["review"] = review
+        repo.save_pending(agent_key, pending)
 
     # -- Backlog, sprints and roadmap ------------------------------------------------------------
     #
@@ -1011,6 +1085,7 @@ class ProjectService:
         """Store one tester assessment (final submission). A pending draft is discarded."""
         body = dict(payload)
         body["status"] = "submitted"
+        body["build"] = config.build_id()
         with self.db.tx() as t:
             self._delete_drafts(t, user)
             t.execute(

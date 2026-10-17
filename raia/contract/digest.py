@@ -824,49 +824,12 @@ def audit_report(record: Dict[str, Any], data: Dict[str, Any], actions: Sequence
             "project": project_sections(record, data)}
 
 
-def _drift(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, Any]):
-    alerts = ext.get("alerts") or []
-    plan = ext.get("response_plan") or {}
-    adequacy = [str(x) for x in ext.get("sample_adequacy") or [] if str(x).strip()]
-    sev = [a.get("severity") for a in alerts]
-    worst = next((s for s in ("high", "medium", "low") if s in sev), None)
-    v = record.get("computed_verdict") or {}
-    cards = [card(id=str(a.get("window", "")), title=f"{str(a.get('severity') or '').capitalize()} severity",
-                  tone=tone_of_priority(a.get("severity")), body=str(a.get("meaning_for_affected_people") or ""),
-                  cites=a.get("citations") or []) for a in alerts]
-    fair_blocks = [_text("Trend", ext.get("trend_interpretation")), _text("Representativeness", ext.get("representativeness")),
-                   {"type": "text", "label": "Sample adequacy", "text": "" if adequacy else "No concern declared."}]
-    if adequacy:
-        fair_blocks.append({"type": "bullets", "items": adequacy})
-    sections = [
-        {"key": "alerts", "title": "Drift alerts", "md_title": "Drift Alerts",
-         "conclusion": (f"{plural(len(alerts), 'window')} breached the threshold; highest severity {worst}."
-                        if alerts else "No window breached the threshold."),
-         "blocks": [{"type": "cards", "items": cards}] if cards else [{"type": "note", "text": "None."}]},
-        {"key": "fairness", "title": "Fairness", "md_title": "Fairness & Representativeness Analysis",
-         "conclusion": first_sentence(ext.get("trend_interpretation")) or "No trend interpretation was provided.",
-         "blocks": fair_blocks},
-        {"key": "response", "title": "Response plan", "md_title": "Response Plan",
-         "conclusion": first_sentence(plan.get("deactivation_criteria")) or first_sentence(plan.get("escalation_path"))
-                       or "No response plan was provided.",
-         "blocks": [_text("Escalation path", plan.get("escalation_path")),
-                    _text("Rollback and deactivation criteria", plan.get("deactivation_criteria")),
-                    _text("Feedback from users and affected communities", plan.get("affected_community_feedback")),
-                    _text("Recovery and communication", plan.get("recovery_and_communication"))]},
-    ]
-    kpi = {"label": "Drift alerts", "value": len(alerts),
-           "hint": f"trend {label(v.get('trend') or 'unknown')}, {plural(int(v.get('windows') or 0), 'window')}",
-           "tone": tone_of_priority(worst) if worst else "ok"}
-    return sections, kpi
-
-
 AGENT_SECTIONS = {
     "risk_classifier": _risk,
     "requirements_reviewer": _requirements,
     "story_refiner": _stories,
     "story_generate": _generated,
     "auditor": _audit,
-    "drift_monitor": _drift,
 }
 
 #: The Markdown heading of each agent's own sections, in order. The contract's
@@ -880,7 +843,6 @@ AGENT_MD_SECTIONS: Dict[str, List[str]] = {
     "auditor": ["Audit Opinion", "Where the Project Stands", "Progress Across Sprints", "Is the Backlog Enough",
                 "What Comes Next", "Strengths", "Risks", "Opportunities", "Pathway Forward",
                 "Verdict Register", "Accountability Documentation"],
-    "drift_monitor": ["Drift Alerts", "Fairness & Representativeness Analysis", "Response Plan"],
 }
 
 
@@ -891,14 +853,12 @@ AGENT_MD_SECTIONS: Dict[str, List[str]] = {
 # Every agent reads the same way, but each answers a different question, and
 # its summary opens with the picture of that answer: where the product sits on
 # the legal risk scales, which principles the requirements cover, how each
-# story came out, what the audit could verify, how the fairness gap moved
-# across windows. Only facts code computed (or the record's own verdict
+# story came out, what the audit could verify. Only facts code computed (or the record's own verdict
 # fields) are drawn; tones keep their shared meaning. Kinds:
 #
 # ``scale``   ``{"rows": [{"label", "steps": [str], "active": int, "tone", "note"}]}``
 # ``cells``   ``{"cells": [{"label", "state", "tone"}]}``
 # ``split``   ``{"segments": [{"label", "value": int, "tone"}]}`` — parts of one whole
-# ``series``  ``{"points": [{"label", "value": float, "tone", "note"}], "threshold": float, "unit"}``
 
 EU_STEPS = ["Minimal", "Limited", "High", "Prohibited"]
 BR_STEPS = ["Not listed", "High", "Excessive"]
@@ -1007,22 +967,6 @@ def _sig_audit(ext, data, record) -> Optional[Dict[str, Any]]:
             "caption": f"{plural(len(items), 'item')} audited. When in doubt an item stays Not verified."}
 
 
-def _sig_drift(ext, data, record) -> Optional[Dict[str, Any]]:
-    windows = ((data.get("analysis") or {}).get("windows")) or []
-    points = [w for w in windows if isinstance(w.get("dp_difference"), (int, float))]
-    if not points:
-        return None
-    threshold = ((data.get("thresholds") or {}).get("parity_difference") or {}).get("value")
-    trend = ((data.get("analysis") or {}).get("trend") or {}).get("direction")
-    return {"kind": "series", "title": "Parity gap by window",
-            "threshold": threshold, "unit": "",
-            "points": [{"label": str(w.get("window")), "value": float(w["dp_difference"]),
-                        "tone": "high" if w.get("parity_breach") else "ok",
-                        "note": "breach" if w.get("parity_breach") else ""} for w in points],
-            "caption": "Demographic-parity difference computed from the telemetry"
-                       + (f"; the trend is {trend}." if trend else ".")}
-
-
 def _sig_generated(ext, data, record) -> Optional[Dict[str, Any]]:
     scope = data.get("scope") or []
     if not scope:
@@ -1051,7 +995,6 @@ SIGNATURES = {
     "story_refiner": _sig_stories,
     "story_generate": _sig_generated,
     "auditor": _sig_audit,
-    "drift_monitor": _sig_drift,
 }
 
 
@@ -1080,11 +1023,6 @@ def signature_text(sig: Optional[Dict[str, Any]]) -> str:
         body = "; ".join(f"{c['label']}: {c['state']}" for c in sig["cells"])
     elif kind == "split":
         body = " · ".join(f"{s['label']} {s['value']}" for s in sig["segments"])
-    elif kind == "series":
-        thr = sig.get("threshold")
-        body = ((f"threshold {thr:g} — " if isinstance(thr, (int, float)) else "")
-                + " · ".join(f"{p['label']}: {p['value']:g}" + (f" ({p['note']})" if p["note"] else "")
-                             for p in sig["points"]))
     else:
         return ""
     return f"**{sig['title']}** — {body}. {sig.get('caption', '')}".strip()
@@ -1095,16 +1033,29 @@ def signature_text(sig: Optional[Dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Everything the three tiers show, in reading order."""
+def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[str, Any]] = None,
+          taken: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Everything the three tiers show, in reading order.
+
+    ``taken`` maps a decision's wording key (:func:`raia.contract.review.issue_key`)
+    to the decision a person took — on the draft, or in the register. Taken
+    decisions are marked on their cards, leave Gaps to close, and can lift a
+    Blocked status (:func:`raia.contract.review.effective_status`).
+    """
+    from . import review as RV
+
     record = record or {}
     data = computed_data or {}
+    taken = taken or {}
     findings = record.get("findings") or []
     blocking_findings = {f.get("id") for f in findings if f.get("blocking")}
     actions = [_action_view(a, blocking_findings) for a in record.get("actions") or []]
     actions.sort(key=lambda a: (-int(a["blocking"]), -priority_rank(a["priority"])))
     decisions = [_decision_view(i) for i in record.get("open_issues") or []]
-    decisions.sort(key=lambda d: -int(d["blocking"]))
+    for d, i in zip(decisions, record.get("open_issues") or []):
+        d["key"] = RV.issue_key(i)
+        d["taken"] = taken.get(d["key"])
+    decisions.sort(key=lambda d: (bool(d["taken"]), -int(d["blocking"])))
 
     status = record.get("overall_status") or "needs_attention"
     headline = str(record.get("headline") or "").strip() or first_sentence(record.get("summary"))
@@ -1117,7 +1068,9 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
         record.get("extension") or {}, data, record)
     for s in agent_sections:
         s.setdefault("group", "analysis")
-    kpis = _kpis_common(findings, actions, decisions) + ([agent_kpi] if agent_kpi else [])
+    # The Risk Classifier's tiers are its signature; a fourth tile would repeat them.
+    kpis = _kpis_common(findings, actions, decisions) + (
+        [agent_kpi] if agent_kpi and agent_key != "risk_classifier" else [])
 
     principles: Dict[str, int] = {}
     for f in findings:
@@ -1139,12 +1092,20 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
                        + "; ".join(str(e) for e in record["schema_errors"][:8]))
 
     meta = record.get("meta") or {}
+    effective, was = RV.effective_status(record, set(taken))
+    gap_list = gaps(findings, actions, [d for d in decisions if not d["taken"]]) if effective == "blocked" else []
+    status_v = status_view(effective, len(gap_list))
+    if was:
+        status_v["was"] = was
     return {
         "signature": signature(agent_key, record, data),
         "agent_key": agent_key,
         "meta": meta,
-        "status": {"key": status, "label": V.STATUS_LABELS.get(status, label(status)),
-                   "tone": STATUS_TONE.get(status, "neutral")},
+        "status": status_v,
+        "gaps": gap_list,
+        "findings": _findings_sorted(findings),
+        "obligations": obligation_groups(record, data) if agent_key == "risk_classifier" else [],
+        "evrs": list((record.get("extension") or {}).get("evrs") or []) if agent_key == "requirements_reviewer" else [],
         "headline": headline,
         "summary": summary,
         "kpis": kpis,
@@ -1163,6 +1124,58 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
         "story_counts": story_counts(stories) if agent_key in STORY_KEYS else {},
         "report": audit_report(record, data, actions, decisions) if agent_key == "auditor" else {},
     }
+
+
+def gaps(findings: Sequence[Dict[str, Any]], actions: Sequence[Dict[str, Any]],
+         decisions: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """What makes a record Blocked, each with what unblocks it.
+
+    Read only from what code already marks blocking: a blocking finding (with
+    the actions that answer it) and a blocking decision. Nothing is judged here.
+    """
+    out: List[Dict[str, Any]] = []
+    for f in _findings_sorted(findings):
+        if not f.get("blocking"):
+            continue
+        answers = [a["id"] for a in actions if f.get("id") in a["findings"]]
+        deciding = [d["id"] for d in decisions if f.get("id") in d["links"]]
+        if answers:
+            unblock = "Do " + " and ".join(answers) + (", or take decision " + ", ".join(deciding) if deciding else "")
+        elif deciding:
+            unblock = "Take decision " + " or ".join(deciding)
+        else:
+            unblock = "Nothing answers it yet: add an action in Edit the record, or reject the card with a reason."
+        out.append({"kind": "finding", "id": f.get("id", ""), "title": str(f.get("title") or "").rstrip("."),
+                    "tone": "critical", "unblock": unblock + ("." if not unblock.endswith(".") else "")})
+    for d in decisions:
+        if d["blocking"]:
+            out.append({"kind": "decision", "id": d["id"], "title": first_sentence(d["text"]).rstrip("."),
+                        "tone": "critical", "unblock": f"Take decision {d['id']}."})
+    return out
+
+
+def status_view(status: str, n_blocking: int) -> Dict[str, Any]:
+    """The overall status as shown: label, tone and what it means here."""
+    help_text = V.STATUS_HELP.get(status, "")
+    if status == "blocked":
+        help_text = (f"{plural(n_blocking, 'item')} must be resolved before this product can go ahead as described. "
+                     "They are listed under Gaps to close, each with what unblocks it.") if n_blocking else (
+            "Something in this record was marked blocking. See Gaps to close.")
+    return {"key": status, "label": V.STATUS_LABELS.get(status, label(status)),
+            "tone": STATUS_TONE.get(status, "neutral"), "help": help_text, "blocking": n_blocking}
+
+
+def obligation_groups(record: Dict[str, Any], data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The computed legal obligations grouped by instrument, with the agent's note on each."""
+    notes = {o.get("code"): o for o in (record.get("extension") or {}).get("obligations") or []}
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for o in data.get("obligations") or []:
+        where = "EU AI Act" if str(o.get("jurisdiction")).upper() == "EU" else "PL 2338/2023"
+        n = notes.get(o.get("code"), {})
+        groups.setdefault(where, []).append({
+            "code": o.get("code", ""), "title": o.get("title", ""),
+            "meaning": n.get("meaning_for_this_product", ""), "cites": list(n.get("citations") or [])})
+    return [{"title": k, "items": v} for k, v in groups.items()]
 
 
 def owner_counts(digest: Dict[str, Any]) -> Dict[str, int]:

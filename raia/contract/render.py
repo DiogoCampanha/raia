@@ -20,8 +20,8 @@ Declared Coverage, Verdict Reconciliation). The screen and the document draw
 the same digest (:mod:`raia.contract.digest`), so they cannot drift apart.
 
 The agent's own sections are named after what its normative source produces (a
-value register and ethical value requirements, a sprint ethics log, drift
-alerts and a response plan). Nothing in the Markdown is written by the model
+value register and ethical value requirements, a sprint ethics log, an
+audit opinion). Nothing in the Markdown is written by the model
 directly; it is all a view of fields that were validated first.
 """
 
@@ -294,8 +294,13 @@ def markdown_from_digest(dg: Dict[str, Any]) -> Dict[str, str]:
 
     kpis = dg["kpis"]
     summary = [f"**{dg['status']['label']}** — {dg['headline']}".rstrip(" —")]
+    if dg["status"].get("help"):
+        summary += ["", f"_{dg['status']['help']}_"]
     if dg["summary"]:
         summary += ["", dg["summary"]]
+    if dg.get("gaps"):
+        summary += ["", "**Gaps to close**", ""]
+        summary += [f"- **{g['id']}** — {cell(g['title'])}. _Unblocks it:_ {g['unblock']}" for g in dg["gaps"]]
     if dg.get("signature"):
         summary += ["", D.signature_text(dg["signature"])]
     summary += ["", table([k["label"] for k in kpis], [[f"{k['value']} — {k['hint']}" for k in kpis]])]

@@ -1,5 +1,5 @@
 {
-  "$id": "raia-record/1.3/story_generate",
+  "$id": "raia-record/1.4/story_generate",
   "title": "StoryGenerateRecord",
   "$defs": {
     "AcceptanceCriterion": {
@@ -718,6 +718,36 @@
       },
       "title": "Coverage",
       "type": "array"
+    },
+    "review": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "computed": true,
+      "default": null,
+      "title": "Review"
+    },
+    "pruned_citations": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "computed": true,
+      "default": null,
+      "title": "Pruned Citations"
     },
     "extension": {
       "$ref": "#/$defs/RaiBacklogExt"

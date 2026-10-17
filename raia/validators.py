@@ -17,6 +17,22 @@ rather than a hope.
 Validators never block. They inform the human, who remains the checkpoint —
 a failed check on an otherwise sound draft is a reason to look closely, not a
 reason for the software to overrule a person.
+
+**Who sees what.** Most checks guard against something code then corrects on
+its own (a citation to an excerpt that was not retrieved is removed, an
+upgraded verdict is restored, an over-long value is shortened). Shown to the
+reviewer as warnings, those read as alarms about things already handled. Each
+check code therefore has an *audience* (:data:`CHECKS`, :func:`audience`):
+
+* ``act``      — the reviewer should do something; shown above the draft as an
+                 instruction;
+* ``handled``  — code already dealt with it; kept in the technical log and in
+                 provenance, not shown as a warning;
+* ``decision`` — already a decision card the reviewer takes (a disagreement
+                 with the rule engine); not repeated;
+* ``passed``   — counted in one line, explained on request.
+
+Every check still runs and every result is still persisted with the artifact.
 """
 
 import re
@@ -104,6 +120,158 @@ class ValidationReport:
             "headline": self.headline(),
             "items": [i.to_dict() for i in self.items],
         }
+
+
+# ---------------------------------------------------------------------------
+# What each check is for, and who it is shown to
+# ---------------------------------------------------------------------------
+
+ACT = "act"
+HANDLED = "handled"
+DECISION = "decision"
+PASSED = "passed"
+
+#: One entry per check code (or ``*.suffix`` for a family): a plain name, why
+#: the check exists, what a reviewer should do when it trips, and its audience
+#: when it does not pass.
+CHECKS: Dict[str, Dict[str, str]] = {
+    # The reviewer acts on these.
+    "contract.schema_invalid": {
+        "name": "The reply could not be read", "audience": ACT,
+        "why": "RAIA only shows analysis that fits its standard record.",
+        "todo": "Reject and regenerate: nothing in this draft can be relied on."},
+    "output.truncated": {
+        "name": "The reply was cut off", "audience": ACT,
+        "why": "A reply stopped at the token limit can look finished while parts are missing.",
+        "todo": "Reject and regenerate."},
+    "output.maybe_truncated": {
+        "name": "The reply may have been cut off", "audience": ACT,
+        "why": "A reply stopped at the token limit can look finished while parts are missing.",
+        "todo": "Check that the last sections are complete; if not, reject and regenerate."},
+    "citations.absent": {
+        "name": "No claim is tied to a source", "audience": ACT,
+        "why": "Every normative claim must rest on an excerpt RAIA retrieved for this run.",
+        "todo": "Reject and regenerate."},
+    "findings.unanswered": {
+        "name": "Risks without a response", "audience": ACT,
+        "why": "Every identified risk needs an action, a transfer or a recorded acceptance (NIST AI RMF MANAGE 1).",
+        "todo": "Add an action in Edit the record, or reject the risk card with a reason."},
+    "actions.unlinked": {
+        "name": "Actions that answer no risk", "audience": ACT,
+        "why": "An action's priority comes from the risks it answers; unlinked, it defaults to medium.",
+        "todo": "Link it to a finding in Edit the record, or reject the action card."},
+    "findings.none": {
+        "name": "No risks found", "audience": ACT,
+        "why": "A stage that finds nothing at all is unusual.",
+        "todo": "Check that the answers describe the product; if not, correct them and run again."},
+    "coverage.incomplete": {
+        "name": "Checklist items left unaddressed", "audience": ACT,
+        "why": "Each stage must say, item by item, what it covered, so silence is visible.",
+        "todo": "Open the deep dive's Coverage; if a missing item matters, reject and regenerate."},
+    "*.mismatch": {
+        "name": "Computed items the agent skipped", "audience": ACT,
+        "why": "The rule engine lists the items the agent must address: obligations, requirements, stories.",
+        "todo": "Reject and regenerate, or add what is missing in Edit the record."},
+    "evr.unverifiable": {
+        "name": "Requirements that cannot be tested", "audience": ACT,
+        "why": "A requirement needs a measurable fit criterion, or nobody can show later that it is met.",
+        "todo": "Make the fit criterion measurable in Edit the record, or reject the card."},
+    "seed.unlinked": {
+        "name": "Stories that implement no requirement", "audience": ACT,
+        "why": "A generated story exists to implement an approved requirement.",
+        "todo": "Leave those stories out in Edit the record, or reject and regenerate."},
+    "seed.per_requirement": {
+        "name": "Many stories for one requirement", "audience": ACT,
+        "why": "More than three stories for one requirement is usually duplication.",
+        "todo": "Leave the extra stories out in Edit the record."},
+    # Already a decision card.
+    "verdict.disagreement": {
+        "name": "The agent disagrees with the rule engine", "audience": DECISION,
+        "why": "Disagreement is escalated to a person, never averaged away.",
+        "todo": "Take the decision on the card."},
+    # Code already handled these: technical log only.
+    "citations.pruned": {
+        "name": "Unsupported citations removed", "audience": HANDLED,
+        "why": "A citation must match an excerpt retrieved for this run; one that does not is a fabricated ground."},
+    "citations.unresolved": {
+        "name": "Citations that match no excerpt", "audience": HANDLED,
+        "why": "A citation must match an excerpt retrieved for this run."},
+    "verdicts.upgraded": {
+        "name": "An unsupported verdict was restored", "audience": HANDLED,
+        "why": "The model may lower a computed verdict, never raise it without evidence."},
+    "severity.altered": {
+        "name": "A computed severity was restored", "audience": HANDLED,
+        "why": "Severities the rule engine computes are not the model's to change."},
+    "strengths.unsupported": {
+        "name": "Unsupported strengths removed", "audience": HANDLED,
+        "why": "A strength needs a satisfied item or an approval on record, as a verdict does."},
+    "contract.shortened": {
+        "name": "Long values shortened", "audience": HANDLED,
+        "why": "Values over a length limit are cut at a sentence end instead of discarding the reply."},
+    "contract.corrected": {
+        "name": "Corrections applied by code", "audience": HANDLED,
+        "why": "Identifiers, links and statuses the model got wrong are put right by code."},
+    "criteria.ids": {
+        "name": "Criterion identifiers", "audience": HANDLED,
+        "why": "Criteria are labelled AC-<story>-<n> so they can be traced."},
+    "references.unknown": {
+        "name": "Unknown identifiers", "audience": HANDLED,
+        "why": "Only identifiers in the computed registers count."},
+    "sections.missing": {
+        "name": "Output structure", "audience": HANDLED,
+        "why": "The document is rendered from the record, so its sections follow the standard layout."},
+    "coverage.declined": {
+        "name": "Items declared not applicable", "audience": HANDLED,
+        "why": "The stage said, with a reason, that some checklist items do not apply or cannot be grounded."},
+    "open_issues.dropped": {
+        "name": "Engine issues carried forward", "audience": HANDLED,
+        "why": "Issues the rule engine raised are carried into the record by code, whatever the model wrote."},
+    "open_issues.partial": {
+        "name": "Engine issues carried forward", "audience": HANDLED,
+        "why": "Issues the rule engine raised are carried into the record by code, whatever the model wrote."},
+    "verdict.undeclared": {
+        "name": "Verdict not declared", "audience": HANDLED,
+        "why": "The computed verdict stands when the agent does not state its own."},
+    "seed.cards": {
+        "name": "Card selection", "audience": HANDLED,
+        "why": "Only the cards a story's capabilities select are in scope for it."},
+}
+
+#: Shown above the list of checks, so a person knows what they are for.
+CHECKS_PURPOSE = ("RAIA checks every draft for invented sources, invented identifiers and verdicts the "
+                  "model was not allowed to change, and corrects what it can on its own. Checks never "
+                  "block approval: they tell you where to look.")
+
+
+def check_info(code: str) -> Dict[str, str]:
+    """The catalogue entry for a check code (a family entry for ``x.mismatch``)."""
+    code = str(code or "")
+    if code in CHECKS:
+        return CHECKS[code]
+    family = "*." + code.rsplit(".", 1)[-1]
+    return CHECKS.get(family, {"name": "", "why": "", "audience": HANDLED})
+
+
+def audience(item: Dict[str, Any]) -> str:
+    """Who a check result is for: act, handled, decision or passed."""
+    if item.get("level") == PASS:
+        return PASSED
+    code = str(item.get("code") or "")
+    aud = check_info(code).get("audience", HANDLED)
+    if code.endswith(".mismatch") and not any(str(x).startswith("missing:") for x in item.get("items") or []):
+        # Only identifiers the agent invented: code ignores them.
+        return HANDLED
+    return aud
+
+
+def partition(validation: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+    """A validation report's items grouped by audience, each with its catalogue entry."""
+    out: Dict[str, List[Dict[str, Any]]] = {ACT: [], HANDLED: [], DECISION: [], PASSED: []}
+    for item in (validation or {}).get("items") or []:
+        info = check_info(item.get("code", ""))
+        out[audience(item)].append({**item, "name": info.get("name") or item.get("title", ""),
+                                    "why": info.get("why", ""), "todo": info.get("todo", "")})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -316,38 +484,6 @@ def check_reconciliation(draft: str, verdict: Dict[str, Any], keys: Sequence[str
         "verdict.agrees", PASS, "Verdict reconciliation",
         "The agent's verdict matches the rule engine's on every checked key.",
     )
-
-
-def check_numbers(draft: str, allowed: Iterable[str], label: str = "Reported figures") -> ValidationItem:
-    """Every number in the narrative must come from the computed set.
-
-    Applies where metrics are computed by code and the model only interprets
-    them. Years, counts of items, and section numbers are excluded so the check
-    stays about *metric values*.
-    """
-    allowed_set = {_norm(str(a)) for a in allowed}
-    body = strip_machine_block(draft or "")
-    body = re.sub(r"\[\s*Source\s*:[^\]]+\]", "", body)
-    invented: List[str] = []
-    for m in NUMBER_RE.finditer(body):
-        raw = m.group(1)
-        norm = _norm(raw.replace(",", "."))
-        if norm in allowed_set or _norm(raw) in allowed_set:
-            continue
-        # Ignore integers that are plainly not metric values.
-        if re.fullmatch(r"\d{1,4}", raw) and "." not in raw:
-            continue
-        invented.append(raw)
-
-    if invented:
-        return ValidationItem(
-            "numbers.invented", FAIL, label,
-            "The draft contains numeric values that are not in the set computed by code. "
-            "Metric values must never be produced by the model.",
-            sorted(set(invented)),
-        )
-    return ValidationItem("numbers.match", PASS, label,
-                          "Every figure in the draft comes from the computed set.")
 
 
 def check_traceability(draft: str, required_ids: Sequence[str], label: str,

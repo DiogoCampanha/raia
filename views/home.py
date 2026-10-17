@@ -3,7 +3,7 @@
 import streamlit as st
 
 from raia.agents import AGENTS
-from raia.examples import EXAMPLES
+from raia.examples import CASES, EXAMPLE_KEY
 from raia.lineage import next_steps
 from raia.ui import routes
 from raia.ui.components import (empty_state, page_header, risk_badge, role_badge, rule, stat_tiles,
@@ -22,15 +22,17 @@ page_header(
 show_flash()
 
 
-def _seed_demo():
+def _seed_demo(case: str):
+    """A project whose every form is pre-filled with one example case, which it remembers."""
+    c = CASES[case]
     proj = svc.create_project(
-        user, "Demo — resume screening",
-        "A worked example: an AI system that ranks job applicants. Every stage's form is "
+        user, c["project_name"],
+        f"A worked example: {c['summary'][0].lower()}{c['summary'][1:]} Every stage's form is "
         "pre-filled, so you can walk the whole pipeline in about 20 minutes.",
     )
-    for agent_key, values in EXAMPLES.items():
+    for agent_key, values in c["agents"].items():
         if agent_key in AGENTS:
-            svc.save_intake(user, proj.id, agent_key, values)
+            svc.save_intake(user, proj.id, agent_key, {**values, EXAMPLE_KEY: case})
     return proj
 
 
@@ -135,14 +137,20 @@ with st.expander("New project", icon=I.ADD, expanded=not projects):
                 routes.go(routes.PROJECT, id=p.id)
             except ValueError as exc:
                 st.error(str(exc))
-    st.caption("New to RAIA? Start from a pre-filled example instead.")
-    if st.button("Create the demo project", key="demo_project", icon=I.DEMO):
-        p = _seed_demo()
-        flash("Demo project created. Every form is pre-filled.")
-        routes.go(routes.PROJECT, id=p.id)
+    st.caption("New to RAIA? Start from a pre-filled example instead. Two cases sit at opposite ends "
+               "of the risk scales; try one, then the other.")
+    cols = st.columns(len(CASES), gap="small")
+    for col, (case, c) in zip(cols, CASES.items()):
+        with col, st.container(border=True, height="stretch"):
+            st.markdown(f"**{c['title']}**")
+            st.caption(f"{c['summary']} {c['shows']}")
+            if st.button("Create this demo project", key=f"demo_project_{case}", icon=I.DEMO):
+                p = _seed_demo(case)
+                flash("Demo project created. Every form is pre-filled.")
+                routes.go(routes.PROJECT, id=p.id)
 
 if not projects:
-    empty_state("No projects yet", "Create a project or the demo project above, or accept an "
+    empty_state("No projects yet", "Create a project or one of the demo projects above, or accept an "
                 "invitation from a colleague.")
     st.stop()
 

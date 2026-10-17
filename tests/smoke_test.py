@@ -38,7 +38,6 @@ os.environ["RAIA_CHROMA_DIR"] = str(Path(_tmp) / "chroma")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from raia.agents import AGENTS                                  # noqa: E402
-from raia.agents.drift_monitor import compute_fairness_summary  # noqa: E402
 from raia.examples import EXAMPLES                              # noqa: E402
 from raia.export import session_bundle                          # noqa: E402
 from raia.pipeline import StageRunner                           # noqa: E402
@@ -123,7 +122,10 @@ def main() -> None:
           "employment scenario computed as high-risk")
     check(len(payload["evidence"]) > 0 and any(e["pinned"] for e in payload["evidence"]),
           "the gate is given its evidence, including the required excerpts")
-    check(payload["validation"]["level"] == "pass", "automated checks pass on the mock draft")
+    from raia import validators as VAL
+
+    act = [(i["code"], i["items"][:3]) for i in VAL.partition(payload["validation"])[VAL.ACT]]
+    check(not act, f"the mock draft leaves the reviewer nothing to act on ({act or 'nothing'})")
 
     repo = ArtifactRepository(PROJECT)
     check(repo.read_artifact("risk_classification") is None,
@@ -162,9 +164,20 @@ def main() -> None:
     check(repo.set_issue_status(issues[0]["id"], RESOLVED, "settled by legal", "smoke-tester"),
           "an issue can be arbitrated")
     check(repo.open_issues()[0]["status"] == RESOLVED, "arbitration is recorded")
+    first = repo.open_issues()[0]
+    repo.append_open_issues([{"description": first["text"], "decision": {"choice": "x", "rationale": "y"}}], "t")
+    check(repo.open_issues()[0]["status"] == RESOLVED, "a settled issue is not decided again by a later draft")
+    repo.append_open_issues([{"description": "A brand-new question.", "type": "value_tradeoff",
+                              "decision": {"choice": "Option A", "rationale": "Because", "by": "Ana"}}], "smoke")
+    new = next(i for i in repo.open_issues() if i["text"] == "A brand-new question.")
+    check(new["status"] == "decided" and new["decision"] == "Option A" and new["decided_by"] == "Ana",
+          "a decision taken on a draft reaches the register already decided")
+    check(repo.set_issue_status(new["id"], OPEN, by="owner") and
+          next(i for i in repo.open_issues() if i["id"] == new["id"]).get("decision") is None,
+          "a decision can be reopened, and its record is cleared")
 
-    print("== 9. The remaining four agents ==")
-    for key in ("requirements_reviewer", "story_refiner", "auditor", "drift_monitor"):
+    print("== 9. The remaining agents ==")
+    for key in ("requirements_reviewer", "story_refiner", "auditor"):
         out = runner.start(PROJECT, key, EXAMPLES[key])
         payload = out["payload"]
         level = payload["validation"]["level"]
@@ -190,6 +203,19 @@ def main() -> None:
     fake = "## Risk Classification\nHigh risk. [Source: EU AI Act — Article 99 | authority: legal]"
     report = V.check_citations(fake, NormativeRetriever.citation_index(chunks))
     check(report.level == V.FAIL, "a citation to an excerpt that was not retrieved is flagged")
+    from raia.contract import assemble as A
+
+    evidence = [{"citation": c, "authority": "legal"} for c in NormativeRetriever.citation_index(chunks)]
+    forged = {"summary": "s", "overall_status": "on_track", "agrees_with_rule_engine": True,
+              "findings": [{"id": "F1", "title": "t", "statement": "x", "principle": "fairness",
+                            "nist_category": "MAP 5", "magnitude": "limited", "likelihood": "possible",
+                            "placement_rationale": "r",
+                            "citations": ["[Source: EU AI Act — Article 99 | authority: legal]"]}],
+              "actions": [], "open_issues": [], "coverage": [], "extension": {}}
+    kept = A.finalize("risk_classifier", forged, empty_rationale("t"), evidence, agent.spec)
+    check(not kept["findings"][0]["citations"], "INVARIANT: code removes a fabricated citation from the record")
+    check(any(n.startswith("PRUNED_CITATION:") for n in kept["contract_notes"]),
+          "INVARIANT: …and records the removal in the record's provenance notes")
 
     print("== 12. Restart recovery still goes through the gate ==")
     fresh = ArtifactRepository("restart-project")
@@ -208,12 +234,7 @@ def main() -> None:
                         "approver": "smoke-tester"})
     check(bool(done["commit"]), "the restored review can then be approved normally")
 
-    print("== 13. Deterministic metrics stay reproducible ==")
-    table = compute_fairness_summary(EXAMPLES["drift_monitor"]["telemetry_csv"])
-    # Widest gap in the final window of the example: gender=M 0.39 vs gender=X 0.21.
-    check("| Window |" in table and "0.1800" in table, "fairness table computed outside the UI")
-
-    print("== 14. Audit trail and export ==")
+    print("== 13. Audit trail and export ==")
     history = repo.history()
     check(len(history) >= 6, f"{len(history)} commits recorded")
     events = [e["kind"] for e in repo.events()]
@@ -221,7 +242,7 @@ def main() -> None:
     bundle = session_bundle(repo)
     check(len(bundle) > 1000 and bundle[:2] == b"PK", "session export produces a zip")
 
-    print("== 15. The standard record ==")
+    print("== 14. The standard record ==")
     from raia.contract import SCHEMA_VERSION
     from raia.contract import actions as action_plan
     import io as _io
@@ -245,7 +266,7 @@ def main() -> None:
     names = _zip.ZipFile(_io.BytesIO(session_bundle(repo))).namelist()
     check("action_plan.csv" in names and "action_plan.json" in names, "the export contains the action plan")
 
-    print("== 16. A reviewer edits the record, not the prose ==")
+    print("== 15. A reviewer edits the record, not the prose ==")
     out = runner.start("edit-project", "risk_classifier", EXAMPLES["risk_classifier"])
     payload = out["payload"]
     try:
@@ -271,7 +292,7 @@ def main() -> None:
     check("Edited by the reviewer." in (erepo.read_artifact("risk_classification") or ""),
           "the approved document is re-rendered from the edited record")
 
-    print("== 17. A reply that breaks the contract is repaired, or shown honestly ==")
+    print("== 16. A reply that breaks the contract is repaired, or shown honestly ==")
     from langchain_core.messages import AIMessage as _AI
     import raia.agents.base as _base
 
@@ -292,7 +313,7 @@ def main() -> None:
         _base.invoke_chat = real
     check(run.repairs == 1 and not run.record.get("schema_errors"), "an invalid reply is repaired once")
 
-    print("== 17b. A reply cut off at the token limit is retried with more room ==")
+    print("== 16b. A reply cut off at the token limit is retried with more room ==")
     budgets = []
     calls["n"] = 0
 
@@ -337,7 +358,7 @@ def main() -> None:
           "…and a reply that keeps being cut off says so, with the limit it hit")
     check(len(run.record["open_issues"]) > 0, "…which still carries the rule engine's issues")
 
-    print("== 18. Deterministic unit checks ==")
+    print("== 17. Deterministic unit checks ==")
     import tests.test_engines as engines  # noqa: E402
     import tests.test_contract as contract_tests  # noqa: E402
 

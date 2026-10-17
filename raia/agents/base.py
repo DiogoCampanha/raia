@@ -2,7 +2,7 @@
 raia.agents.base
 ================
 
-Base class shared by the five RAIA agents.
+Base class shared by the RAIA agents.
 
 Every agent runs the same five-step turn, generalised from the one place in
 the original system where a claim was enforced by code rather than requested
@@ -192,7 +192,7 @@ class AgentSpec:
 
 
 class BaseAgent:
-    """Runtime behavior shared by all five agents."""
+    """Runtime behavior shared by every agent."""
 
     spec: AgentSpec  # each subclass sets its own spec
 
@@ -357,9 +357,13 @@ class BaseAgent:
         inputs, sanitization = self._sanitize_inputs(inputs)
 
         # 2. Deterministic decision procedure.
+        from .. import progress
+
+        progress.step("Applying its decision procedure")
         rationale = self.rationale_for(repo, inputs)
 
         # 3. Retrieval: pinned sections the procedure depends on, then similarity.
+        progress.step("Reading the norms it depends on")
         chunks = retriever.retrieve(
             self.build_retrieval_query(inputs, rationale),
             sources=self.spec.grounding_sources,
@@ -376,6 +380,11 @@ class BaseAgent:
         from ..repository import REGISTERS
 
         upstream_text = repo.upstream_context([k for k in self.spec.upstream_keys if k not in REGISTERS])
+        from ..handoff import prompt_note
+
+        note = prompt_note(repo, self.spec.key)
+        if note:
+            upstream_text = f"{upstream_text}\n\n{note}"
         computed = rationale.summary_md() if self.spec.engine else "(no rule engine for this agent)"
         revision_note = ""
         if feedback:
@@ -402,6 +411,7 @@ class BaseAgent:
         #    record nobody can review at the gate either.
         messages = [SystemMessage(content=system), HumanMessage(content=user)]
         budget = config.LLM_MAX_TOKENS
+        progress.step("Drafting the record")
         response = invoke_chat(messages)
         record, errors = assemble.parse_record(self.spec.key, response.text)
         repairs = 0
@@ -428,6 +438,7 @@ class BaseAgent:
 
         # 6. Code finalises the record and renders the standard document.
         evidence = [{"citation": c.citation(), "authority": c.authority} for c in chunks]
+        progress.step("Checking the draft")
         record = self.finalize_record(record, rationale, evidence, attempt)
         draft = self.render_record(record, rationale)
 

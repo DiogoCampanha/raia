@@ -18,6 +18,8 @@ A mode of the User Story Refiner, not an agent of its own: it shares that agent'
 | Requires approved | Requirements Reviewer |
 | Reads | Risk Classifier, Requirements Reviewer, backlog |
 | Produces | `04a_rai_backlog.md` — rai backlog record |
+| Receives | The approved requirements without a live story. |
+| Hands on | RAI stories (`RAI-n`) in the backlog, each implementing at least one requirement. |
 
 ## 3. Normative grounding
 
@@ -59,11 +61,12 @@ Excerpts pinned for the canonical scenario:
 - Whether each generated story is work your team can schedule in one sprint.
 - Whether a requirement really needs no story, when the agent says so.
 - When each story goes into a sprint: the board suggests, you decide.
-- Every open issue the record raises, and whether to approve, edit or reject the record.
+- Whether to accept or reject each card of the draft (a rejection carries a reason); cards left unmarked are accepted as they are.
+- Every decision the record raises, taken on the card where it is shown (an option and why), and whether to approve, edit or reject the record.
 
 ## 7. The record it produces
 
-Schema `raia-record/1.3` — `docs/schema/story_generate.schema.json`. Identifier prefix `SG`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.4` — `docs/schema/story_generate.schema.json`. Identifier prefix `SG`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
@@ -93,7 +96,7 @@ Verdict keys the agent declares: `requirement_count`.
 ## 8. Checks
 
 - The record conforms to the schema (one repair attempt, then a fallback record)
-- Every citation resolves to an excerpt retrieved for this run
+- Every citation resolves to an excerpt retrieved for this run; one that does not is removed by code and logged
 - Every checklist item is declared covered, not applicable or not grounded
 - Every finding has an action or an open issue
 - The rule engine's issues are carried forward; the verdict is reconciled

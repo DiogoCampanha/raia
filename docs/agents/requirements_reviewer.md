@@ -16,6 +16,8 @@ Reviews the software requirements against the risk classification and derives ve
 | Requires approved | Risk Classifier |
 | Reads | product_brief, Risk Classifier |
 | Produces | `03_requirements_review.md` — requirements review record |
+| Receives | The Risk Classifier's obligations and principles — each shown addressed by a requirement, a control or a new EVR, or still open — and its open decisions. |
+| Hands on | Ethical value requirements (`EVR-n`); one a reviewer overrode is not handed on. |
 
 ## 3. Normative grounding
 
@@ -68,11 +70,12 @@ Excerpts pinned for the canonical scenario:
 - Which recommended requirements to adopt, edit or reject, one at a time, and whether pre-filled answers reflect the project. The controls in place are never pre-filled.
 - Which proposed ethical value requirements the team adopts.
 - How stakeholder values are weighed where they conflict.
-- Every open issue the record raises, and whether to approve, edit or reject the record.
+- Whether to accept or reject each card of the draft (a rejection carries a reason); cards left unmarked are accepted as they are.
+- Every decision the record raises, taken on the card where it is shown (an option and why), and whether to approve, edit or reject the record.
 
 ## 7. The record it produces
 
-Schema `raia-record/1.3` — `docs/schema/requirements_reviewer.schema.json`. Identifier prefix `RR`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.4` — `docs/schema/requirements_reviewer.schema.json`. Identifier prefix `RR`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
@@ -114,7 +117,7 @@ Verdict keys the agent declares: `gap_count`.
 ## 8. Checks
 
 - The record conforms to the schema (one repair attempt, then a fallback record)
-- Every citation resolves to an excerpt retrieved for this run
+- Every citation resolves to an excerpt retrieved for this run; one that does not is removed by code and logged
 - Every checklist item is declared covered, not applicable or not grounded
 - Every finding has an action or an open issue
 - The rule engine's issues are carried forward; the verdict is reconciled

@@ -2,12 +2,14 @@
 raia.agents
 ===========
 
-The five specialized RAIA agents, organized in three
-functional layers:
+The specialized RAIA agents, organized in functional layers:
 
 * **Product**: Risk Classifier, Requirements Reviewer
 * **Dev**    : User Story Refiner, Auditor
-* **Ops**    : Drift Monitor
+
+The architecture also specifies an **Ops** layer (fairness-drift monitoring
+after deployment). It needs production telemetry that a team designing a
+product rarely holds, so it is future work and has no agent in this build.
 
 ``AGENTS`` maps agent keys to singleton instances in pipeline order; it is
 the single registry used by both the LangGraph pipeline and the Streamlit UI.
@@ -17,7 +19,6 @@ from typing import Dict
 
 from .auditor import AuditorAgent
 from .base import BaseAgent
-from .drift_monitor import DriftMonitorAgent
 from .requirements_reviewer import RequirementsReviewerAgent
 from .risk_classifier import RiskClassifierAgent
 from .story_generate import StoryGeneratorMode
@@ -31,12 +32,11 @@ AGENTS: Dict[str, BaseAgent] = {
         RequirementsReviewerAgent(),
         UserStoryRefinerAgent(),
         AuditorAgent(),
-        DriftMonitorAgent(),
     )
 }
 
 #: Modes of an agent that run through the same gate with their own record.
-#: They are not agents of their own: the architecture keeps five.
+#: They are not agents of their own: a mode adds no agent to the architecture.
 MODES: Dict[str, BaseAgent] = {m.spec.key: m for m in (StoryGeneratorMode(),)}
 
 #: Every runnable key, agents and modes, for the pipeline.

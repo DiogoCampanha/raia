@@ -1,5 +1,5 @@
 {
-  "$id": "raia-record/1.3/risk_classifier",
+  "$id": "raia-record/1.4/risk_classifier",
   "title": "RiskClassifierRecord",
   "$defs": {
     "Action": {
@@ -347,7 +347,7 @@
         },
         "meaning_for_this_product": {
           "description": "One sentence: what the team must do or show for this product.",
-          "maxLength": 300,
+          "maxLength": 220,
           "title": "Meaning For This Product",
           "type": "string"
         },
@@ -454,19 +454,19 @@
       "properties": {
         "prohibited_screen": {
           "description": "Result of the EU AI Act Art. 5 and PL 2338 excessive-risk screen, conclusion first.",
-          "maxLength": 400,
+          "maxLength": 300,
           "title": "Prohibited Screen",
           "type": "string"
         },
         "eu_tier_justification": {
           "description": "Why the EU tier holds, naming the area or article; at most two sentences.",
-          "maxLength": 400,
+          "maxLength": 300,
           "title": "Eu Tier Justification",
           "type": "string"
         },
         "br_tier_justification": {
           "description": "Why the Brazilian tier holds, naming the area; at most two sentences.",
-          "maxLength": 400,
+          "maxLength": 300,
           "title": "Br Tier Justification",
           "type": "string"
         },
@@ -479,20 +479,20 @@
           "type": "array"
         },
         "human_oversight_assessment": {
-          "description": "Whether the declared oversight design meets the oversight obligations, conclusion first.",
-          "maxLength": 450,
+          "description": "Whether the declared oversight design meets the oversight obligations, conclusion first; at most two sentences.",
+          "maxLength": 300,
           "title": "Human Oversight Assessment",
           "type": "string"
         },
         "affected_persons_rights": {
-          "description": "How affected persons' rights are operationalised in the product, conclusion first.",
-          "maxLength": 450,
+          "description": "How affected persons' rights are operationalised in the product, conclusion first; at most two sentences.",
+          "maxLength": 300,
           "title": "Affected Persons Rights",
           "type": "string"
         },
         "impact_assessments": {
-          "description": "Which impact assessments the instruments require (fundamental rights / algorithmic).",
-          "maxLength": 400,
+          "description": "Which impact assessments the instruments require (fundamental rights / algorithmic); at most two sentences.",
+          "maxLength": 300,
           "title": "Impact Assessments",
           "type": "string"
         }
@@ -587,6 +587,36 @@
       },
       "title": "Coverage",
       "type": "array"
+    },
+    "review": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "computed": true,
+      "default": null,
+      "title": "Review"
+    },
+    "pruned_citations": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "computed": true,
+      "default": null,
+      "title": "Pruned Citations"
     },
     "extension": {
       "$ref": "#/$defs/RiskClassificationExt"

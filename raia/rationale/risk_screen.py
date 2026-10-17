@@ -517,11 +517,26 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
             type="missing_information", decision_owner="legal_compliance", blocking=False,
         )
     if autonomy in ("fully_automated", "human_confirms") and oversight in ("none_designed", "monitoring_only"):
-        r.raise_issue(
-            "Automation level and the designed oversight are inconsistent: decisions are effectively "
-            "automated while no case-level human intervention exists. Human arbitration required.",
-            type="risk_acceptance", decision_owner="product", blocking=False,
-        )
+        if eu_is_high or br_is_high:
+            # A high-risk system must be effectively overseeable by a person in
+            # each case (EU AI Act Art. 14; PL 2338/2023 human supervision). As
+            # declared it is not, so it cannot go ahead in this form.
+            r.raise_issue(
+                "A high-risk system whose decisions are effectively automated has no case-level human "
+                "intervention designed. The human-oversight obligations cannot be met as described, so "
+                "the product cannot go ahead in this form until oversight is designed or the automation "
+                "is changed.",
+                type="risk_acceptance", decision_owner="legal_compliance", blocking=True,
+                options=["Design case-level human review before release",
+                         "Make the output a recommendation a person reviews and may override",
+                         "Record why the oversight obligations do not apply"],
+            )
+        else:
+            r.raise_issue(
+                "Automation level and the designed oversight are inconsistent: decisions are effectively "
+                "automated while no case-level human intervention exists. Human arbitration required.",
+                type="risk_acceptance", decision_owner="product", blocking=False,
+            )
     if eu_is_high != br_is_high and eu_in_scope and br_in_scope:
         r.raise_issue(
             "The two jurisdictions classify this system differently. Record which regime governs "

@@ -175,8 +175,8 @@ def next_steps(stages: List[Dict[str, Any]], after: Optional[str] = None) -> Lis
     1. approved stages that **need review**: approving a revision flags them,
        and checking them comes before moving on;
     2. stages later in the pipeline that are waiting for a review or ready to
-       run, in pipeline order. The Auditor and the Drift Monitor read the same
-       upstream work, so both can open at once; both are returned;
+       run, in pipeline order. When two later stages read the same upstream
+       work, both can open at once; both are returned;
     3. earlier stages that are still open.
 
     Without ``after`` (a project page) the order is drafts waiting for review,

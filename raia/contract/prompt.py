@@ -19,7 +19,6 @@ from typing import Any, Dict, List
 from ..rationale.types import RationaleResult
 from . import rubric
 from . import vocab as V
-from .assemble import drift_severities
 from .schema import model_facing_schema
 
 HINTS_MARKER = "RAIA-RECORD-HINTS:"
@@ -53,8 +52,6 @@ def hints(agent_key: str, verdict_keys: List[str], rationale: RationaleResult,
                               for i in data.get("audited_items") or []}
         ids["not_verified"] = list(verdict.get("not_verified") or [])
         ids["approved_artifacts"] = [b.get("artifact") for b in data.get("baseline") or []]
-    if agent_key == "drift_monitor":
-        ids["breach_severities"] = drift_severities(rationale)
     return {
         "agent_key": agent_key,
         "verdict_keys": list(verdict_keys),

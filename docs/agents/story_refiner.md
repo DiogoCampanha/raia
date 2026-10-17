@@ -16,6 +16,8 @@ Selects the ethical themes that actually apply to each story and adds verifiable
 | Requires approved | Requirements Reviewer |
 | Reads | Risk Classifier, Requirements Reviewer, backlog, sprints |
 | Produces | `04_refined_stories.md` — refined stories record |
+| Receives | The approved requirements, each shown with the stories that implement it, and the open decisions from earlier stages. |
+| Hands on | Ethical acceptance criteria on the backlog stories (`AC-<story>-n`). |
 
 ## 3. Normative grounding
 
@@ -65,11 +67,12 @@ Excerpts pinned for the canonical scenario:
 - Whether each acceptance criterion is testable in your context.
 - Whether a conflicting existing criterion is rewritten or kept, and why — the copy of the story follows your choice.
 - Which stories carry no ethical impact and can move on unchanged.
-- Every open issue the record raises, and whether to approve, edit or reject the record.
+- Whether to accept or reject each card of the draft (a rejection carries a reason); cards left unmarked are accepted as they are.
+- Every decision the record raises, taken on the card where it is shown (an option and why), and whether to approve, edit or reject the record.
 
 ## 7. The record it produces
 
-Schema `raia-record/1.3` — `docs/schema/story_refiner.schema.json`. Identifier prefix `SR`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.4` — `docs/schema/story_refiner.schema.json`. Identifier prefix `SR`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
@@ -101,7 +104,7 @@ Verdict keys the agent declares: `story_count`.
 ## 8. Checks
 
 - The record conforms to the schema (one repair attempt, then a fallback record)
-- Every citation resolves to an excerpt retrieved for this run
+- Every citation resolves to an excerpt retrieved for this run; one that does not is removed by code and logged
 - Every checklist item is declared covered, not applicable or not grounded
 - Every finding has an action or an open issue
 - The rule engine's issues are carried forward; the verdict is reconciled

@@ -43,7 +43,6 @@ PREFIX: Dict[str, str] = {
     "story_refiner": "SR",
     "story_generate": "SG",
     "auditor": "AU",
-    "drift_monitor": "DM",
 }
 
 #: What each agent's record is called, in the rendered document and exports.
@@ -53,7 +52,6 @@ RECORD_TYPES: Dict[str, str] = {
     "story_refiner": "Refined stories record",
     "story_generate": "RAI backlog record",
     "auditor": "Audit record",
-    "drift_monitor": "Drift monitoring record",
 }
 
 FENCE_RE = re.compile(r"```(?:json|raia-record)?\s*\n(?P<body>\{.*?\})\s*```", re.S)
@@ -235,6 +233,35 @@ def _authorities(citations: Iterable[str], index: Dict[str, str]) -> List[str]:
     return out
 
 
+class _Pruner:
+    """Removes citation tags that match no excerpt retrieved for the run.
+
+    A tag that resolves to nothing is a fabricated ground. It is not shown to
+    the reviewer as a warning: code takes it out of the record and records
+    what it took, in ``pruned_citations`` (kept across re-finalisation) and in
+    the contract notes that reach provenance and the research export. With no
+    evidence to check against (a record finalised outside a run), nothing is
+    removed.
+    """
+
+    def __init__(self, evidence: Sequence[Dict[str, Any]], already: Sequence[str]) -> None:
+        self.allowed = [e.get("citation", "") for e in evidence or [] if e.get("citation")]
+        self.removed: List[str] = list(already or [])
+
+    def __call__(self, where: str, tags: Iterable[str]) -> List[str]:
+        tags = [normalize_citation(c) for c in tags or [] if c]
+        if not self.allowed:
+            return tags
+        from ..validators import resolve_citations
+
+        kept, dropped = resolve_citations(tags, self.allowed)
+        for d in dropped:
+            line = f"{where}: {d}"
+            if line not in self.removed:
+                self.removed.append(line)
+        return kept
+
+
 def frameworks_for(sources: Sequence[str]) -> List[Dict[str, str]]:
     return [
         {"id": s, "name": config.SOURCE_NAMES.get(s, s), "authority": config.AUTHORITY_LEVELS.get(s, "")}
@@ -247,19 +274,22 @@ def frameworks_for(sources: Sequence[str]) -> List[Dict[str, str]]:
 # ---------------------------------------------------------------------------
 
 
-def drift_severities(rationale: RationaleResult) -> Dict[str, str]:
-    """Severity per telemetry window, exactly as the engine computes it."""
-    from ..rationale.drift import _severity
+def _numberer(prefix: str, kind: str, ids: Sequence[Any]):
+    """Assign record ids: keep ``<prefix>-<kind><n>`` ids already given (once each), number the rest after them."""
+    pattern = re.compile(rf"^{re.escape(prefix)}-{kind}(\d+)$")
+    kept = [str(i) for i in ids if i and pattern.match(str(i))]
+    taken = {k for k in kept if kept.count(k) == 1}
+    used: set = set()
+    counter = [max([int(pattern.match(k).group(1)) for k in taken] + [0])]
 
-    data = rationale.data or {}
-    analysis = data.get("analysis") or {}
-    threshold = (rationale.verdict or {}).get("parity_threshold")
-    out: Dict[str, str] = {}
-    for w in analysis.get("windows") or []:
-        sev = _severity(w, analysis.get("trend") or {}, threshold)
-        if sev:
-            out[str(w.get("window"))] = sev
-    return out
+    def assign(current: Any) -> str:
+        c = str(current or "")
+        if c in taken and c not in used:
+            used.add(c)
+            return c
+        counter[0] += 1
+        return f"{prefix}-{kind}{counter[0]}"
+    return assign
 
 
 def priority_floors(agent_key: str, rationale: RationaleResult) -> Dict[str, rubric.Floor]:
@@ -292,9 +322,6 @@ def priority_floors(agent_key: str, rationale: RationaleResult) -> Dict[str, rub
             if g.get("kind") in ("legal_without_story", "risk_without_story"):
                 floors.setdefault(str(g.get("ref")), ("high", g.get("title", "backlog gap")))
 
-    elif agent_key == "drift_monitor":
-        for window, sev in drift_severities(rationale).items():
-            floors[window] = (sev, f"computed drift severity for window {window}")
 
     return floors
 
@@ -306,7 +333,8 @@ def priority_floors(agent_key: str, rationale: RationaleResult) -> Dict[str, rub
 
 def _engine_issues(rationale: RationaleResult) -> List[Dict[str, Any]]:
     return [
-        {"type": m["type"], "description": m["text"], "options": [],
+        {"type": m["type"], "description": m["text"],
+         "options": list(m.get("options") or V.DEFAULT_ISSUE_OPTIONS.get(m["type"], ())),
          "decision_owner": m["decision_owner"], "blocking": bool(m["blocking"]),
          "links": [], "origin": "engine"}
         for m in rationale.typed_issues()
@@ -424,16 +452,21 @@ def finalize(
     notes: List[str] = []
     index = authority_index(evidence)
     floors = priority_floors(agent_key, rationale)
+    prune = _Pruner(evidence, rec.get("pruned_citations") or [])
 
     # -- findings -------------------------------------------------------------
+    # An id code already assigned is kept, so a card a reviewer accepted or
+    # rejected keeps its name when the record is finalised again; anything else
+    # gets the next free number.
     fmap: Dict[str, str] = {}
     findings = rec.get("findings") or []
-    for i, f in enumerate(findings, 1):
-        new = f"{prefix}-F{i}"
+    next_f = _numberer(prefix, "F", [f.get("id") for f in findings])
+    for f in findings:
+        new = next_f(f.get("id"))
         fmap[str(f.get("id") or new)] = new
         fmap[new] = new
         f["id"] = new
-        f["citations"] = [normalize_citation(c) for c in f.get("citations") or [] if c]
+        f["citations"] = prune(new, f.get("citations"))
         f.update(rubric.prioritise(
             f.get("magnitude", ""), f.get("likelihood", ""), f.get("links") or [],
             _authorities(f["citations"], index), floors,
@@ -443,8 +476,9 @@ def finalize(
     # -- actions --------------------------------------------------------------
     amap: Dict[str, str] = {}
     actions = rec.get("actions") or []
-    for i, a in enumerate(actions, 1):
-        new = f"{prefix}-A{i}"
+    next_a = _numberer(prefix, "A", [a.get("id") for a in actions])
+    for a in actions:
+        new = next_a(a.get("id"))
         amap[str(a.get("id") or new)] = new
         a["id"] = new
         linked, unknown = [], []
@@ -453,7 +487,7 @@ def finalize(
         if unknown:
             notes.append(f"{new} referenced unknown finding id(s) {', '.join(unknown)}; removed.")
         a["finding_ids"] = linked
-        a["citations"] = [normalize_citation(c) for c in a.get("citations") or [] if c]
+        a["citations"] = prune(new, a.get("citations"))
         a["priority"] = rubric.action_priority([priority_by_id[x] for x in linked])
         for link in a.get("links") or []:
             if link in floors:
@@ -537,18 +571,11 @@ def finalize(
     if agent_key == "auditor" and isinstance(rec.get("extension"), dict):
         _audit_project(ext, rationale, notes)
         _audit_opinion(ext, rationale, findings, issues, notes)
-    if agent_key == "drift_monitor":
-        severities = drift_severities(rationale)
-        for alert in ext.get("alerts") or []:
-            w = str(alert.get("window"))
-            if w in severities and alert.get("severity") != severities[w]:
-                notes.append(f"SEVERITY: alert for {w} said {alert.get('severity')}; the engine computed "
-                             f"{severities[w]}. Restored by code.")
-                alert["severity"] = severities[w]
-    for key in ("obligations", "gap_analysis", "evrs", "alerts", "items"):
+    for key in ("obligations", "gap_analysis", "evrs", "items"):
         for entry in ext.get(key) or []:
             if isinstance(entry, dict) and "citations" in entry:
-                entry["citations"] = [normalize_citation(c) for c in entry["citations"] if c]
+                where = str(entry.get("code") or entry.get("id") or entry.get("evr_id") or entry.get("item_id") or key)
+                entry["citations"] = prune(where, entry["citations"])
 
     # -- overall status floor --------------------------------------------------
     floor = "on_track"
@@ -562,6 +589,9 @@ def finalize(
         rec["overall_status"] = floor
 
     notes += [f"SHORTENED: {n}" for n in rec.get("shortened") or []]
+    if prune.removed:
+        rec["pruned_citations"] = prune.removed
+    notes += [f"PRUNED_CITATION: {n}" for n in prune.removed]
 
     rec["meta"] = {
         "schema_version": V.SCHEMA_VERSION,

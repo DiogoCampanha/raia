@@ -4,7 +4,7 @@ A multi-agent, LLM-based **software architecture** that operationalizes
 Responsible AI across the software development life cycle, implemented as a
 working proof of concept.
 
-Five specialized agents, organized in three layers (Product / Dev / Ops),
+Four specialized agents, organized in two layers (Product / Dev),
 communicate **exclusively** through a versioned shared artifact repository
 and are separated by **mandatory human approval gates**. Work is organized in
 **projects**: each person signs in, and every project has its own stages,
@@ -43,7 +43,7 @@ normative sources only. See [`docs/output-contract.md`](docs/output-contract.md)
 the agent cards in [`docs/agents/`](docs/agents/) and the JSON Schemas in
 [`docs/schema/`](docs/schema/).
 
-## The Five Agents
+## The Agents
 
 | Agent | Layer | Decision procedure | Grounded in |
 |---|---|---|---|
@@ -51,7 +51,11 @@ the agent cards in [`docs/agents/`](docs/agents/) and the JSON Schemas in
 | **Requirements Reviewer** | 🟦 Product | Obligation × principle coverage matrix against stated requirements and existing controls; assigns the requirement register; on request, recommends candidate requirements a person adopts or rejects | IEEE 7000, MS RAI v2 |
 | **User Story Refiner** | 🟩 Dev | Two modes. *Generate*: approved requirements without a story (a short list, legal obligations first) become RAI stories for the backlog, every requirement covered or justified. *Refine*: ECCOLA card selection per story from risk tier, data categories and capabilities; story register as a counted invariant; criteria written back to the backlog | ECCOLA, MS RAI v2 |
 | **Auditor** | 🟩 Dev | Project-wide at each sprint close: the sprint's items matched against evidence (no evidence → NOT VERIFIED by code), where every requirement stands, progress and trend, whether the backlog covers the ethical risks, and what comes next | MS RAI v2, NIST AI RMF |
-| **Drift Monitor** | 🟧 Ops | Fairness metrics, thresholds parsed from approved artifacts, breach and trend detection, sample-adequacy flags | NIST AI RMF |
+
+The RAIA architecture also specifies an **Ops layer** — fairness-drift
+monitoring after deployment. It needs production telemetry that a team
+designing a product rarely holds, so it is future work and has no agent in
+this build (see the roadmap).
 
 **Sprints over one backlog.** Once the requirements are approved, the project
 page opens on a **Board**: the backlog (RAI stories generated from the
@@ -98,42 +102,63 @@ artifact.
 
 0. **Sign in and open a project.** *My projects* lists the projects you own or
    were invited to, with each one's progress derived from its approved
-   artifacts. Create one, start from the pre-filled demo project, or accept an
-   invitation. Everything below happens inside the open project, and your form
+   artifacts. Create one, start from one of the two pre-filled demo projects
+   (resume screening: high risk and blocked; a customer-support assistant:
+   limited risk), or accept an invitation. Everything below happens inside the open project, and your form
    answers are saved to it as you type.
-1. **Fill in the structured form.** The questions are the ones that decide the
-   outcome — your role, target markets, purpose area, decision autonomy, data
-   categories. Required fields are marked; the run is refused without them.
-2. **Run the stage.** The rule engine computes its verdict, pins the excerpts
-   its decision depends on, retrieves more by similarity, and the model writes
-   the analysis.
-3. **Review at the gate.** You get four tabs: the draft (summary, action and
-   decision cards, a deep dive behind a dropdown), a structured editor for the
-   record (headline and summary, findings' placement, actions,
-   the agent's issues, the agent-specific sections), the evidence that was in
-   the prompt, and everything the code computed. Above them, the result of the
-   automated checks. Edits are re-computed and re-rendered before approval.
-4. **Approve or reject.** Rejections carry a reason code and free-text
-   feedback, both recorded. Approval commits the Markdown artifact, its
-   structured sidecar and its provenance in one recorded version, attributed to
-   your signed-in identity — never to a typed name.
-5. **Arbitrate the open issues.** Conflicts land in a register with a status
-   you set: resolved, or accepted risk, with a note.
-6. **Revise safely.** Revising an approved stage shows first which approved
+1. **See what the stage receives, and fill in the structured form.** From the
+   second stage on, *What this stage receives* lists the upstream work it
+   builds on and the decisions still open from earlier stages, which can be
+   taken there. The questions are the ones that decide the outcome — your
+   role, target markets, purpose area, decision autonomy, data categories.
+   Required fields are marked; the run is refused without them.
+2. **Run the stage.** The page shows only that the agent is working, step by
+   step: the rule engine computes its verdict, pins the excerpts its decision
+   depends on, retrieves more by similarity, and the model writes the analysis.
+   The draft then opens at its top.
+3. **Read the draft.** It opens with its status and what the status means here
+   (*Blocked in its current form* links to **Gaps to close**, each with what
+   unblocks it), a hand-off strip (what this stage received, what it
+   addressed, what is still open, and — for a revision — what improved since
+   the approved version), then compact cards: one line each, the detail on a
+   click. The automated checks speak only when a person is needed; what code
+   corrected on its own is in a technical log. The other tabs: a structured
+   editor for the record, the evidence that was in the prompt, and everything
+   the code computed.
+4. **Review each card and take the decisions.** Accept or reject every risk,
+   action, requirement and new criterion; a rejection needs a reason, and
+   unmarked cards are accepted as they are. A rejected card leaves the approved
+   record and is kept in its review block; a computed one (a requirement that
+   closes a gap the engine found) is kept, marked overridden, and recorded in
+   the open issues. Each decision is a choice made on its card — an option and
+   why — and taking the blocking ones lifts *Blocked*.
+5. **Approve or reject.** Rejections carry a reason code and free-text
+   feedback (the rejected cards are listed in it), both recorded. Approval
+   commits the Markdown artifact, its structured sidecar and its provenance in
+   one recorded version, attributed to your signed-in identity — never to a
+   typed name. Decisions taken on the draft reach the Open Issues register,
+   decided, in the same step.
+6. **Arbitrate what is left.** The Open Issues register holds every issue with
+   its status — open, decided, resolved or accepted risk — and a note; owners
+   can reopen a decision.
+7. **Revise safely.** Revising an approved stage shows first which approved
    stages depend on it. When the revision is approved those stages are marked
    *Needs review*; they are never re-run automatically, and a person either
    revises or re-confirms each one.
-7. **Work with others.** Under *People and settings* an owner invites people by
+8. **Work with others.** Under *People and settings* an owner invites people by
    their sign-in email as **editor** (runs agents, approves) or **reviewer**
    (reviews and approves, does not run agents), and can require a **second
    approver**, so the person who ran a stage cannot approve it.
-8. **Assessment** — one page in the top menu: consent, optional profile, the
+9. **Assessment** — one page in the top menu: consent, optional profile, the
    evaluation plan's five dimensions on a five-point scale, optional per-stage
    ratings and open questions, with drafts.
-9. **Work the action plan** — the Project page gathers every action from every
+10. **Work the action plan** — the Project page gathers every action from every
    approved record, sorted by computed priority, filterable by owner and stage,
    and exports it as CSV or JSON.
-10. **Export a project** — artifacts, structured records, the action plan,
+11. **Follow the thread** — the Traceability tab shows, per obligation and
+   requirement, which requirement answers it, which stories implement it and
+   what the audit verified, gaps highlighted.
+12. **Export a project** — artifacts, structured records, the action plan,
    version history with its integrity check, and pseudonymized activity, in one zip.
 
 ## How Reliability Is Handled
@@ -143,13 +168,16 @@ artifact.
   including on the restart-recovery path.
 - **(b) Grounded recommendations, verified** — each retrieved excerpt carries
   its source, section, authority level and a stable id. Every citation tag in a
-  draft is **checked against the excerpts that were actually retrieved**, and
-  unresolvable tags are reported at the gate. Excerpts the decision procedure
+  draft is **checked against the excerpts that were actually retrieved**; a tag
+  that resolves to none is removed from the record by code, and the removal is
+  recorded in the artifact's provenance. Excerpts the decision procedure
   depends on are *pinned*: they are in the prompt whatever the similarity score.
 - **(c) Conflict handling** — authority precedence (**legal > standard >
   advisory**) for cross-level conflicts; same-level conflicts, rule-engine
   disagreements and human-only decisions become tracked entries in the
-  **Open Issues** register, each with a status and an arbitration note.
+  **Open Issues** register, each with a status and an arbitration note. A
+  person may override a computed item, never silently: the override stays in
+  the record and is recorded in the register with its reason.
 - **(d) Data protection and access** — every project operation passes one
   authorization check in the service layer (`ProjectService.authorize`), not
   just in the UI; a foreign project is indistinguishable from a missing one.
@@ -163,8 +191,9 @@ artifact.
   prompt-injection patterns in English and Portuguese. Findings are flagged,
   never silently removed. The approved draft is sanitized on its way into the
   repository too, because that is the text every downstream prompt inherits.
-- **(f) Deterministic metrics** — fairness numbers come from pandas, and every
-  figure in the narrative is checked against the computed set.
+- **(f) Deterministic facts** — verdicts, obligation lists, coverage matrices,
+  registers, priorities and identifiers are computed by code; the model may
+  downgrade a computed verdict, never upgrade one.
 - **(g) Declared completeness** — each agent publishes the checklist it must
   account for and declares, per item, `covered`, `not-applicable` or
   `not-grounded` with a reason. Being exhaustive is not the goal; being
@@ -194,7 +223,7 @@ raia/
 ├── raia/
 │   ├── config.py              # env-driven settings; authority + source registries
 │   ├── fields.py              # the structured-intake field model
-│   ├── examples.py            # the canonical resume-screening walkthrough
+│   ├── examples.py            # the two example cases (resume screening, customer-support assistant)
 │   ├── llm.py                 # provider-agnostic factory, retry, contract-aware mock
 │   ├── rag.py                 # retrieval with pinned excerpts and excerpt ids
 │   ├── rationale/             # the deterministic decision procedures
@@ -202,7 +231,6 @@ raia/
 │   │   ├── coverage.py        #   obligation × principle coverage matrix
 │   │   ├── story_map.py       #   ECCOLA card selection, story register
 │   │   ├── traceability.py    #   evidence matching, NOT VERIFIED by code
-│   │   ├── drift.py           #   thresholds, breaches, trend, sample adequacy
 │   │   └── principles.py      #   the seven adopted principles, machine-readable
 │   ├── contract/              # the standard RAIA record
 │   │   ├── vocab.py           #   closed vocabularies from the normative sources
@@ -213,11 +241,14 @@ raia/
 │   │   ├── digest.py          #   the reading order of each record, the refined stories, the audit report
 │   │   ├── render.py          #   the Markdown layouts, written from the digest
 │   │   ├── checks.py          #   record-level checks
+│   │   ├── review.py          #   card verdicts, overrides, decisions and the status they change
 │   │   ├── actions.py         #   project action plan and its exports
 │   │   ├── export_schema.py   #   writes docs/schema/
 │   │   └── agent_cards.py     #   writes docs/agents/
 │   ├── validators.py          # citations, structure, coverage, reconciliation
-│   ├── provenance.py          # the run record stamped into every artifact
+│   ├── provenance.py          # the run record stamped into every artifact (with the build id)
+│   ├── handoff.py             # what each stage receives, addresses and hands on; the Traceability thread
+│   ├── progress.py            # which step a running agent is on, for the working screen
 │   ├── repository.py          # blackboard behaviour + the Git backend
 │   ├── storage.py             # backend selection; hash-chained database blackboard
 │   ├── db.py                  # SQLite locally, PostgreSQL hosted — one SQL dialect
@@ -232,7 +263,7 @@ raia/
 │   ├── pipeline.py            # the graph: generate → human gate → persist
 │   ├── sanitize.py            # injection screening (EN + PT), flag-never-delete
 │   ├── export.py              # one-zip project export
-│   └── agents/                # the five agent specifications (and the Refiner's generate mode)
+│   └── agents/                # the four agent specifications (and the Refiner's generate mode)
 ├── corpus/                    # curated normative summaries (extensible)
 ├── docs/
 │   ├── architecture.md        # diagrams and the traceability table
@@ -341,15 +372,15 @@ python tests/consistency_check.py --agent risk_classifier --runs 5   # with a re
 ```
 
 Runs fully offline. Covers ingestion, pinned retrieval, stage gates, required
-inputs, all five decision procedures, the human-review interrupt, the rejection
+inputs, every decision procedure, the human-review interrupt, the rejection
 loop, approval, provenance, sidecars, the open-issues register, restart
 recovery, the export bundle, and the deterministic unit checks. It asserts the
 two invariants directly: nothing persists without a human approval, and a
-fabricated citation is detected.
+fabricated citation is detected, removed and recorded.
 
 ## Roadmap (next developments)
 
-- [x] Structured intake driving deterministic decision procedures, all five agents
+- [x] Structured intake driving deterministic decision procedures, every agent
 - [x] Citation verification against retrieved excerpts
 - [x] Open Issues register with arbitration
 - [x] Reproducible provenance and structured artifact sidecars
@@ -357,6 +388,7 @@ fabricated citation is detected.
 - [x] Projects owned by signed-in people, with editor/reviewer invitations and an optional second approver
 - [x] One standard record for every agent, with a project action plan
 - [x] Durable, tamper-evident storage for hosted deployments (PostgreSQL, hash-chained versions)
+- [ ] Ops layer: a fairness-drift monitor fed by production telemetry
 - [ ] Ingest the official legal texts with article-level citation metadata
 - [ ] Jira / Confluence integration via MCP connectors
 - [ ] Least-privilege tool-permission hardening

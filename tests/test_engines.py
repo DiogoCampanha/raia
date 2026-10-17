@@ -19,7 +19,7 @@ os.environ.setdefault("RAIA_LLM_PROVIDER", "mock")
 os.environ.setdefault("RAIA_FAKE_EMBED", "1")
 
 from raia import validators as V                                  # noqa: E402
-from raia.rationale import coverage, drift, principles, risk_screen, story_map, traceability  # noqa: E402
+from raia.rationale import coverage, principles, risk_screen, story_map, traceability  # noqa: E402
 from raia.sanitize import sanitize_free_text                      # noqa: E402
 
 FAILURES = []
@@ -53,6 +53,11 @@ def test_risk_screen() -> None:
     check("eu.art26" not in codes, "deployer-only obligations not assembled for a provider")
     check(any("oversight" in i.lower() or "automated" in i.lower() for i in r.open_issues),
           "automation without oversight raises an open issue")
+    oversight = next(m for m in r.typed_issues() if "case-level human" in m["text"])
+    check(oversight["blocking"] and len(oversight["options"]) >= 2,
+          "on a high-risk system it blocks the product in its current form, and offers the ways out")
+    calm = risk_screen.run({**RESUME_INTAKE, "human_oversight": "override_possible"})
+    check(not any(m["blocking"] for m in calm.typed_issues()), "…and designing case-level oversight clears it")
 
     banned = risk_screen.run({**RESUME_INTAKE, "prohibited_practices": ["social_scoring"]})
     check(banned.verdict["eu_tier"] == risk_screen.TIER_UNACCEPTABLE,
@@ -344,44 +349,6 @@ def test_traceability() -> None:
           "no declared evidence -> every item unverified regardless of the narrative")
 
 
-def test_drift() -> None:
-    print("== drift analysis ==")
-    csv = ("window,group,selection_rate,accuracy,n\n"
-           "2026-04,gender=F,0.31,0.86,900\n2026-04,gender=M,0.36,0.87,1100\n"
-           "2026-05,gender=F,0.28,0.85,800\n2026-05,gender=M,0.38,0.87,1200\n"
-           "2026-06,gender=F,0.24,0.83,12\n2026-06,gender=M,0.39,0.88,1400\n")
-
-    th = drift.parse_thresholds("criteria: demographic parity difference across gender <= 0.1 on validation data")
-    check(th["parity_difference"]["value"] == 0.1, "threshold parsed out of an approved artifact")
-    th_pct = drift.parse_thresholds("accuracy gap must not exceed 5%")
-    check(th_pct["accuracy_gap"]["value"] == 0.05, "percentage thresholds normalised")
-
-    a = drift.analyse(csv, th)
-    check([w["dp_difference"] for w in a["windows"]] == [0.05, 0.1, 0.15],
-          "parity differences computed per window")
-    check(a["windows"][2]["parity_breach"] and not a["windows"][0]["parity_breach"],
-          "breach detected only where the threshold is exceeded")
-    check(a["trend"]["direction"] == "widening" and a["trend"]["monotonic"], "trend computed")
-    check(a["windows"][2]["small_groups"] == ["gender=F"], "under-sampled groups flagged")
-
-    r = drift.run({"telemetry_csv": csv, "incident": "none", "context_notes": ""},
-                  {"refined_stories": {"text": "parity difference <= 0.1"},
-                   "requirements_review": {"text": ""}, "risk_classification": {"data": {}}})
-    check(r.verdict["breaches"] == ["2026-06"], "breach windows reported in the verdict")
-    check("0.1500" in "".join(r.tables.values()), "computed table carries the figures")
-    check(any("not classified high-risk" in i for i in r.open_issues),
-          "breach on a system not classified high-risk is escalated")
-
-    nod = drift.run({"telemetry_csv": "window,group,selection_rate\nw1,a,0.3\nw1,b,0.5",
-                     "incident": "none", "context_notes": ""}, {})
-    check(any("no `n` column" in n for n in nod.notes), "missing group sizes is called out")
-    check(any("system default" in i for i in nod.open_issues),
-          "falling back to a default threshold is escalated, not silent")
-
-    bad = drift.run({"telemetry_csv": "a,b\n1,2", "incident": "none", "context_notes": ""}, {})
-    check(bad.verdict["analysed"] is False, "malformed telemetry fails cleanly")
-
-
 def test_validators() -> None:
     print("== validators ==")
     allowed = ["[Source: EU AI Act (Regulation (EU) 2024/1689) — Annex III | authority: legal]"]
@@ -417,9 +384,6 @@ def test_validators() -> None:
           "upgrading an unevidenced verdict fails")
     check(V.check_forbidden_verdicts("- EVR-2: Not verified", ["EVR-2"]).level == V.PASS,
           "leaving it unverified passes")
-    check(V.check_numbers("the gap is 0.42", ["0.15"]).level == V.FAIL, "an invented metric fails")
-    check(V.check_numbers("the gap is 0.1500", ["0.15", "0.1500"]).level == V.PASS,
-          "a computed metric passes")
     check(V.check_requirement_quality("EVR-1: the system shall be fair", ["EVR-1"]).level == V.WARN,
           "an unverifiable requirement warns")
     check(V.check_requirement_quality(
@@ -483,10 +447,24 @@ def test_temperature_fallback() -> None:
         config.LLM_TEMPERATURE, llm.get_chat_model = saved_temp, saved_factory
 
 
+def test_second_example_case() -> None:
+    print("== the customer-support example takes the limited-risk path ==")
+    from raia.examples import CASES, example_for
+
+    r = risk_screen.run(example_for("support_assistant", "risk_classifier"))
+    check(r.verdict["eu_tier"] == risk_screen.TIER_LIMITED, "EU AI Act: limited risk (transparency duties)")
+    check(r.verdict["br_tier"] == risk_screen.BR_NOT_LISTED, "PL 2338/2023: not in the listed high-risk areas")
+    check(sorted(o["code"] for o in r.data["obligations"]) == ["br.governance", "br.rights", "eu.art50"],
+          "a deployer of a chat assistant: transparency, governance and rights obligations only")
+    check(not any(m["blocking"] for m in r.typed_issues()), "nothing blocks it")
+    check(set(CASES) == {"resume_screening", "support_assistant"} and all(
+        example_for(c, "requirements_reviewer") for c in CASES), "both cases fill every stage")
+
+
 def main() -> None:
     for fn in (test_risk_screen, test_risk_screen_how_the_ai_works, test_coverage, test_suggestions,
                test_recommendation_checks, test_story_map, test_traceability,
-               test_drift, test_validators, test_sanitize, test_principles,
+               test_validators, test_second_example_case, test_sanitize, test_principles,
                test_temperature_fallback):
         fn()
     print()

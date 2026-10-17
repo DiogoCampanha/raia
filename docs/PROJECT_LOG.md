@@ -138,6 +138,16 @@ Recorded so the log stays honest about its own errors.
 | D48 | The sprint suggestion is computed by fixed rules (carried over, legal obligation, the priority of linked findings, oldest), never by a model; stories behind a blocking open issue are shown as blocked. A person accepts all, some or none. | Choosing a sprint's scope is prioritisation, a decision the team owns; rules make the suggestion reproducible and explainable in one line each. |
 | D49 | The Auditor audits the whole project at every sprint close: the sprint's items against evidence, every other requirement where it stands (planned is not NOT VERIFIED), progress and trend computed from the final verdicts, the backlog checked against the ethical risks by code (the model may only lower code's judgement), and the next sprint. Only an approved audit of an ended sprint closes it and sets *verified*. The ceiling falls to *needs improvement* when a high or critical risk has no story, or a legal-obligation requirement has no story in any sprint by the second sprint. | An audit of one sprint alone either failed everything not yet scheduled or said nothing about the project; the Auditor must say where the project stands, whether it is improving and whether the planned work is the work needed. |
 | D50 | Jira is optional. A Jira-ready CSV needs no setup; a person's own Jira Cloud connection pushes a sprint (batches of 50, changed stories updated) and syncs status back. Done in Jira means delivered, never verified; a sync never overwrites a manual change. The token is encrypted with `RAIA_JIRA_KEY` (or kept for the session only) and never reaches the blackboard, downloads or logs. | Teams plan in Jira, so RAIA should meet them there, but the board must work for a team that does not; verification stays with the audit, and credentials stay with the person. |
+| D51 | RAIA runs four agents in two layers. The Drift Monitor is removed from the build; the Ops layer stays in the architecture as specified future work, drawn dashed, and a drift report a project already approved stays readable as a retired document. | Fairness-drift monitoring needs production telemetry that a team designing a product rarely holds, so testers could not use it. No panelist had evaluated the five-agent build, so D1 still holds for the four-agent build. |
+| D52 | Every draft's provenance and every submitted assessment carry a build id (version plus commit). | Evaluations of different builds must be told apart without relying on dates. |
+| D53 | Two example cases: resume screening (high risk, provider, blocked) and a customer-support assistant (limited risk, deployer, third-party model). Both fill every stage with structured values. | One case only ever exercised one path through the rules; the second takes the deployer, third-party-model and transparency paths, with nothing blocking. |
+| D54 | Each automated check has an audience. The reviewer is asked to act only where a person is needed; what code already corrected goes to a technical log. A citation that matches no retrieved excerpt is removed from the record by code and the removal recorded, instead of being shown as a warning. | Checks shown as warnings about things already handled read as alarms and taught reviewers to ignore the panel. The detection is unchanged, so a fabricated citation is still detected — and now also kept out of the approved record. |
+| D55 | "Blocked" reads "Blocked in its current form", says how many items cause it and links to Gaps to close, each gap with what unblocks it. The status shown is derived: once every blocking decision is taken it reads as needing attention and says which decision lifted it; the committed record is never rewritten. | The word alone did not say whether the product, the stage or the agent was blocked, nor where to look. |
+| D56 | On a high-risk system, effectively automated decisions with no case-level human intervention are a blocking engine issue, with the ways out offered. Every engine issue carries options (its own, or the default for its type). | The human-oversight obligations cannot be met as declared, so the product cannot go ahead in that form; a decision with no options could not be taken on its card. |
+| D57 | Every card is compact (one line closed, the detail on a click); the Risk Classifier shows three figures, its obligations grouped by instrument, and is asked for at most six findings with shorter text. | The Risk Classifier's output was the longest and the most read; length at the gate degrades review. |
+| D58 | Each card of a draft is accepted or rejected, a rejection with a reason; unmarked cards are accepted. A rejected card the model wrote leaves the approved record into its review block; a rejected computed card (an EVR) is kept, marked overridden, recorded in the register as a decided disagreement, and not handed on. Card ids stay stable across re-finalisation. | Whole-draft approval forced reviewers to accept what they disagreed with or regenerate everything. Computed facts are never deleted (D8): a person may override code, on the record. |
+| D59 | Decisions are taken on their card: an option (or the person's own) and why. On a draft they reach the register decided on approval; on an approved stage they are written at once. The register gains a Decided status; owners can reopen a decision. A decision is identified by its wording. A Story Refiner conflict is one decision, and the copy follows it. | "Decisions for a person" allowed no action where they were read. Keying by wording survives renumbering and matches the register's de-duplication. |
+| D60 | Stages hand on visibly, on identifiers code keeps across stages: what a stage receives, what it addressed, what is still open, what improved since the approved version, what travels on, and a Traceability tab from obligation to audit verdict. The next prompt is told what people decided and excluded upstream. While an agent runs, the page shows only that it is working; the draft then opens at its top. | The flow between agents existed only in the sidecars: nobody could see that one stage answered the last one's items, nor which gaps remained. A form left on screen during a run looked editable. |
 
 ---
 
@@ -146,6 +156,113 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-10-12 — A review loop people can act on (branch `review-loop`)
+
+Decisions D51–D60. Requested after a walk-through of the deployed build, before
+the expert panel (no panelist had used the software yet).
+
+#### What was wrong
+
+- **REV-1** (new prefix: findings from the October review) The Risk Classifier's
+  output was long: every action, finding and obligation drawn in full, the
+  obligations as a five-column table with one row per computed code.
+- **REV-2** In the Requirements Reviewer, recommended requirements stayed large
+  after they were decided: every open candidate was a full form, decided ones
+  piled up between them.
+- **REV-3** The Drift Monitor needed telemetry testers do not have.
+- **REV-4** While an agent ran, its form stayed on screen and looked editable;
+  the draft then appeared wherever the person had scrolled to.
+- **REV-5** The automated checks did not say what they were for, and most of
+  them reported things code had already corrected — including citations to
+  excerpts that were not retrieved, shown as failures.
+- **REV-6** "Blocked" was unexplained and did not point to what blocked it; the
+  same word also meant "waiting on upstream" and a story behind a blocking issue.
+- **REV-7** A draft could only be approved or rejected whole.
+- **REV-8** "Decisions for a person" could not be acted on where they were read.
+- **REV-9** One example case exercised one path through the rules.
+- **REV-10** The flow between agents was invisible: nothing showed that a stage
+  addressed the previous stage's items, which gaps remained, or what improved.
+
+#### What changed
+
+- **Four agents** (REV-3). `raia/agents/drift_monitor.py`, `raia/rationale/drift.py`,
+  their docs and schema removed; drift branches out of `raia/contract/`
+  (schema, digest, assemble, prompt, mock, agent cards), the look, the docs page
+  and the example. Counts are no longer hard-coded as five. `repository.RETIRED_ARTIFACTS`
+  keeps an approved drift report readable. `config.build_id()` stamps provenance
+  and assessments; version 0.2.0.
+- **Examples by case** (REV-9). `raia/examples.py` — `CASES`, `example_for`,
+  `EXAMPLE_KEY`; Home offers a demo project per case; every form's **Load an
+  example** offers both, the project's own first.
+- **Checks with an audience** (REV-5). `validators.CHECKS`, `audience`,
+  `partition`; `ui/gate.validation_panel` (Before you approve, the pass line, what
+  RAIA checks and why) and `technical_log`. `assemble._Pruner` removes
+  unresolved citation tags and records them (`pruned_citations`,
+  `PRUNED_CITATION` notes); `checks.check_corrections` reports `citations.pruned`.
+- **Blocked in its current form** (REV-6). `vocab.STATUS_HELP`,
+  `digest.status_view`, `digest.gaps`; the status line links to Gaps to close;
+  the Markdown lists the gaps under the summary. The Board says a story is
+  *held by* an issue. `risk_screen` raises the oversight issue as blocking on a
+  high-risk system; `raise_issue(options=…)` and `vocab.DEFAULT_ISSUE_OPTIONS`.
+- **Compact cards** (REV-1, REV-2). `record_view` draws findings, actions,
+  obligations (by instrument) and requirements as `<details>` cards with
+  anchors; the Risk Classifier has three figures, a prompt asking for at most
+  six findings, and shorter caps. `gate._candidate_panel` folds decided
+  candidates into one line; a rejection needs a reason and can be undone.
+- **Card review** (REV-7). `raia/contract/review.py` — `cards`, `tally`,
+  `apply`, `override_issues`, `effective_status`, `issue_key`; `record_view.CardReview`
+  and `review_card`; `gate._review_bar`, the preview toggle, the approve label,
+  regenerate feedback; `assemble._numberer` keeps ids stable;
+  `pipeline._persist` records `card_reviewed` events; `RequirementsReviewerAgent.structured_from`
+  publishes `excluded_evrs`, honoured by `roadmap.requirement_facts`. Schema
+  `raia-record/1.4`.
+- **Decisions in the output** (REV-8). `record_view.Decisions`,
+  `decision_block`; `gate._draft_decisions`, `approved_decisions`;
+  `repository.DECIDED`, `append_open_issues` with a decision,
+  `set_issue_status(decision=…)`, reopen; `ProjectService.decide_issue`,
+  `reopen_issue`, `save_review`; the Open issues tab shows Decided and takes
+  decisions with options.
+- **Hand-off** (REV-10). New `raia/handoff.py` — `inherited`, `delta`,
+  `hands_on`, `thread`, `prompt_note`; `components.receives_card`,
+  `handoff_strip`; the next-step card says what travels on; the project's
+  Traceability tab; `BaseAgent.run` appends the upstream decisions and
+  exclusions to the prompt. `coverage` publishes `obligation_coverage`.
+- **Working screen** (REV-4). New `raia/progress.py`; `views/stage.working_screen`
+  runs the agent (and regeneration) on a page that shows only that it is
+  working, step by step; the gate scrolls to its top on arrival. The working
+  screen replaces the form in the same slot of the page, and anything left over
+  from the previous screen is hidden until the run ends, so nothing on screen
+  looks editable while the agent works.
+- **Docs.** README, `docs/architecture.md` (section 1e, the review loop and the
+  hand-off; the dashed Ops layer), `docs/output-contract.md`, the agent cards
+  (Receives, Hands on), the template, the Guide and `docs/TESTERS.md`, the
+  privacy page (what card reviews and decisions store; no material change, so
+  no re-acceptance).
+
+#### Tests
+
+- `tests/test_contract.py` — pruning and check audiences; Blocked and gaps;
+  card review, overrides, effective status, delta, excluded requirements.
+- `tests/test_engines.py` — the blocking oversight issue and its options; the
+  second case's classification (limited risk, three obligations, nothing
+  blocking).
+- `tests/smoke_test.py` — the invariant now reads *a fabricated citation is
+  detected, removed and recorded*; register decisions arrive decided and can be
+  reopened.
+- `tests/test_backlog.py` — the hand-off shown for the Requirements Reviewer
+  and before generation, the Traceability thread, the prompt note.
+- `tests/test_ui.py` — the working screen and landing; rejecting a card waits
+  for its reason; a blocking decision lifts Blocked; decisions and rejections
+  reach the register and the record; a Story Refiner conflict is decided once;
+  the recommendation panel folds; four stages.
+
+#### Still open, by decision
+
+- Recommending ethical requirements still runs under a spinner inside the form,
+  not on the working screen.
+- The Agents page does not yet show the cards computed on the second case.
+- A live run with a real model on both cases is still to be done before the panel.
+
 ### 2026-09-27 — Sprints over one backlog, a project-wide audit, optional Jira (branch `backlog-sprints`)
 
 Decisions D45–D50.

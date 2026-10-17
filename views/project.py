@@ -10,10 +10,10 @@ from raia.contract import vocab as V
 from raia.export import bundle_name, session_bundle
 from raia.lineage import next_steps
 from raia.projects import EDITOR, OWNER, REVIEWER, ROLE_LABELS
-from raia.repository import ACCEPTED, ARTIFACT_FILES, OPEN, RESOLVED
+from raia.repository import ACCEPTED, ARTIFACT_FILES, DECIDED, OPEN, RESOLVED, RETIRED_ARTIFACTS
 from raia.ui import routes
 from raia.ui.board import board_tab, sprint_step
-from raia.ui.components import (artifact_body, empty_state, page_header, risk_md, role_badge,
+from raia.ui.components import (artifact_body, empty_state, esc, page_header, risk_md, role_badge,
                                 role_label, role_md, stage_tracker, stat_tiles)
 from raia.ui.record_view import record_from_data, record_view
 from raia.ui.state import current_user, flash, get_service, open_project, pkey, show_flash
@@ -67,7 +67,7 @@ with st.container(border=True):
                     st.session_state[pkey("board_view", proj.id)] = cycle.get("view", "Sprint")
                     st.rerun()
     elif focus is None:
-        c1.markdown(f"{I.OK} **All five stages are approved.** Revisit any stage from the "
+        c1.markdown(f"{I.OK} **Every stage is approved.** Revisit any stage from the "
                     "tracker below, or download the project.")
         c2.download_button("Download project", data=_bundle,
                            file_name=bundle_name(proj.name), mime="application/zip",
@@ -88,16 +88,18 @@ with st.container(border=True):
 plan_rows = action_plan.project_actions(repo)
 
 TAB_BOARD = ":material/view_kanban: Board"
-tab_board, tab_overview, tab_docs, tab_plan, tab_issues, tab_activity, tab_people = st.tabs([
+tab_board, tab_overview, tab_docs, tab_plan, tab_trace, tab_issues, tab_activity, tab_people = st.tabs([
     TAB_BOARD,
     ":material/dashboard: Overview",
     ":material/description: Documents",
     f":material/checklist: Action plan ({len(plan_rows)})" if plan_rows else ":material/checklist: Action plan",
+    ":material/account_tree: Traceability",
     f":material/gavel: Open issues ({summary['open_issues']})" if summary["open_issues"]
     else ":material/gavel: Open issues",
     ":material/history: Activity",
     ":material/group: People and settings",
-], default=TAB_BOARD if board_ready else ":material/dashboard: Overview")
+], default=TAB_BOARD if board_ready else ":material/dashboard: Overview",
+   key=f"project_tabs_{proj.id}", on_change="rerun")
 
 # ---- Board -------------------------------------------------------------------------
 
@@ -149,7 +151,11 @@ with tab_docs:
     for key in existing:
         content = repo.read_artifact(key) or ""
         data = repo.read_data(key)
-        with st.expander(ARTIFACT_FILES[key], icon=I.DOCS):
+        retired = key in RETIRED_ARTIFACTS
+        title = ARTIFACT_FILES[key] + (f" — {RETIRED_ARTIFACTS[key]}" if retired else "")
+        with st.expander(title, icon=I.DOCS):
+            if retired:
+                st.caption("This stage is no longer part of RAIA. The document is kept as it was approved.")
             prov = data.get("provenance") or {}
             if prov:
                 model = prov.get("model", {})
@@ -219,18 +225,51 @@ with tab_plan:
         d2.download_button("Action plan (JSON)", action_plan.to_json(plan_rows), file_name="action_plan.json",
                            mime="application/json", key=pkey("plan_json"), icon=I.DOWNLOAD)
 
+# ---- Traceability --------------------------------------------------------------------
+
+# Drawn only while its tab is open: it reads every stage's record.
+if tab_trace.open:
+    with tab_trace:
+        st.caption("The thread from the risk classification to the audit, one row per legal obligation and "
+                   "per requirement: which requirement answers it, which stories implement that, and what the "
+                   "audit verified. Highlighted rows are the gaps still open.")
+        rows = svc.thread(user, proj.id, board_data)
+        if not rows:
+            empty_state("Nothing to trace yet",
+                        "Approve the risk classification and the requirements review, and the thread appears here.")
+        else:
+            n = len(rows)
+            with_req = sum(1 for r in rows if r["requirement"] not in ("gap", "not reviewed yet")
+                           and "overridden" not in r["requirement"])
+            with_story = sum(1 for r in rows if r["stories"] not in ("—", "no story yet"))
+            verified = sum(1 for r in rows if r["verified"])
+            stat_tiles([
+                ("Items traced", n, "obligations and requirements", False),
+                ("With a requirement or control", with_req, "", with_req < n),
+                ("With a story", with_story, "", False),
+                ("Verified by an audit", verified, "", False),
+            ])
+            head = "".join(f"<th>{h}</th>" for h in ("Obligation", "What it requires", "Requirement", "Stories", "Audit"))
+            body = "".join(
+                f'<tr class="{"tr-gap" if r["gap"] else ("tr-ok" if r["verified"] else "")}">'
+                f'<td><code>{esc(r["obligation"]) or "—"}</code></td><td>{esc(r["label"][:160])}</td>'
+                f'<td>{esc(r["requirement"])}</td><td>{esc(r["stories"])}</td><td>{esc(r["audit"])}</td></tr>'
+                for r in rows)
+            st.html(f'<table class="rv-table tr-table"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>')
+
 # ---- Open issues -------------------------------------------------------------------
 
 with tab_issues:
     st.caption("Conflicts the system refused to resolve on its own: normative conflicts at the "
                "same authority level, disagreements between a rule engine and an agent, and gaps "
-               "only a person can close. Nothing here is settled by the software.")
+               "only a person can close. Nothing here is settled by the software. A decision can also "
+               "be taken where it is raised — on the draft, or on the approved stage — and it lands here.")
     issues = repo.open_issues()
     if not issues:
         empty_state("No open issues",
                     "They are raised when a decision procedure or an agent finds a conflict, and "
                     "recorded when you approve the stage that raised them.")
-    groups = [(OPEN, "Open", "red"), (ACCEPTED, "Accepted risk", "orange"),
+    groups = [(OPEN, "Open", "red"), (DECIDED, "Decided", "violet"), (ACCEPTED, "Accepted risk", "orange"),
               (RESOLVED, "Resolved", "green")]
     for status, title, color in groups:
         group = [i for i in issues if i.get("status") == status]
@@ -252,9 +291,27 @@ with tab_issues:
                     + (f" · artifact `{issue['artifact']}`" if issue.get("artifact") else "")
                     + (f" · commit `{issue['commit']}`" if issue.get("commit") else "")
                 )
-                if issue.get("resolution_note"):
+                if status == DECIDED:
+                    st.markdown(f"**Decided:** {issue.get('decision', '')}"
+                                + (f" — {issue['rationale']}" if issue.get("rationale") else ""))
+                    st.caption(f"{issue.get('decided_by', '')} · {str(issue.get('decided_at', ''))[:16]}")
+                    if proj.can("manage") and st.button("Reopen", key=pkey("reopen", issue["id"]), type="tertiary",
+                                                       icon=":material/undo:"):
+                        svc.reopen_issue(user, proj.id, issue["id"])
+                        flash(f"{issue['id']} is open again.")
+                        st.rerun()
+                elif issue.get("resolution_note"):
                     st.caption(f"_{issue['resolution_note']}_ — {issue.get('resolved_by', '')}")
                 if status == OPEN and proj.can("review"):
+                    if issue.get("options"):
+                        with st.expander("Take this decision"):
+                            pick = st.radio("Decision", issue["options"], key=pkey("dpick", issue["id"]), index=None)
+                            why = st.text_input("Why?", key=pkey("dwhy", issue["id"]))
+                            if st.button("Record decision", key=pkey("dgo", issue["id"]), type="primary",
+                                         disabled=not (pick and why.strip())):
+                                svc.decide_issue(user, proj.id, issue["id"], pick, why)
+                                flash(f"{issue['id']} decided.")
+                                st.rerun()
                     with st.expander("Arbitrate this issue"):
                         note = st.text_input(
                             "What was decided, and on what basis?", key=pkey("note", issue["id"]),

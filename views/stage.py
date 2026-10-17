@@ -2,21 +2,24 @@
 
 The page wears its agent's identity (colour, icon, question, header pattern —
 ``raia.ui.theme.AGENT_LOOK``) so a person always knows which agent they are
-working with, keeps the five stages in view, and ends with the previous and
+working with, keeps every stage in view, and ends with the previous and
 next stage whatever state this one is in.
 """
+
+import uuid
 
 import streamlit as st
 
 from raia import backlog as B
+from raia import progress
 from raia.agents import AGENTS, RUNNABLE, identity_key
 from raia.deploy import friendly_llm_error
 from raia.projects import AccessDenied, UsageLimitReached
 from raia.ui import routes
-from raia.ui.components import (agent_header, artifact_body, next_step_card, stage_footer,
-                                stage_rail)
+from raia.ui.components import (agent_header, artifact_body, handoff_strip, next_step_card, receives_card,
+                                stage_footer, stage_rail)
 from raia.rationale.coverage import ORIGIN_KEY
-from raia.ui.gate import intake_form, pending_suggestions, prefill, review_gate
+from raia.ui.gate import approved_decisions, intake_form, pending_suggestions, prefill, review_gate
 from raia.ui.record_view import record_from_data, record_view
 from raia.ui.state import current_user, flash, get_service, open_project, pkey, show_flash
 from raia.ui.theme import I, look_key
@@ -108,9 +111,75 @@ def sprint_prefill() -> None:
                    "an item is verified only by evidence named in the outcomes.")
 
 
+WORK = pkey("work", agent_key)
+STEPS = ["Applying its decision procedure", "Reading the norms it depends on", "Drafting the record",
+         "Checking the draft"]
+
+
+def working_screen() -> bool:
+    """While an agent runs, the page shows only that it is working.
+
+    The Run (or Reject and regenerate) button stores a request and reruns; this
+    run draws nothing but the agent's header and this panel, calls the agent,
+    and reruns again into the draft, which then opens at its top. The form is
+    set aside, not greyed out, so nothing on screen looks editable while the
+    agent works. Returns True when it took the page.
+    """
+    req = st.session_state.pop(WORK, None)
+    if not req:
+        return False
+    kind = req.get("kind")
+    title = (f"{spec.name} is regenerating the draft with your feedback" if kind == "reject"
+             else f"{spec.name} is working")
+    # What the page showed before (the form) stays on screen, faded, until this
+    # run ends; hide it, so the page is only the agent at work, and bring the
+    # panel into view wherever the person had scrolled to.
+    st.html('<style>[data-stale="true"], [data-testid="stLayoutWrapper"]:not(:has([data-stale="false"])), '
+            '[data-testid="stExpander"]:not(:has([data-stale="false"])), '
+            '[data-testid="stTabs"]:not(:has([data-stale="false"])) { display: none !important; }</style>'
+            '<div id="agent-working"></div>'
+            "<script>document.getElementById('agent-working')?.scrollIntoView({block: 'center'})</script>",
+            unsafe_allow_javascript=True)
+    with st.container(border=True, key=look_key(ident, "working")):
+        st.markdown(f"**{title}**")
+        st.caption("Your answers are saved and set aside while the agent works. Nothing is saved to the "
+                   "project until a person approves the draft.")
+        line = st.empty()
+
+        def show(current: str = "") -> None:
+            done = STEPS.index(current) if current in STEPS else -1
+            line.html('<ol class="work-steps">' + "".join(
+                f'<li class="{"done" if i < done else ("now" if i == done else "")}">{s}</li>'
+                for i, s in enumerate(STEPS)) + "</ol>")
+
+        show()
+        try:
+            with st.spinner("Working", show_time=True), progress.listening(show):
+                if kind == "reject":
+                    result = svc.resume(user, proj.id, agent_key, req["decision"])
+                else:
+                    result = svc.start_run(user, proj.id, agent_key, req["inputs"])
+        except (AccessDenied, UsageLimitReached) as exc:
+            st.error(str(exc))
+            st.button("Back to the form", icon=I.BACK, key=pkey("work_back", agent_key))
+            return True
+        except Exception as exc:  # noqa: BLE001 - surfaced to the person
+            st.error(friendly_llm_error(exc))
+            st.button("Back to the form" if kind != "reject" else "Back to the draft", icon=I.BACK,
+                      key=pkey("work_back", agent_key))
+            return True
+    if result.get("status") == "awaiting_review":
+        st.session_state[pkey("pending", agent_key)] = result["payload"]
+        st.session_state[pkey("scroll_draft", agent_key)] = True
+    st.rerun()
+    return True
+
+
 def body() -> None:
     """Everything between the header and the footer. Returns early instead of
     stopping the script, so the stage navigation below is always drawn."""
+    if working_screen():
+        return
     modes_and_sprint()
     # ---- Blocked by the stage gate ---------------------------------------------------
 
@@ -170,7 +239,8 @@ def body() -> None:
         if just and board and agent_key in ("story_generate", "story_refiner", "auditor"):
             board_card(just)
         elif just:
-            next_step_card(proj.id, stages, agent_key, just, can_run)
+            next_step_card(proj.id, stages, agent_key, {**just, "travels": svc.hands_on(user, proj.id, agent_key)},
+                           can_run)
         if state["status"] == "stale":
             with st.container(border=True):
                 st.markdown(f"{I.WARN} **This stage needs review**")
@@ -197,8 +267,12 @@ def body() -> None:
             st.caption(f"Approved by **{approval.get('approved_by', '?')}**. The full provenance and "
                        "version history are in the project's Documents and Activity tabs.")
         record, computed = record_from_data(data)
+        received = svc.handoff(user, proj.id, agent_key, draft=record, computed=computed) if record else {}
         record_view(agent_key, record, computed, key=pkey("approved", agent_key),
-                    fallback_markdown=artifact_body(current))
+                    fallback_markdown=artifact_body(current),
+                    decide=approved_decisions(proj, agent_key, spec.output_key, record,
+                                              pkey("adc", agent_key)) if record else None,
+                    before=lambda _dg: handoff_strip(received))
         st.download_button("Download (Markdown)", artifact_body(current), file_name=f"{spec.output_key}.md",
                            mime="text/markdown", key=pkey("dl_approved", agent_key), icon=I.DOWNLOAD,
                            type="tertiary")
@@ -242,6 +316,15 @@ def body() -> None:
             st.session_state.pop(revising_key, None)
             st.rerun()
 
+    def decide_upstream(issue, choice, why):
+        try:
+            svc.decide_issue(user, proj.id, issue["id"], choice, why)
+        except (AccessDenied, ValueError) as exc:
+            return str(exc)
+        flash(f"{issue['id']} decided, recorded as {user.label}.")
+        return None
+
+    receives_card(svc.handoff(user, proj.id, agent_key), decide=decide_upstream if proj.can("review") else None)
     st.subheader("Inputs", anchor=False)
     if agent_key == "story_generate" and board and not board.get("uncovered"):
         st.success("Every approved requirement already has a story in the backlog. Nothing to generate: "
@@ -273,18 +356,10 @@ def body() -> None:
             return
         if ORIGIN_KEY in inputs:
             inputs[ORIGIN_KEY] = {**inputs[ORIGIN_KEY], "reviewed_by": user.label}
-        with st.spinner(f"{spec.name} is applying its decision procedure and reading the norms"):
-            try:
-                result = svc.start_run(user, proj.id, agent_key, inputs)
-            except (AccessDenied, UsageLimitReached) as exc:
-                st.error(str(exc))
-                return
-            except Exception as exc:  # noqa: BLE001 - surfaced to the person
-                st.error(friendly_llm_error(exc))
-                return
-        if result["status"] == "awaiting_review":
-            st.session_state[pkey("pending", agent_key)] = result["payload"]
-            st.rerun()
+        # The run happens on the next redraw, on a page that shows only that the
+        # agent is working (working_screen). The token makes a double click one run.
+        st.session_state[WORK] = {"kind": "run", "inputs": inputs, "token": uuid.uuid4().hex}
+        st.rerun()
 
 
 def board_card(done) -> None:
@@ -308,5 +383,9 @@ with st.container(key=look_key(ident, "page")):
                  status=state["status"], back=(proj.name, routes.PROJECT, {"id": proj.id}))
     stage_rail(proj.id, stages, current=ident)
     show_flash()
-    body()
+    # One slot for everything between the rail and the footer: when an agent
+    # runs, the working screen replaces the form in it at once, instead of the
+    # form lingering, faded, until the run ends.
+    with st.empty().container():
+        body()
     stage_footer(proj.id, stages, ident)

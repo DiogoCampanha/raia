@@ -69,7 +69,6 @@ CoverageStatus = Literal[VALID_STATUSES]  # type: ignore[valid-type]
 MsGoal = Literal[tuple(V.MS_GOALS)]  # type: ignore[valid-type]
 Card = Literal[tuple(V.ECCOLA_CARDS)]  # type: ignore[valid-type]
 AuditVerdict = Literal[V.AUDIT_VERDICTS]  # type: ignore[valid-type]
-Severity = Literal["low", "medium", "high"]
 StakeholderKind = Literal[V.STAKEHOLDER_KINDS]  # type: ignore[valid-type]
 
 
@@ -173,6 +172,8 @@ class RecordCore(_Model):
     not_grounded: List[str] = Field(default_factory=list, description=(
         "Claims you believe matter that the retrieved excerpts do not support."))
     coverage: List[CoverageItem] = Field(default_factory=list)
+    review: Optional[Dict[str, Any]] = computed()
+    pruned_citations: Optional[List[str]] = computed()
 
 
 # ---------------------------------------------------------------------------
@@ -182,18 +183,18 @@ class RecordCore(_Model):
 
 class ObligationNote(_Model):
     code: str = Field(description="An obligation code from the computed table, exactly.")
-    meaning_for_this_product: str = Field(max_length=300, description="One sentence: what the team must do or show for this product.")
+    meaning_for_this_product: str = Field(max_length=220, description="One sentence: what the team must do or show for this product.")
     citations: List[str] = Citations
 
 
 class RiskClassificationExt(_Model):
-    prohibited_screen: str = Field(max_length=400, description="Result of the EU AI Act Art. 5 and PL 2338 excessive-risk screen, conclusion first.")
-    eu_tier_justification: str = Field(max_length=400, description="Why the EU tier holds, naming the area or article; at most two sentences.")
-    br_tier_justification: str = Field(max_length=400, description="Why the Brazilian tier holds, naming the area; at most two sentences.")
+    prohibited_screen: str = Field(max_length=300, description="Result of the EU AI Act Art. 5 and PL 2338 excessive-risk screen, conclusion first.")
+    eu_tier_justification: str = Field(max_length=300, description="Why the EU tier holds, naming the area or article; at most two sentences.")
+    br_tier_justification: str = Field(max_length=300, description="Why the Brazilian tier holds, naming the area; at most two sentences.")
     obligations: List[ObligationNote] = Field(default_factory=list, description="One note per computed obligation code.")
-    human_oversight_assessment: str = Field(max_length=450, description="Whether the declared oversight design meets the oversight obligations, conclusion first.")
-    affected_persons_rights: str = Field(max_length=450, description="How affected persons' rights are operationalised in the product, conclusion first.")
-    impact_assessments: str = Field(max_length=400, description="Which impact assessments the instruments require (fundamental rights / algorithmic).")
+    human_oversight_assessment: str = Field(max_length=300, description="Whether the declared oversight design meets the oversight obligations, conclusion first; at most two sentences.")
+    affected_persons_rights: str = Field(max_length=300, description="How affected persons' rights are operationalised in the product, conclusion first; at most two sentences.")
+    impact_assessments: str = Field(max_length=300, description="Which impact assessments the instruments require (fundamental rights / algorithmic); at most two sentences.")
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +230,7 @@ class EthicalValueRequirement(_Model):
     verification_method: Verification
     traces_to: List[str] = Field(default_factory=list, description="Obligation codes or principle refs it derives from.")
     citations: List[str] = Citations
+    review: Optional[Dict[str, Any]] = computed()
 
 
 class HarmBenefit(_Model):
@@ -413,40 +415,12 @@ class AuditReportExt(_Model):
     progress: Optional[Dict[str, Any]] = computed()
 
 
-# ---------------------------------------------------------------------------
-# Drift Monitor — NIST AI RMF MEASURE and MANAGE
-# ---------------------------------------------------------------------------
-
-
-class Alert(_Model):
-    window: str = Field(description="A computed breach window label, exactly.")
-    severity: Severity = Field(description="Exactly the severity the engine computed.")
-    meaning_for_affected_people: str = Field(max_length=300, description="What this means for the people affected, in one or two sentences.")
-    citations: List[str] = Citations
-
-
-class ResponsePlan(_Model):
-    escalation_path: str = Field(max_length=300, description="Who is alerted, in what order, within what time.")
-    deactivation_criteria: str = Field(max_length=300, description="When the system is rolled back or deactivated (MANAGE 2).")
-    affected_community_feedback: str = Field(max_length=300, description="How input from users and affected communities is captured (MANAGE 4).")
-    recovery_and_communication: str = Field(max_length=300, description="How the system recovers and who is told.")
-
-
-class DriftAlertsExt(_Model):
-    alerts: List[Alert] = Field(default_factory=list, description="One alert per computed breach window.")
-    trend_interpretation: str = Field(max_length=400, description="The movement across windows, conclusion first (NIST AI RMF MEASURE 3).")
-    representativeness: str = Field(max_length=400, description="Whether the population mix shifted relative to the population affected, conclusion first (MEASURE 2).")
-    sample_adequacy: List[str] = Field(default_factory=list, description="Groups whose samples do not support a conclusion.")
-    response_plan: ResponsePlan = Field(description="Response, recovery and communication (NIST AI RMF MANAGE).")
-
-
 EXTENSIONS: Dict[str, Type[_Model]] = {
     "risk_classifier": RiskClassificationExt,
     "requirements_reviewer": RequirementsReviewExt,
     "story_refiner": RefinedStoriesExt,
     "story_generate": RaiBacklogExt,
     "auditor": AuditReportExt,
-    "drift_monitor": DriftAlertsExt,
 }
 
 _RECORDS: Dict[str, Type[RecordCore]] = {}

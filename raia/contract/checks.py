@@ -9,7 +9,8 @@ still run on the rendered Markdown — citations, sections, coverage, numbers)
 and check what only a structured record can show: that it conforms to its
 schema, that every finding received a response, that every identifier the rule
 engine assigned is accounted for, and that code had to correct nothing the
-model asserted. Like every validator, they inform the reviewer and never block.
+model asserted. Like every validator, they never block. Which of them a
+reviewer is shown, and how, is decided by :data:`raia.validators.CHECKS`.
 """
 
 from __future__ import annotations
@@ -48,8 +49,9 @@ def check_corrections(record: Dict[str, Any]) -> List[ValidationItem]:
     severities = [n for n in notes if n.startswith("SEVERITY:")]
     shortened = [n for n in notes if n.startswith("SHORTENED:")]
     strengths = [n for n in notes if n.startswith("STRENGTH:")]
+    pruned = [n for n in notes if n.startswith("PRUNED_CITATION:")]
     other = [n for n in notes if n not in upgrades and n not in severities and n not in shortened
-             and n not in strengths]
+             and n not in strengths and n not in pruned]
     out: List[ValidationItem] = []
     if upgrades:
         out.append(ValidationItem(
@@ -73,6 +75,12 @@ def check_corrections(record: Dict[str, Any]) -> List[ValidationItem]:
             f"The model wrote past {len(shortened)} length limit(s). Code shortened those values at a "
             "sentence or word end instead of discarding the reply; check that nothing important was cut.",
             [n.split(":", 1)[1].strip() for n in shortened]))
+    if pruned:
+        out.append(ValidationItem(
+            "citations.pruned", WARN, "Citations",
+            f"{len(pruned)} citation(s) matched no excerpt retrieved for this run. Code removed them "
+            "from the record, so no claim rests on a source the agent was not shown.",
+            [n.split(":", 1)[1].strip() for n in pruned]))
     if other:
         out.append(ValidationItem("contract.corrected", WARN, "Corrections applied by code",
                                   f"{len(other)} correction(s) were applied to the record.", other))

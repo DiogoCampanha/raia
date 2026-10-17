@@ -13,7 +13,7 @@ problem = boot.get("problem")
 
 page_header(
     "Responsible AI, applied across the software life cycle",
-    "RAIA is a Responsible AI Assistant: five specialized agents, grounded in legal texts and "
+    "RAIA is a Responsible AI Assistant: four specialized agents, grounded in legal texts and "
     "consolidated frameworks, with a human approval gate after every stage.",
     eyebrow="RAIA · Responsible AI Assistant",
 )

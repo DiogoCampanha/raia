@@ -28,7 +28,10 @@ files, calendar or any other Google data, and requests no other permissions.
 **Information you create in RAIA.**
 
 - Projects you create or join, and their content: form answers, drafts,
-  approved documents, open issues and the project activity log.
+  approved documents, open issues and the project activity log. This includes
+  what you decide while reviewing a draft — which cards you accepted or
+  rejected and the reason you gave, and the decisions you took and why —
+  recorded under your name like an approval.
 - Your role on each project and the invitations you send or receive.
 - Your assessment answers, if you take part in the evaluation, including the
   optional profile questions (broad categories only, such as region or years of

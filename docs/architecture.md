@@ -7,9 +7,13 @@ GitHub.
 
 ## 1. Component Diagram (system overview)
 
-Five agents in three layers communicate **exclusively** through the
+Four agents in two layers communicate **exclusively** through the
 Git-versioned shared artifact repository (blackboard). Every agent output
-passes a mandatory human checkpoint (H) before persistence.
+passes a mandatory human checkpoint (H) before persistence. The RAIA
+architecture also specifies an Ops layer (fairness-drift monitoring after
+deployment); it is drawn dashed below because this build does not implement
+it: it needs production telemetry that a team designing a product rarely
+holds, and is future work.
 
 ```mermaid
 flowchart TB
@@ -38,13 +42,13 @@ flowchart TB
             SR["User Story Refiner"]
             AU["Auditor"]
         end
-        subgraph OPS["🟧 Ops layer"]
-            DM["Drift Monitor"]
+        subgraph OPS["🟧 Ops layer (planned)"]
+            DM["Fairness-drift monitor<br/>not in this build"]
         end
     end
 
     subgraph REASON["Deterministic reasoning (raia/rationale/, raia/validators.py)"]
-        ENG["Rule engines<br/>risk_screen · coverage · story_map<br/>traceability · drift"]
+        ENG["Rule engines<br/>risk_screen · coverage · story_map<br/>traceability"]
         VAL["Validators<br/>citations · structure · coverage<br/>reconciliation · evidence discipline"]
     end
 
@@ -76,6 +80,7 @@ flowchart TB
     AGENTS --> LLM
     AGENTS -- "read upstream artifacts" --> REPO
     PERS -- "git commit (after approval only)" --> REPO
+    style OPS stroke-dasharray: 5 5
 ```
 
 ## 1b. The Agent Turn (where the reasoning happens)
@@ -213,7 +218,7 @@ Three rules the tests enforce:
 Once the risk classification and the ethical requirements are approved, a
 project runs as a loop of sprints over one backlog. Requirements are
 constants; the work they need is spread over many sprints. There are still
-five agents: the backlog, the sprints and the roadmap are **shared state on the
+four agents: the backlog, the sprints and the roadmap are **shared state on the
 blackboard**, not an agent, and people plan the sprints.
 
 ```mermaid
@@ -250,6 +255,56 @@ end sprints and push to Jira; every member, reviewers included, can tick a
 story done and sync from Jira. Only an approved Auditor run sets a story
 verified.
 
+## 1e. The review loop and the hand-off between stages
+
+Every stage page runs the same loop, and what a person decides in it travels to
+the next stage through the blackboard — never through a call between agents.
+
+```mermaid
+flowchart TB
+    REC["1 · What this stage receives<br/>upstream items, open decisions,<br/>cards a person excluded (raia/handoff.py)"]
+    WORK["2 · Working screen<br/>form set aside; steps reported by raia/progress.py"]
+    DRAFT["3 · Draft<br/>status and its meaning, Gaps to close,<br/>hand-off strip, compact cards"]
+    CARDS["4 · Card review<br/>accept / reject with a reason<br/>(raia/contract/review.py)"]
+    DEC["5 · Decisions<br/>an option and why, on the card"]
+    APP{{"6 · Approve (H)"}}
+    REG[("Open Issues register<br/>open · decided · resolved · accepted")]
+    BB[("Blackboard<br/>artifact + sidecar, review block")]
+    NEXT["Next stage<br/>starts at 1 with what was handed on"]
+    REC --> WORK --> DRAFT --> CARDS --> DEC --> APP
+    CARDS -- "reject and regenerate" --> WORK
+    APP -- "one commit" --> BB
+    APP -- "decisions, overrides" --> REG
+    BB --> NEXT
+    REG --> NEXT
+```
+
+- **Card review.** A rejected card the model wrote leaves the approved record
+  and is kept in its `review.rejected` block with who and why. A rejected card
+  a rule engine computed (an ethical value requirement exists because the
+  coverage matrix found a gap) is kept, marked `overridden`, recorded in the
+  register as a decided disagreement with code, and not handed on: no story is
+  generated for it and it is not audited. Unmarked cards are accepted.
+- **Decisions.** Each open issue carries options (the engine's, the agent's, or
+  a default per issue type). On a draft, a decision is kept with the pending
+  draft and reaches the register already decided on approval; on an approved
+  record it is written to the register at once. A decision is identified by
+  its wording, so renumbering cannot lose it.
+- **Status.** A record is *Blocked in its current form* when anything in it is
+  blocking. The status shown is derived, like stage staleness: once every
+  blocking decision is taken it reads as needing attention, and says which
+  decision lifted it. The committed record is never rewritten.
+- **Hand-off.** Items are tracked on identifiers code assigns and keeps across
+  stages — obligation codes, `EVR-n`, story ids, audit item ids — never on
+  per-record ids such as `RC-F1`. The next agent's prompt lists the decisions
+  people took and the items they excluded upstream. The project's
+  Traceability tab draws the whole thread, obligation → requirement → story →
+  audit verdict.
+- **Checks.** Every check still runs and is persisted. Each check code has an
+  audience (`raia.validators.CHECKS`): the reviewer is asked to act only where a
+  person is needed; what code already corrected (a fabricated citation is
+  removed, an upgraded verdict restored) goes to the technical log.
+
 ## 2. Class Diagram (code structure)
 
 ```mermaid
@@ -285,12 +340,6 @@ classDiagram
     class RequirementsReviewerAgent
     class UserStoryRefinerAgent
     class AuditorAgent
-    class DriftMonitorAgent {
-        +run(repo, inputs, feedback) str
-        +compute_fairness_summary(csv) str
-    }
-    note for DriftMonitorAgent "Fairness metrics computed with pandas
-    before the LLM call — the model interprets, never invents numbers"
 
     class ArtifactRepository {
         +str project
@@ -333,7 +382,6 @@ classDiagram
     BaseAgent <|-- RequirementsReviewerAgent
     BaseAgent <|-- UserStoryRefinerAgent
     BaseAgent <|-- AuditorAgent
-    BaseAgent <|-- DriftMonitorAgent
     BaseAgent *-- AgentSpec
     AgentSpec *-- InputField
     BaseAgent ..> NormativeRetriever : retrieves norms
@@ -399,10 +447,8 @@ stateDiagram-v2
     RequirementsReview --> RefinedStories : User Story Refiner (refine) + H
     RequirementsReview --> AuditReport : Auditor + H
     AuditReport --> RefinedStories : next sprint
-    RiskClassification --> DriftReport : Drift Monitor + H (Ops adoptable early)
     RefinedStories --> AuditReport
     AuditReport --> [*]
-    DriftReport --> [*]
 
     note right of RiskClassification
         Artifacts are Markdown files
@@ -415,12 +461,12 @@ stateDiagram-v2
 
 | Architecture element | Implementation | Enforced by |
 |---|---|---|
-| Five agents, three layers | `raia/agents/` — one module per agent; `AGENTS` registry in pipeline order | structure |
+| Agents in layers | `raia/agents/` — one module per agent; `AGENTS` registry in pipeline order. Product and Dev layers run; the Ops layer is specified and not implemented in this build | structure |
 | Blackboard per project, versioned | `raia/repository.py` (Git) and `raia/storage.py` (hash-chained database); every approval is one recorded version carrying the Markdown artifact *and* its JSON sidecar; approval provenance stamped in the header | code |
 | Mandatory human checkpoints "H" | `interrupt()` in the `human_review` node; the persist node is unreachable without an approve decision, including on the restart-recovery path | code + smoke test |
 | Agents never trigger agents | stage gates via `AgentSpec.required_upstream`; no agent-to-agent call exists | structure |
 | Grounded recommendations | `raia/rag.py` — excerpts carry source, section, authority and a stable id; agents must cite them | prompt |
-| Citations are real | `validators.check_citations` matches every tag against the excerpts actually retrieved for that run | code |
+| Citations are real | `validators.check_citations` matches every tag against the excerpts actually retrieved for that run; `assemble.finalize` removes a tag that resolves to none and records the removal (`pruned_citations`, `PRUNED_CITATION` notes in provenance) | code + smoke test |
 | The decisive excerpt is never missing | each decision procedure declares `Pin`s, fetched by exact metadata match and merged ahead of similarity results | code + smoke test |
 | Decision procedures, not prompts | `raia/rationale/` — one rule engine per agent computes the verdict, the tables and the identifiers before any model call | code |
 | Verdicts are reconciled, not averaged | `validators.check_reconciliation` requires the agent to declare agreement or disagreement; disagreement becomes an open issue | code |
@@ -428,7 +474,6 @@ stateDiagram-v2
 | Same-level conflicts escalated | `ArtifactRepository.append_open_issues` — a tracked register with statuses, populated from both the engine and the approved draft | code |
 | Declared completeness | each engine emits a checklist; `validators.check_coverage` requires a status per key | code |
 | Anti-ethics-washing audit | `rationale/traceability.py` assigns NOT VERIFIED where no evidence exists; `validators.check_forbidden_verdicts` prevents an upgrade | code |
-| Metrics come from code | `rationale/drift.py` computes every figure; `validators.check_numbers` rejects any number not in the computed set | code |
 | One standard output for every agent | `raia/contract/` — schema per agent (shared core + extension), closed vocabularies from the normative sources, code-computed identifiers, risk level and priority, one rendered layout, bounded repair and an honest fallback; published in `docs/schema/` and `docs/output-contract.md` | code + test_contract |
 | Every identified risk is responded to | `contract.checks.check_responses` — every finding has an action or an open issue; accepting a risk opens an issue | code |
 | Structured human editing | the gate edits record fields; persistence re-finalises, re-renders and re-validates what was approved; free-text edits are refused | code + smoke test |
@@ -441,9 +486,13 @@ stateDiagram-v2
 | Provider-agnostic LLM | `raia/llm.py` factory and a single `invoke_chat` call site | structure |
 | Iterative development across sprints | a backlog and sprints on the blackboard (`raia/backlog.py`); the Refiner's generate and refine modes write to it only through their gates; the roadmap and the sprint suggestion are computed (`raia/roadmap.py`) | code + test_backlog |
 | The audit covers the whole project | `traceability.run` audits the sprint's items and reports the rest where it stands; `backlog_coverage` checks the backlog against the ethical risks; progress and trend are computed from the final verdicts | code + test_backlog |
+| A person reviews each card | `contract.review` — accept or reject per card with a reason; a rejected model card leaves the record into its review block, a rejected computed card is kept as an override and recorded in the register | code + test_contract, test_ui |
+| Decisions are taken where they are raised | the decision card writes to the pending draft, then the register on approval (`append_open_issues` with a decision), or to the register directly on an approved record (`ProjectService.decide_issue`); a `decided` status | code + smoke test, test_ui |
+| Stages hand on, visibly | `raia/handoff.py` — what each stage receives and addresses on stable identifiers, what changed since the approved version, the Traceability thread, and the decisions and exclusions the next prompt is told about | code + test_backlog |
 | Only an audit verifies | `backlog.apply_audit` runs only on an approved audit of an ended sprint; ticks and Jira syncs set *done*, never *verified* | code + test_backlog, test_jira |
 
-**Not yet implemented** (tracked in the README roadmap): ingesting the official
+**Not yet implemented** (tracked in the README roadmap): the Ops layer (a
+fairness-drift monitor fed by production telemetry), ingesting the official
 legal texts with article-level citation metadata, Confluence, Jira Server or
 Data Center (Jira Cloud is supported, optionally), and least-privilege
 tool-permission hardening.

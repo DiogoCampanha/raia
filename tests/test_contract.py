@@ -64,7 +64,7 @@ def test_vocabularies_come_from_the_corpus() -> None:
     pl = CORPUS["pl_2338_2023"]
     check(all(w in pl for w in ("vulnerability", "irreversibility", "scale")),
           "the magnitude anchors use PL 2338/2023's harm criteria")
-    for engine in ("coverage", "drift", "risk_screen", "story_map", "traceability"):
+    for engine in ("coverage", "risk_screen", "story_map", "traceability"):
         text = (ROOT / "raia" / "rationale" / f"{engine}.py").read_text()
         types = set(re.findall(r'type="([a-z_]+)"', text))
         owners = set(re.findall(r'decision_owner="([a-z_]+)"', text))
@@ -377,15 +377,7 @@ def test_signatures() -> None:
                                                                {"verdict": "not_verified"}]}}, {})
     check(sig["kind"] == "split" and [x["value"] for x in sig["segments"]] == [1, 0, 0, 2],
           "the Auditor splits the items by verdict")
-    sig = digest.signature("drift_monitor", {}, {
-        "thresholds": {"parity_difference": {"value": 0.1}},
-        "analysis": {"windows": [{"window": "2026-04", "dp_difference": 0.05, "parity_breach": False},
-                                 {"window": "2026-06", "dp_difference": 0.18, "parity_breach": True}],
-                     "trend": {"direction": "widening"}}})
-    check(sig["kind"] == "series" and sig["threshold"] == 0.1 and [p["tone"] for p in sig["points"]] == ["ok", "high"],
-          "the Drift Monitor plots the parity gap per window against its threshold")
-    check("2026-06: 0.18 (breach)" in digest.signature_text(sig), "…and the document states the same numbers")
-    check(digest.signature("auditor", {}, {}) is None and digest.signature("drift_monitor", {"extension": None}, {}) is None,
+    check(digest.signature("auditor", {}, {}) is None and digest.signature("requirements_reviewer", {"extension": None}, {}) is None,
           "no computed facts, no picture: nothing is drawn from the model's prose")
 
 
@@ -526,11 +518,140 @@ def test_audit_report() -> None:
     check("Not assessed in this record version" in old_md, "an audit approved before the report still renders, and says so")
 
 
+def test_citations_pruned_and_checks_explained() -> None:
+    print("== a fabricated citation is removed by code, and checks say who they are for ==")
+    from raia import validators as VAL
+
+    fake = "[Source: EU AI Act — Article 99 | authority: legal]"
+    rec = _record()
+    rec["findings"][0]["citations"] = [ADVISORY, fake]
+    rec["actions"][0]["citations"] = [fake]
+    out = assemble.finalize("risk_classifier", rec, _rationale("risk_classifier"), EVIDENCE, AGENTS["risk_classifier"].spec)
+    f1 = out["findings"][0]
+    check(fake not in json.dumps(out["findings"]) and fake not in json.dumps(out["actions"]),
+          "a citation that matches no retrieved excerpt is removed from the record")
+    check(f1["citations"] == [ADVISORY], "…and a real one beside it is kept")
+    check(any(n.startswith("PRUNED_CITATION:") and "RC-F1" in n for n in out["contract_notes"]),
+          "…and the removal is recorded, with where it was")
+    again = assemble.finalize("risk_classifier", out, _rationale("risk_classifier"), EVIDENCE, AGENTS["risk_classifier"].spec)
+    check(sum(n.startswith("PRUNED_CITATION:") for n in again["contract_notes"]) == 2,
+          "finalising again keeps the record of what was removed, once")
+    items = checks.check_corrections(out)
+    pruned = next((i for i in items if i.code == "citations.pruned"), None)
+    check(pruned is not None and VAL.audience(pruned.to_dict()) == VAL.HANDLED,
+          "the removal is a technical-log item, not a warning for the reviewer")
+    none = assemble.finalize("risk_classifier", _record(), _rationale("risk_classifier"), [], AGENTS["risk_classifier"].spec)
+    check(none["findings"][0]["citations"] == [ADVISORY], "with no evidence to check against, nothing is removed")
+
+    report = {"items": [
+        {"code": "findings.unanswered", "level": FAIL, "title": "Risk responses", "detail": "d", "items": ["RC-F1 (high): t"]},
+        {"code": "contract.shortened", "level": "warn", "title": "Length limits", "detail": "d", "items": []},
+        {"code": "verdict.disagreement", "level": "warn", "title": "Verdict", "detail": "d", "items": []},
+        {"code": "obligations.mismatch", "level": FAIL, "title": "Obligations", "detail": "d", "items": ["missing: eu.art9"]},
+        {"code": "cards.mismatch", "level": FAIL, "title": "Cards", "detail": "d", "items": ["unknown: X9"]},
+        {"code": "citations.resolved", "level": PASS, "title": "Citations", "detail": "d", "items": []},
+    ]}
+    parts = VAL.partition(report)
+    check([i["code"] for i in parts[VAL.ACT]] == ["findings.unanswered", "obligations.mismatch"],
+          "the reviewer is asked to act only on what needs a person")
+    check([i["code"] for i in parts[VAL.HANDLED]] == ["contract.shortened", "cards.mismatch"],
+          "what code handled, or only invented ids, goes to the technical log")
+    check([i["code"] for i in parts[VAL.DECISION]] == ["verdict.disagreement"], "a disagreement is a decision card")
+    check(all(i["why"] and i["todo"] for i in parts[VAL.ACT]), "every instruction says why the check exists and what to do")
+
+
+def test_blocked_and_gaps() -> None:
+    print("== Blocked in its current form, and the gaps that make it so ==")
+    rec = _record()
+    rec["findings"][1]["links"] = ["eu.art5"]
+    rationale = _rationale("risk_classifier")
+    out = assemble.finalize("risk_classifier", rec, rationale, EVIDENCE, AGENTS["risk_classifier"].spec)
+    out["findings"][1]["blocking"] = True
+    out["overall_status"] = "blocked"
+    out["open_issues"].append({"id": "RC-I9", "type": "value_tradeoff", "description": "Pick one. Then more.",
+                               "options": ["a", "b"], "decision_owner": "product", "blocking": True, "links": []})
+    dg = digest.build("risk_classifier", out, rationale.data)
+    check(dg["status"]["label"] == "Blocked in its current form", "the status says blocked in its current form")
+    blocking_ids = [g["id"] for g in dg["gaps"]]
+    check("RC-F2" in blocking_ids and "RC-I9" in blocking_ids, "every blocking finding and decision is a gap")
+    gap_f = next(g for g in dg["gaps"] if g["id"] == "RC-F2")
+    check("RC-A1" in gap_f["unblock"], "a gap says what unblocks it: the actions that answer it")
+    check(next(g for g in dg["gaps"] if g["id"] == "RC-I9")["unblock"] == "Take decision RC-I9.",
+          "…or the decision to take")
+    check(str(len(dg["gaps"])) in dg["status"]["help"] and "Gaps to close" in dg["status"]["help"],
+          "the status line counts them and says where they are")
+    md = render.render("risk_classifier", out, rationale.data, rationale.checklist_keys())
+    check("**Gaps to close**" in md and "_Unblocks it:_" in md, "the document lists the gaps under the summary")
+    check(len(dg["kpis"]) == 3, "the Risk Classifier shows three numbers: its tiers are its picture")
+    check(sum(len(g["items"]) for g in dg["obligations"]) == len(rationale.data.get("obligations") or []),
+          "every computed obligation is listed, grouped by instrument")
+    calm = digest.build("risk_classifier", assemble.finalize("risk_classifier", _record(), rationale, EVIDENCE,
+                                                             AGENTS["risk_classifier"].spec), rationale.data)
+    check(not calm["gaps"] or calm["status"]["key"] == "blocked", "a record that is not blocked has no gaps")
+
+
+def test_card_review() -> None:
+    print("== a reviewer accepts or rejects each card; computed ones are overridden, not deleted ==")
+    from raia.contract import review as RV
+
+    spec = AGENTS["risk_classifier"].spec
+    out = assemble.finalize("risk_classifier", _record(), _rationale("risk_classifier"), EVIDENCE, spec)
+    ids = [c["id"] for c in RV.cards("risk_classifier", out)]
+    check(ids[:2] == ["RC-F1", "RC-F2"] and "RC-A1" in ids, "risks and actions are reviewable cards")
+    review = {"cards": {"RC-F1": {"verdict": "rejected", "reason_code": "duplicate", "reason": "Same as RC-F2"},
+                        "RC-A1": {"verdict": "accepted"}}, "decisions": {}}
+    t = RV.tally("risk_classifier", out, review)
+    check(t["rejected"] == 1 and t["accepted"] == 1 and t["unmarked"] == len(ids) - 2 and not t["missing_reason"],
+          "the tally counts accepted, rejected and left as they are")
+    check(RV.tally("risk_classifier", out, {"cards": {"RC-F1": {"verdict": "rejected"}}})["missing_reason"] == ["RC-F1"],
+          "a rejection without a reason is caught")
+    applied = RV.apply("risk_classifier", out, review, by="Ana")
+    again = assemble.finalize("risk_classifier", applied, _rationale("risk_classifier"), EVIDENCE, spec)
+    check(all(f["id"] != "RC-F1" for f in again["findings"]) and any(f["id"] == "RC-F2" for f in again["findings"]),
+          "a rejected model card leaves the record, and the others keep their names")
+    check(again["review"]["rejected"][0]["reason"] == "Same as RC-F2" and again["review"]["rejected"][0]["by"] == "Ana",
+          "…kept in the review block with who and why")
+    check(RV.apply("risk_classifier", applied, review, by="Ana")["review"]["rejected"] == applied["review"]["rejected"],
+          "applying the same review twice changes nothing")
+    a2 = next(a for a in again["actions"] if a["id"] == "RC-A2")
+    check("RC-F1" not in a2["finding_ids"], "an action no longer points at a rejected risk")
+
+    evr_rec = {"findings": [], "actions": [], "open_issues": [], "extension": {"evrs": [
+        {"id": "EVR-1", "statement": "s", "fit_criterion": "f", "value": "fairness"}]}}
+    over = RV.apply("requirements_reviewer", evr_rec, {"cards": {"EVR-1": {"verdict": "rejected", "reason": "Policy"}}},
+                    by="Ana")
+    check(over["extension"]["evrs"][0]["review"]["status"] == "overridden" and over["review"]["overridden"],
+          "a computed requirement is kept and marked overridden, never deleted")
+    issues = RV.override_issues(over)
+    check(len(issues) == 1 and issues[0]["decision"]["choice"].startswith("Override EVR-1"),
+          "…and the override reaches the register as a decided disagreement")
+
+    blocked = {"overall_status": "blocked", "open_issues": [
+        {"id": "RC-I1", "description": "Design oversight before release.", "blocking": True}]}
+    check(RV.effective_status(blocked, set())[0] == "blocked", "an open blocking decision keeps it blocked")
+    status, was = RV.effective_status(blocked, {RV.issue_key(blocked["open_issues"][0])})
+    check(status == "needs_attention" and "RC-I1" in was, "taking it lifts Blocked, and says which decision did")
+    check(RV.issue_key({"description": "Design  oversight, before release!"}) == RV.issue_key(blocked["open_issues"][0]),
+          "a decision is named by its wording, so renumbering cannot lose it")
+
+    from raia import handoff as H
+    from raia import roadmap as R
+
+    d = H.delta("requirements_reviewer", {"findings": [{"title": "A"}], "open_issues": []},
+                {"gaps": [{"ref": "eu.art9"}, {"ref": "fairness"}]},
+                {"findings": [{"title": "A"}, {"title": "B"}], "open_issues": []}, {"gaps": [{"ref": "fairness"}]})
+    check("1 gap closed" in d["line"] and "1 new risk" in d["line"] and d["unchanged"] == 1,
+          "a revision says what improved and what is new since the approved version")
+    facts = R.requirement_facts({"evrs": [{"id": "EVR-1"}, {"id": "EVR-2"}], "excluded_evrs": ["EVR-2"]})
+    check(list(facts) == ["EVR-1"], "an overridden requirement is not handed on: no story, no audit")
+
+
 def main() -> None:
     for fn in (test_vocabularies_come_from_the_corpus, test_rubric, test_parse_and_fallback,
                test_finalize, test_render_and_schema, test_published_schemas_are_current, test_action_plan,
                test_reading_order, test_length_overflow, test_story_conflicts, test_signatures,
-               test_refined_stories_lead, test_audit_report):
+               test_refined_stories_lead, test_audit_report, test_citations_pruned_and_checks_explained,
+               test_blocked_and_gaps, test_card_review):
         fn()
     print()
     if FAILURES:

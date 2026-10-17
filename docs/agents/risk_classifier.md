@@ -16,6 +16,8 @@ Classifies the AI system into a legal risk tier and lists the obligations that f
 | Requires approved | nothing — first stage |
 | Reads | nothing |
 | Produces | `02_risk_classification.md` — risk classification record |
+| Receives | The product answers only: it is the first stage. |
+| Hands on | Legal obligations (codes such as `eu.art14`), the principles its risks touch, its open decisions. |
 
 ## 3. Normative grounding
 
@@ -86,11 +88,12 @@ Excerpts pinned for the canonical scenario:
 - Whether a narrow-task exemption actually holds for your system.
 - Whether a rules-only product is an AI system in the legal sense.
 - Whether the classification fits how the product is really used.
-- Every open issue the record raises, and whether to approve, edit or reject the record.
+- Whether to accept or reject each card of the draft (a rejection carries a reason); cards left unmarked are accepted as they are.
+- Every decision the record raises, taken on the card where it is shown (an option and why), and whether to approve, edit or reject the record.
 
 ## 7. The record it produces
 
-Schema `raia-record/1.3` — `docs/schema/risk_classifier.schema.json`. Identifier prefix `RC`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.4` — `docs/schema/risk_classifier.schema.json`. Identifier prefix `RC`. Shared core as in `docs/output-contract.md`; the extension:
 
 | Field | Content |
 |---|---|
@@ -101,9 +104,9 @@ Schema `raia-record/1.3` — `docs/schema/risk_classifier.schema.json`. Identifi
 | `obligations[].code` | An obligation code from the computed table, exactly. |
 | `obligations[].meaning_for_this_product` | One sentence: what the team must do or show for this product. |
 | `obligations[].citations` | Citation tags copied exactly from the retrieved excerpts, e.g. "[Source: ... / authority: legal]". Never invent one. |
-| `human_oversight_assessment` | Whether the declared oversight design meets the oversight obligations, conclusion first. |
-| `affected_persons_rights` | How affected persons' rights are operationalised in the product, conclusion first. |
-| `impact_assessments` | Which impact assessments the instruments require (fundamental rights / algorithmic). |
+| `human_oversight_assessment` | Whether the declared oversight design meets the oversight obligations, conclusion first; at most two sentences. |
+| `affected_persons_rights` | How affected persons' rights are operationalised in the product, conclusion first; at most two sentences. |
+| `impact_assessments` | Which impact assessments the instruments require (fundamental rights / algorithmic); at most two sentences. |
 
 Rendered sections: Summary → Action Plan → Open Issues → Findings → Risk Classification → Applicable Legal Obligations → Human Oversight and Affected Persons → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
 
@@ -112,7 +115,7 @@ Verdict keys the agent declares: `eu_tier`, `br_tier`.
 ## 8. Checks
 
 - The record conforms to the schema (one repair attempt, then a fallback record)
-- Every citation resolves to an excerpt retrieved for this run
+- Every citation resolves to an excerpt retrieved for this run; one that does not is removed by code and logged
 - Every checklist item is declared covered, not applicable or not grounded
 - Every finding has an action or an open issue
 - The rule engine's issues are carried forward; the verdict is reconciled

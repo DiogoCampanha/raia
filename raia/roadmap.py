@@ -66,7 +66,9 @@ def requirement_facts(review: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """
     review = review or {}
     evrs = review.get("evrs") or []
+    excluded = {str(x) for x in review.get("excluded_evrs") or []}
     ids = [str(e.get("id")) for e in evrs if e.get("id")] or [str(x) for x in review.get("evr_ids") or []]
+    ids = [i for i in ids if i not in excluded]
     out: Dict[str, Dict[str, Any]] = {}
     for pos, eid in enumerate(ids):
         e = next((x for x in evrs if str(x.get("id")) == eid), {})
@@ -268,7 +270,8 @@ def suggest(bl: Dict[str, Any], sp: Dict[str, Any], review: Dict[str, Any],
         refs = [s["id"], *(s.get("evr_ids") or [])]
         hit = next((r for r in refs if r in blocked_by), None)
         if hit:
-            blocked.append({"id": s["id"], "reason": f"blocked by open issue {blocked_by[hit]} ({hit})"})
+            blocked.append({"id": s["id"], "reason": f"held by open issue {blocked_by[hit]} ({hit}); taking that "
+                                                      "decision releases it"})
             continue
         legal = [e for e in s.get("evr_ids") or [] if facts.get(e, {}).get("legal")]
         prio = ""
