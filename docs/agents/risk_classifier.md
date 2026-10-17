@@ -60,6 +60,7 @@ Classifies the AI system into a legal risk tier and lists the obligations that f
 - Reads how the AI works: flags a rules-only product that may fall outside the legal definition of an AI system, and applies transparency duties that the techniques imply even when they were not selected.
 - Derives the risk tier for each jurisdiction and the obligations that follow from that tier and from your role (provider or deployer).
 - Identifies the legal excerpts that must be in front of the reviewer.
+- Analyses risk and stops there: it lists the risks and the decisions on the classification, not what to do about them. The response to each risk is written at the next stage, as requirements.
 
 Checklist the record must declare:
 
@@ -93,7 +94,7 @@ Excerpts pinned for the canonical scenario:
 
 ## 7. The record it produces
 
-Schema `raia-record/1.4` — `docs/schema/risk_classifier.schema.json`. Identifier prefix `RC`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.5` — `docs/schema/risk_classifier.schema.json`. Identifier prefix `RC`. Shared core as in `docs/output-contract.md` — without actions: this stage analyses risk; the response is written at the next stage, as requirements; the extension:
 
 | Field | Content |
 |---|---|
@@ -108,7 +109,7 @@ Schema `raia-record/1.4` — `docs/schema/risk_classifier.schema.json`. Identifi
 | `affected_persons_rights` | How affected persons' rights are operationalised in the product, conclusion first; at most two sentences. |
 | `impact_assessments` | Which impact assessments the instruments require (fundamental rights / algorithmic); at most two sentences. |
 
-Rendered sections: Summary → Action Plan → Open Issues → Findings → Risk Classification → Applicable Legal Obligations → Human Oversight and Affected Persons → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
+Rendered sections: Summary → Open Issues → Findings → Risk Classification → Applicable Legal Obligations → Human Oversight and Affected Persons → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
 
 Verdict keys the agent declares: `eu_tier`, `br_tier`.
 

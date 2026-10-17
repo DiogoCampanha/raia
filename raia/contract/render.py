@@ -8,7 +8,10 @@ Every document reads in the same order as its screen. Most agents share one
 layout: **Summary** (status, headline, a few numbers, the main issues),
 **Action Plan** (grouped Do now, Plan, Track) and **Open Issues** (the
 decisions a person must take); then the **deep dive** — Findings, the agent's
-own sections, each opening with its conclusion. Two agents lead with what
+own sections, each opening with its conclusion. A stage leaves out what it
+does not write: the Risk Classifier, an analysis, has no Action Plan; the
+Requirements Reviewer leads with its Ethical Value Requirements and has
+neither Findings nor an Action Plan. Two agents lead with what
 their users take away instead. The **User Story Refiner** leads with the
 refined stories, and the risks, actions and decisions behind them follow as
 "why these changes". The **Auditor** reads as an audit report — opinion,
@@ -63,6 +66,16 @@ def layout(agent_key: str) -> List[Tuple[str, List[str]]]:
         return [("", ["Audit Opinion", "Where the Project Stands", "Progress Across Sprints", "Is the Backlog Enough",
                       "What Comes Next", "Strengths", "Risks", "Opportunities", "Pathway Forward"]),
                 (APPENDICES, ["Open Issues", "Verdict Register", "Accountability Documentation"]),
+                (TRACE, list(COMMON_TAIL))]
+    if not V.writes_findings(agent_key):
+        # Requirements, not risks: the requirements lead, and there is no action plan.
+        lead = [t for t in AGENT_SECTIONS.get(agent_key, []) if t == "Ethical Value Requirements"]
+        return [("", ["Summary"] + lead + ["Open Issues"]),
+                (DEEP_DIVE, [t for t in AGENT_SECTIONS.get(agent_key, []) if t not in lead]),
+                (TRACE, list(COMMON_TAIL))]
+    if not V.writes_actions(agent_key):
+        # An analysis: risks and the decisions on it, no action plan.
+        return [("", ["Summary", "Open Issues"]), (DEEP_DIVE, ["Findings"] + AGENT_SECTIONS.get(agent_key, [])),
                 (TRACE, list(COMMON_TAIL))]
     return [("", COMMON_HEAD[:3]), (DEEP_DIVE, ["Findings"] + AGENT_SECTIONS.get(agent_key, [])),
             (TRACE, list(COMMON_TAIL))]

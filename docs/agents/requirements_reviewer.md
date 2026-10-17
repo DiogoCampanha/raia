@@ -41,6 +41,7 @@ Reviews the software requirements against the risk classification and derives ve
 
 - Builds a coverage matrix: every obligation from the approved classification and each of the seven Responsible AI principles, tested against your requirements and existing controls.
 - Lists the uncovered cells as gaps, so a gap is computed rather than asserted.
+- Writes requirements, not risks: the risks approved at the Risk Classifier reach it as the gaps, and each requirement shows the risks it answers and takes their priority.
 - On request, pre-fills the stakeholder and principle questions you left empty from the approved classification, with a reason per value, and offers a few candidate requirements for the gaps your answers leave. Candidates that cite no retrieved excerpt, address a gap that was not computed or have no testable fit criterion are dropped before you see them.
 - Keeps adopted recommendations apart from the requirements the team wrote: coverage that rests on one is marked as such in the record.
 
@@ -75,7 +76,7 @@ Excerpts pinned for the canonical scenario:
 
 ## 7. The record it produces
 
-Schema `raia-record/1.4` — `docs/schema/requirements_reviewer.schema.json`. Identifier prefix `RR`. Shared core as in `docs/output-contract.md`; the extension:
+Schema `raia-record/1.5` — `docs/schema/requirements_reviewer.schema.json`. Identifier prefix `RR`. Shared core as in `docs/output-contract.md` — without findings or actions: the approved risks reach it as computed gaps, and its requirements are the response to them; the extension:
 
 | Field | Content |
 |---|---|
@@ -110,7 +111,7 @@ Schema `raia-record/1.4` — `docs/schema/requirements_reviewer.schema.json`. Id
 | `impact_assessment.harms_and_benefits[].benefits` | — |
 | `impact_assessment.mitigations` | The main mitigations, conclusion first. |
 
-Rendered sections: Summary → Action Plan → Open Issues → Findings → Context of Use and Stakeholders → Value Register → Gap Analysis → Ethical Value Requirements → Impact Assessment → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
+Rendered sections: Summary → Ethical Value Requirements → Open Issues → Context of Use and Stakeholders → Value Register → Gap Analysis → Impact Assessment → Not Grounded in Retrieved Excerpts → Declared Coverage → Verdict Reconciliation.
 
 Verdict keys the agent declares: `gap_count`.
 

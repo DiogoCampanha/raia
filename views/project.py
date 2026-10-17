@@ -194,9 +194,12 @@ with tab_plan:
     st.caption("Every action from every approved stage, in one list sorted by priority. Priority is "
                "computed by the software from each finding's likelihood and magnitude (NIST AI RMF), "
                "raised where a legal obligation, a prohibited practice or a measured severity "
-               "requires it. Drafts under review contribute nothing.")
+               "requires it. Drafts under review contribute nothing. The Risk Classifier analyses "
+               "risk and the Requirements Reviewer answers it with requirements, so actions start "
+               "with the User Story Refiner.")
     if not plan_rows:
-        empty_state("No actions yet", "Approve a stage and its actions appear here.")
+        empty_state("No actions yet", "Actions come from the User Story Refiner and the Auditor, once "
+                                      "their records are approved.")
     else:
         counts = action_plan.summary(plan_rows)
         stat_tiles([(p.capitalize(), n, "", p in ("critical", "high") and n > 0) for p, n in counts.items()])

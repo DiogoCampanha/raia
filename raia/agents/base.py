@@ -174,6 +174,9 @@ class AgentSpec:
     #: agent's identity and place in the pipeline, and has its own record.
     parent: str = ""
     mode_label: str = ""
+    #: The words on the run button, when "Run <name>" would not say what the
+    #: run does (the Refiner's two modes share one name).
+    run_label: str = ""
 
     def __post_init__(self) -> None:
         # The layout is the contract's, not the agent's to choose.

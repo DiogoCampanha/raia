@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from raia.agents import AGENTS  # noqa: E402
+from raia.agents import AGENTS, RUNNABLE  # noqa: E402
 from raia.contract import actions as action_plan  # noqa: E402
 from raia.contract import assemble, checks, digest, mock, render, rubric  # noqa: E402
 from raia.contract import vocab as V  # noqa: E402
@@ -123,6 +123,10 @@ def _record(**over):
     return base
 
 
+#: A stage that writes both risks and actions, for the checks on actions.
+ACT = "story_generate"
+
+
 def test_parse_and_fallback() -> None:
     print("== parsing, repair prompt and the fallback record ==")
     text = "Here it is:\n```json\n" + json.dumps(_record()) + "\n```"
@@ -150,15 +154,21 @@ def test_finalize() -> None:
     spec = AGENTS["risk_classifier"].spec
     rec = assemble.finalize("risk_classifier", _record(), r, EVIDENCE, spec)
     check([f["id"] for f in rec["findings"]] == ["RC-F1", "RC-F2"], "findings get stable, agent-prefixed ids")
-    check(rec["actions"][0]["finding_ids"] == ["RC-F2"], "action links follow the renumbering")
-    check(any("F9" in n for n in rec["contract_notes"]), "an unknown finding reference is removed and noted")
+    check(rec["actions"] == [] and any("2 actions removed" in n for n in rec["contract_notes"]),
+          "the Risk Classifier analyses risk and writes no actions: any it returns are removed, and noted")
     check(rec["findings"][0]["priority"] == "low", "an advisory, limited × possible finding stays low")
     check(rec["findings"][1]["priority"] == "high", "a legally cited finding is raised to high")
-    check(rec["actions"][0]["priority"] == "high", "an action inherits the priority of what it answers")
     engine = [i for i in rec["open_issues"] if i["origin"] == "engine"]
     check(len(engine) == len(r.open_issues) and all(i["type"] in V.ISSUE_TYPES for i in engine),
           "every engine issue is carried forward, typed")
-    check(any(i["type"] == "risk_acceptance" and "RC-A2" in i["links"] for i in rec["open_issues"]),
+    handed = checks.check_responses(rec)
+    check(handed.code == "findings.handed_on" and handed.level == PASS,
+          "…and its risks are handed on to the next stage, not left unanswered")
+    act = assemble.finalize(ACT, _record(), r, EVIDENCE, RUNNABLE[ACT].spec)
+    check(act["actions"][0]["finding_ids"] == ["SG-F2"], "a stage that writes actions: action links follow the renumbering")
+    check(any("F9" in n for n in act["contract_notes"]), "an unknown finding reference is removed and noted")
+    check(act["actions"][0]["priority"] == "high", "an action inherits the priority of what it answers")
+    check(any(i["type"] == "risk_acceptance" and "SG-A2" in i["links"] for i in act["open_issues"]),
           "accepting a risk opens an issue for a person")
     check(rec["overall_status"] != "on_track", "overall status is raised when issues are open")
     check(rec["meta"]["schema_version"] == V.SCHEMA_VERSION and rec["meta"]["frameworks"], "the record is stamped")
@@ -198,8 +208,16 @@ def test_render_and_schema() -> None:
         sections = render.required_sections(key)
         check(all(s in sections for s in render.SHARED_SECTIONS) and sections[-3:] == render.COMMON_TAIL
               and len(sections) == len(set(sections)), f"{key}: its own layout keeps the shared sections, traceability last")
-        if key not in ("story_refiner", "auditor"):
-            check(sections[:4] == render.COMMON_HEAD, f"{key}: summary, action plan and open issues lead")
+        props = schema.get("properties") or {}
+        check(("actions" in props) == V.writes_actions(key) and ("findings" in props) == V.writes_findings(key),
+              f"{key}: the model is offered only the parts of the core this stage writes")
+        if key == "risk_classifier":
+            check(sections[:2] == ["Summary", "Open Issues"] and "Action Plan" not in sections,
+                  f"{key}: an analysis — summary and its decisions lead, no action plan")
+        if key == "requirements_reviewer":
+            check(sections[:3] == ["Summary", "Ethical Value Requirements", "Open Issues"]
+                  and "Action Plan" not in sections and "Findings" not in sections,
+                  f"{key}: the requirements lead; no risks of its own and no action plan")
         check(AGENTS[key].spec.required_sections == render.required_sections(key), f"{key}: the spec uses the contract's layout")
     r = _rationale("risk_classifier")
     r.checklist = [ChecklistItem("tier_eu", "x")]
@@ -231,36 +249,39 @@ def test_published_schemas_are_current() -> None:
 def test_action_plan() -> None:
     print("== the project action plan ==")
     r = _rationale("risk_classifier")
-    rec = assemble.finalize("risk_classifier", _record(), r, EVIDENCE, AGENTS["risk_classifier"].spec)
+    rec = assemble.finalize(ACT, _record(), r, EVIDENCE, RUNNABLE[ACT].spec)
 
     class Repo:
         def existing_artifacts(self):
-            return ["risk_classification"]
+            return ["rai_backlog"]
 
         def read_data(self, key):
             return {"structured": {"record": rec}}
 
     rows = action_plan.project_actions(Repo())
-    check([x["id"] for x in rows] == ["RC-A1", "RC-A2"], "actions are sorted by computed priority")
+    check([x["id"] for x in rows] == ["SG-A1", "SG-A2"], "actions are sorted by computed priority")
     check(action_plan.to_csv(rows).splitlines()[0].startswith("id,priority,stage"), "CSV export has the standard columns")
     check(json.loads(action_plan.to_json(rows))["schema"] == V.SCHEMA_VERSION, "JSON export is versioned")
 
 
 def test_reading_order() -> None:
-    print("== every record reads summary, actions, deep dive ==")
+    print("== a record reads summary, decisions, deep dive ==")
     r = _rationale("risk_classifier")
     rec = assemble.finalize("risk_classifier", _record(headline="High-risk: add human review first."), r, EVIDENCE,
                             AGENTS["risk_classifier"].spec)
     dg = digest.build("risk_classifier", rec, r.data)
     check(dg["headline"] == "High-risk: add human review first.", "the headline leads")
     kpi = {k["label"]: k for k in dg["kpis"]}
-    check(kpi["Risks identified"]["value"] == len(rec["findings"]) and kpi["Actions to take"]["value"] == len(rec["actions"])
-          and kpi["Decisions needed"]["value"] == len(rec["open_issues"]), "the summary counts are the record's counts")
-    grouped = [a["id"] for g in dg["action_groups"] for a in g["actions"]]
-    check(sorted(grouped) == sorted(a["id"] for a in rec["actions"]) and len(grouped) == len(set(grouped)),
-          "every action appears exactly once in the action groups")
+    check(kpi["Risks identified"]["value"] == len(rec["findings"]) and "Actions to take" not in kpi
+          and kpi["Decisions needed"]["value"] == len(rec["open_issues"]),
+          "the summary counts are the record's counts, and an analysis counts no actions")
+    act = assemble.finalize(ACT, _record(), r, EVIDENCE, RUNNABLE[ACT].spec)
+    adg = digest.build(ACT, act, r.data)
+    grouped = [a["id"] for g in adg["action_groups"] for a in g["actions"]]
+    check(sorted(grouped) == sorted(a["id"] for a in act["actions"]) and len(grouped) == len(set(grouped)),
+          "where a stage writes actions, every action appears exactly once in the action groups")
     members = {k: m for k, _, m, _ in V.ACTION_GROUPS}
-    check(all(a["priority"] in members[g["key"]] for g in dg["action_groups"] for a in g["actions"]),
+    check(all(a["priority"] in members[g["key"]] for g in adg["action_groups"] for a in g["actions"]),
           "…in the group of its computed priority")
     top = dg["top_issues"][0]
     check(top["priority"] == max((f["priority"] for f in rec["findings"]), key=lambda p: V.rank(V.PRIORITIES, p)),
@@ -271,12 +292,12 @@ def test_reading_order() -> None:
     check(digest.build("risk_classifier", blocked, r.data)["top_issues"][0]["id"] == low["id"],
           "a blocking finding leads the main issues, whatever its priority")
     check(all(s.get("conclusion") for s in dg["deep"]), "every deep-dive section opens with a conclusion")
-    check([s["md_title"] for s in dg["deep"]] == render.required_sections("risk_classifier")[3:],
+    check([s["md_title"] for s in dg["deep"]] == render.required_sections("risk_classifier")[2:],
           "the deep dive has exactly the document's analysis and appendix sections")
     md = render.render("risk_classifier", rec, r.data, r.checklist_keys())
     order = [md.index(f"## {t}") for t in render.required_sections("risk_classifier")]
     check(order == sorted(order), "the document follows the same order as the screen")
-    check(md.index("High-risk: add human review first.") < md.index("## Action Plan"), "the document leads with the headline")
+    check(md.index("High-risk: add human review first.") < md.index("## Open Issues"), "the document leads with the headline")
     older = dict(rec)
     older.pop("headline")
     check(digest.build("risk_classifier", older, r.data)["headline"] == "s",
@@ -353,7 +374,7 @@ def test_signatures() -> None:
           and eu["steps"][eu["active"]] == "High" and "high" in r.verdict["eu_tier"],
           "the Risk Classifier marks the computed EU tier on the scale")
     md = render.render("risk_classifier", rec, r.data, r.checklist_keys())
-    check(md.index("**Where the product sits**") < md.index("## Action Plan"),
+    check(md.index("**Where the product sits**") < md.index("## Open Issues"),
           "…and the document carries the same picture, in the summary")
     check(digest.signature("risk_classifier", {"computed_verdict": {"eu_tier": "unacceptable — prohibited practice",
                                                                     "br_tier": "excessive risk — prohibited"}}, {})
@@ -525,16 +546,15 @@ def test_citations_pruned_and_checks_explained() -> None:
     fake = "[Source: EU AI Act — Article 99 | authority: legal]"
     rec = _record()
     rec["findings"][0]["citations"] = [ADVISORY, fake]
-    rec["actions"][0]["citations"] = [fake]
     out = assemble.finalize("risk_classifier", rec, _rationale("risk_classifier"), EVIDENCE, AGENTS["risk_classifier"].spec)
     f1 = out["findings"][0]
-    check(fake not in json.dumps(out["findings"]) and fake not in json.dumps(out["actions"]),
+    check(fake not in json.dumps(out["findings"]),
           "a citation that matches no retrieved excerpt is removed from the record")
     check(f1["citations"] == [ADVISORY], "…and a real one beside it is kept")
     check(any(n.startswith("PRUNED_CITATION:") and "RC-F1" in n for n in out["contract_notes"]),
           "…and the removal is recorded, with where it was")
     again = assemble.finalize("risk_classifier", out, _rationale("risk_classifier"), EVIDENCE, AGENTS["risk_classifier"].spec)
-    check(sum(n.startswith("PRUNED_CITATION:") for n in again["contract_notes"]) == 2,
+    check(sum(n.startswith("PRUNED_CITATION:") for n in again["contract_notes"]) == 1,
           "finalising again keeps the record of what was removed, once")
     items = checks.check_corrections(out)
     pruned = next((i for i in items if i.code == "citations.pruned"), None)
@@ -575,14 +595,22 @@ def test_blocked_and_gaps() -> None:
     blocking_ids = [g["id"] for g in dg["gaps"]]
     check("RC-F2" in blocking_ids and "RC-I9" in blocking_ids, "every blocking finding and decision is a gap")
     gap_f = next(g for g in dg["gaps"] if g["id"] == "RC-F2")
-    check("RC-A1" in gap_f["unblock"], "a gap says what unblocks it: the actions that answer it")
+    check("next stage" in gap_f["unblock"] and "requirement" in gap_f["unblock"],
+          "a blocking risk in an analysis says what unblocks it: a design change, or a requirement next")
+    act = assemble.finalize(ACT, rec, rationale, EVIDENCE, RUNNABLE[ACT].spec)
+    act["findings"][1]["blocking"] = True
+    act_gap = next(g for g in digest.gaps(act["findings"], [digest._action_view(a, {act["findings"][1]["id"]})
+                                                            for a in act["actions"]], [])
+                   if g["id"] == "SG-F2")
+    check("SG-A1" in act_gap["unblock"], "where a stage writes actions, a gap names the actions that answer it")
     check(next(g for g in dg["gaps"] if g["id"] == "RC-I9")["unblock"] == "Take decision RC-I9.",
           "…or the decision to take")
     check(str(len(dg["gaps"])) in dg["status"]["help"] and "Gaps to close" in dg["status"]["help"],
           "the status line counts them and says where they are")
     md = render.render("risk_classifier", out, rationale.data, rationale.checklist_keys())
     check("**Gaps to close**" in md and "_Unblocks it:_" in md, "the document lists the gaps under the summary")
-    check(len(dg["kpis"]) == 3, "the Risk Classifier shows three numbers: its tiers are its picture")
+    check([k["label"] for k in dg["kpis"]] == ["Risks identified", "Decisions needed"],
+          "the Risk Classifier shows two numbers, risks and decisions: its tiers are its picture, and it has no actions")
     check(sum(len(g["items"]) for g in dg["obligations"]) == len(rationale.data.get("obligations") or []),
           "every computed obligation is listed, grouped by instrument")
     calm = digest.build("risk_classifier", assemble.finalize("risk_classifier", _record(), rationale, EVIDENCE,
@@ -594,27 +622,31 @@ def test_card_review() -> None:
     print("== a reviewer accepts or rejects each card; computed ones are overridden, not deleted ==")
     from raia.contract import review as RV
 
-    spec = AGENTS["risk_classifier"].spec
-    out = assemble.finalize("risk_classifier", _record(), _rationale("risk_classifier"), EVIDENCE, spec)
-    ids = [c["id"] for c in RV.cards("risk_classifier", out)]
-    check(ids[:2] == ["RC-F1", "RC-F2"] and "RC-A1" in ids, "risks and actions are reviewable cards")
-    review = {"cards": {"RC-F1": {"verdict": "rejected", "reason_code": "duplicate", "reason": "Same as RC-F2"},
-                        "RC-A1": {"verdict": "accepted"}}, "decisions": {}}
-    t = RV.tally("risk_classifier", out, review)
+    spec = RUNNABLE[ACT].spec
+    out = assemble.finalize(ACT, _record(), _rationale("risk_classifier"), EVIDENCE, spec)
+    ids = [c["id"] for c in RV.cards(ACT, out)]
+    check(ids[:2] == ["SG-F1", "SG-F2"] and "SG-A1" in ids, "risks and actions are reviewable cards")
+    rc = assemble.finalize("risk_classifier", _record(), _rationale("risk_classifier"), EVIDENCE,
+                           AGENTS["risk_classifier"].spec)
+    check([c["id"] for c in RV.cards("risk_classifier", rc)] == ["RC-F1", "RC-F2"],
+          "…and on the Risk Classifier, only its risks")
+    review = {"cards": {"SG-F1": {"verdict": "rejected", "reason_code": "duplicate", "reason": "Same as SG-F2"},
+                        "SG-A1": {"verdict": "accepted"}}, "decisions": {}}
+    t = RV.tally(ACT, out, review)
     check(t["rejected"] == 1 and t["accepted"] == 1 and t["unmarked"] == len(ids) - 2 and not t["missing_reason"],
           "the tally counts accepted, rejected and left as they are")
-    check(RV.tally("risk_classifier", out, {"cards": {"RC-F1": {"verdict": "rejected"}}})["missing_reason"] == ["RC-F1"],
+    check(RV.tally(ACT, out, {"cards": {"SG-F1": {"verdict": "rejected"}}})["missing_reason"] == ["SG-F1"],
           "a rejection without a reason is caught")
-    applied = RV.apply("risk_classifier", out, review, by="Ana")
-    again = assemble.finalize("risk_classifier", applied, _rationale("risk_classifier"), EVIDENCE, spec)
-    check(all(f["id"] != "RC-F1" for f in again["findings"]) and any(f["id"] == "RC-F2" for f in again["findings"]),
+    applied = RV.apply(ACT, out, review, by="Ana")
+    again = assemble.finalize(ACT, applied, _rationale("risk_classifier"), EVIDENCE, spec)
+    check(all(f["id"] != "SG-F1" for f in again["findings"]) and any(f["id"] == "SG-F2" for f in again["findings"]),
           "a rejected model card leaves the record, and the others keep their names")
-    check(again["review"]["rejected"][0]["reason"] == "Same as RC-F2" and again["review"]["rejected"][0]["by"] == "Ana",
+    check(again["review"]["rejected"][0]["reason"] == "Same as SG-F2" and again["review"]["rejected"][0]["by"] == "Ana",
           "…kept in the review block with who and why")
-    check(RV.apply("risk_classifier", applied, review, by="Ana")["review"]["rejected"] == applied["review"]["rejected"],
+    check(RV.apply(ACT, applied, review, by="Ana")["review"]["rejected"] == applied["review"]["rejected"],
           "applying the same review twice changes nothing")
-    a2 = next(a for a in again["actions"] if a["id"] == "RC-A2")
-    check("RC-F1" not in a2["finding_ids"], "an action no longer points at a rejected risk")
+    a2 = next(a for a in again["actions"] if a["id"] == "SG-A2")
+    check("SG-F1" not in a2["finding_ids"], "an action no longer points at a rejected risk")
 
     evr_rec = {"findings": [], "actions": [], "open_issues": [], "extension": {"evrs": [
         {"id": "EVR-1", "statement": "s", "fit_criterion": "f", "value": "fairness"}]}}
@@ -646,12 +678,72 @@ def test_card_review() -> None:
     check(list(facts) == ["EVR-1"], "an overridden requirement is not handed on: no story, no audit")
 
 
+def test_requirements_answer_the_approved_risks() -> None:
+    print("== the Requirements Reviewer writes requirements, not risks; each answers the approved risks ==")
+    from raia import roadmap as R
+    from raia.rationale import backlog_coverage
+
+    rc_r = _rationale("risk_classifier")
+    code = next(o["code"] for o in rc_r.data["obligations"] if str(o["code"]).startswith("eu."))
+    base = _record()
+    rc_findings = [{**base["findings"][0], "principle": "transparency", "magnitude": "severe", "likelihood": "likely"},
+                   {**base["findings"][1], "links": [code]}]
+    rc = assemble.finalize("risk_classifier", _record(findings=rc_findings), rc_r, EVIDENCE,
+                           AGENTS["risk_classifier"].spec)
+    upstream = {"risk_classification": {"data": {**rc_r.data, "record": rc}}}
+    rr_r = AGENTS["requirements_reviewer"].spec.engine(
+        {**EXAMPLES["requirements_reviewer"], "requirements": "1. The system shall log decisions.",
+         "existing_controls": ["none"]}, upstream)
+    gaps = rr_r.data["gaps"]
+    ob = next((g for g in gaps if g["ref"] == code), None)
+    tr = next((g for g in gaps if g["ref"] == "transparency"), None)
+    check(ob is not None and "RC-F2" in ob["risks"] and ob["priority"] in ("high", "critical"),
+          "an obligation gap carries the approved risk that links it, and is at least high")
+    check(tr is not None and tr["risks"] == ["RC-F1"] and tr["priority"] == rc["findings"][0]["priority"],
+          "a principle gap carries the approved risk on that principle, and takes its priority")
+    check(all(g["priority"] in V.PRIORITIES and g["priority_basis"] for g in gaps), "every gap has a priority and says why")
+
+    evrs = [{"id": g["evr_id"], "value": "transparency", "stakeholders": ["applicants"], "statement": "s",
+             "fit_criterion": "f", "verification_method": "audit"} for g in gaps]
+    rr = _record(extension={"context_of_use": "c", "evrs": evrs, "gap_analysis": [],
+                            "impact_assessment": {"intended_uses": "u", "mitigations": "m"}}, declared_verdict={})
+    out = assemble.finalize("requirements_reviewer", rr, rr_r, EVIDENCE, AGENTS["requirements_reviewer"].spec)
+    check(out["findings"] == [] and out["actions"] == [] and any("findings removed" in n for n in out["contract_notes"]),
+          "it writes no risks and no actions: any it returns are removed, and noted")
+    by_id = {e["id"]: e for e in out["extension"]["evrs"]}
+    check(by_id[tr["evr_id"]]["answers_risks"] == ["RC-F1"] and by_id[tr["evr_id"]]["priority"] == tr["priority"],
+          "each requirement carries the risks it answers and their priority, computed")
+    again = assemble.finalize("requirements_reviewer", out, RationaleResult(engine="t"), EVIDENCE,
+                              AGENTS["requirements_reviewer"].spec)
+    check(again["extension"]["evrs"] == out["extension"]["evrs"], "finalising again without the engine's data keeps them")
+    check(checks.check_responses(out).code == "findings.upstream", "the risk-response check knows where the risks are")
+    dg = digest.build("requirements_reviewer", out, rr_r.data)
+    check(dg["kpis"][0]["label"] == "Requirements" and "Risks identified" not in {k["label"] for k in dg["kpis"]}
+          and not any(sec["key"] == "findings" for sec in dg["deep"]),
+          "the summary leads with the requirements; there is no risk list of its own")
+    check([priority for priority in (e.get("priority") for e in dg["evrs"])]
+          == sorted((e.get("priority") for e in dg["evrs"]), key=lambda p: -digest.priority_rank(p)),
+          "the requirements are listed most pressing first")
+    md = render.render("requirements_reviewer", out, rr_r.data, rr_r.checklist_keys())
+    check(md.index("## Ethical Value Requirements") < md.index("## Open Issues") and "## Findings" not in md
+          and "## Action Plan" not in md, "the document leads with the requirements, then the decisions")
+
+    review = {"evrs": out["extension"]["evrs"], "gaps": gaps, "record": out}
+    facts = R.requirement_facts(review)
+    check(facts[tr["evr_id"]]["priority"] == tr["priority"] and facts[ob["evr_id"]]["priority"] in ("high", "critical"),
+          "the roadmap reads each requirement's priority from the risks behind it")
+    cov = backlog_coverage.run({"stories": []}, review, {"record": rc})
+    gap = next((g for g in cov["gaps"] if g["kind"] == "risk_without_story" and g["ref"] == "RC-F2"), None)
+    check(gap is None or tr["evr_id"] in gap["text"] or ob["evr_id"] in gap["text"],
+          "a severe risk without a story names the requirement that answers it")
+
+
 def main() -> None:
     for fn in (test_vocabularies_come_from_the_corpus, test_rubric, test_parse_and_fallback,
                test_finalize, test_render_and_schema, test_published_schemas_are_current, test_action_plan,
                test_reading_order, test_length_overflow, test_story_conflicts, test_signatures,
                test_refined_stories_lead, test_audit_report, test_citations_pruned_and_checks_explained,
-               test_blocked_and_gaps, test_card_review):
+               test_blocked_and_gaps, test_card_review, test_requirements_answer_the_approved_risks):
         fn()
     print()
     if FAILURES:

@@ -232,7 +232,8 @@ class RiskClassifierAgent(BaseAgent):
             "Findings are the risks the classification exposes for this product (for example an "
             "obligation the current design does not meet), each linked to the obligation codes it "
             "concerns: at most six, the most consequential first, merging those that share a cause. "
-            "Actions are the next steps for the declared lifecycle stage.\n\n"
+            "This stage analyses risk and stops there: write no actions. What to do about each risk "
+            "is decided at the next stage, as ethical value requirements.\n\n"
             "Keep it short. People read this between other work: each obligation note is one "
             "sentence, each justification at most two, and every statement leads with its conclusion."
         ),

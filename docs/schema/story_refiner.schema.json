@@ -1,5 +1,5 @@
 {
-  "$id": "raia-record/1.4/story_refiner",
+  "$id": "raia-record/1.5/story_refiner",
   "title": "StoryRefinerRecord",
   "$defs": {
     "AcceptanceCriterion": {

@@ -13,7 +13,10 @@ way, top to bottom, and can be put down at any point:
    stage) and the main issues.
 2. **Actions** — what to do, grouped by computed priority (Do now, Plan,
    Track), each with its owner, when, and what shows it is done; then the
-   decisions only a person can take.
+   decisions only a person can take. Only the stages that write actions have
+   them (``vocab.NO_ACTIONS``): the Risk Classifier is an analysis — its risks
+   and the decisions on it — and the Requirements Reviewer leads with its
+   requirements, each carrying the approved risks it answers.
 3. **Deep dive** — the analysis behind each point, one section per topic, each
    opening with its conclusion. Last comes the traceability appendix
    (grounding gaps, declared coverage, verdict reconciliation).
@@ -190,22 +193,25 @@ def _decision_view(i: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _kpis_common(findings, actions, decisions) -> List[Dict[str, Any]]:
+def _kpis_common(findings, actions, decisions, agent_key: str = "") -> List[Dict[str, Any]]:
+    """The number tiles: one for each part of the core this stage writes, and its decisions."""
     by_p = _count_by(findings, "priority", V.PRIORITIES)
     top = next((p for p in reversed(V.PRIORITIES) if by_p.get(p)), None)
     now = sum(1 for a in actions if a["priority"] in ("critical", "high"))
     blocking = sum(1 for d in decisions if d["blocking"])
-    return [
-        {"label": "Risks identified", "value": len(findings),
-         "hint": _breakdown(by_p, list(reversed(V.PRIORITIES))) or "none found",
-         "tone": tone_of_priority(top) if top else "ok"},
-        {"label": "Actions to take", "value": len(actions),
-         "hint": (f"{now} to do now" if now else "none urgent") if actions else "nothing to do",
-         "tone": "high" if now else ("neutral" if actions else "ok")},
-        {"label": "Decisions needed", "value": len(decisions),
-         "hint": (f"{blocking} blocking" if blocking else "none blocking") if decisions else "none open",
-         "tone": "critical" if blocking else ("decision" if decisions else "ok")},
-    ]
+    tiles = []
+    if V.writes_findings(agent_key):
+        tiles.append({"label": "Risks identified", "value": len(findings),
+                      "hint": _breakdown(by_p, list(reversed(V.PRIORITIES))) or "none found",
+                      "tone": tone_of_priority(top) if top else "ok"})
+    if V.writes_actions(agent_key):
+        tiles.append({"label": "Actions to take", "value": len(actions),
+                      "hint": (f"{now} to do now" if now else "none urgent") if actions else "nothing to do",
+                      "tone": "high" if now else ("neutral" if actions else "ok")})
+    tiles.append({"label": "Decisions needed", "value": len(decisions),
+                  "hint": (f"{blocking} blocking" if blocking else "none blocking") if decisions else "none open",
+                  "tone": "critical" if blocking else ("decision" if decisions else "ok")})
+    return tiles
 
 
 # ---------------------------------------------------------------------------
@@ -367,19 +373,25 @@ def _requirements(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, A
     v = record.get("computed_verdict") or {}
     legal = int(v.get("obligation_gaps") or sum(1 for g in gaps.values() if g.get("kind") != "principle"))
     gap_count = int(v.get("gap_count") or len(ext.get("gap_analysis") or []))
-    gap_blocks: List[Dict[str, Any]] = [{"type": "table", "headers": ["EVR", "Derived from (computed)", "Why it matters here", "Grounding"],
+    gap_blocks: List[Dict[str, Any]] = [{"type": "table", "headers": ["EVR", "Derived from (computed)",
+                                                                       "Approved risks behind it", "Why it matters here", "Grounding"],
                                          "rows": [[g.get("evr_id"),
                                                    f"{gaps.get(g.get('evr_id'), {}).get('kind', '—')} {gaps.get(g.get('evr_id'), {}).get('ref', '')}".strip(),
+                                                   ", ".join(gaps.get(g.get("evr_id"), {}).get("risks") or []) or "—",
                                                    g.get("explanation"), " ".join(g.get("citations") or [])]
                                                   for g in ext.get("gap_analysis") or []]}]
     origin = _origin_note(data.get("suggestion_origin") or {})
     if origin:
         gap_blocks.append({"type": "note", "text": origin})
     evr_cards = [card(
-        id=e.get("id", ""), title=principle_name(e.get("value")), tone="neutral",
-        tags=[tag(str(e.get("verification_method") or "").capitalize())] + [tag(t) for t in e.get("traces_to") or []],
+        id=e.get("id", ""), title=principle_name(e.get("value")),
+        tone=tone_of_priority(e.get("priority")) if e.get("priority") else "neutral",
+        tags=([tag(V.PRIORITY_LABELS.get(e["priority"], label(e["priority"])), tone_of_priority(e["priority"]))]
+              if e.get("priority") else [])
+             + [tag(str(e.get("verification_method") or "").capitalize())] + [tag(t) for t in e.get("traces_to") or []],
         lead=str(e.get("statement") or ""),
-        fields=[("Fit criterion", e.get("fit_criterion")), ("Stakeholders", ", ".join(e.get("stakeholders") or []))],
+        fields=[("Fit criterion", e.get("fit_criterion")), ("Stakeholders", ", ".join(e.get("stakeholders") or [])),
+                ("Answers", ", ".join(e.get("answers_risks") or [])), ("Why this priority", e.get("priority_basis"))],
         cites=e.get("citations") or []) for e in evrs]
     sections = [
         {"key": "context", "title": "Context and stakeholders", "md_title": "Context of Use and Stakeholders",
@@ -1069,8 +1081,10 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
     for s in agent_sections:
         s.setdefault("group", "analysis")
     # The Risk Classifier's tiers are its signature; a fourth tile would repeat them.
-    kpis = _kpis_common(findings, actions, decisions) + (
-        [agent_kpi] if agent_kpi and agent_key != "risk_classifier" else [])
+    kpis = _kpis_common(findings, actions, decisions, agent_key)
+    if agent_kpi and agent_key != "risk_classifier":
+        # A stage that writes no risks leads with what it does write.
+        kpis = [agent_kpi] + kpis if not V.writes_findings(agent_key) else kpis + [agent_kpi]
 
     principles: Dict[str, int] = {}
     for f in findings:
@@ -1093,7 +1107,8 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
 
     meta = record.get("meta") or {}
     effective, was = RV.effective_status(record, set(taken))
-    gap_list = gaps(findings, actions, [d for d in decisions if not d["taken"]]) if effective == "blocked" else []
+    gap_list = (gaps(findings, actions, [d for d in decisions if not d["taken"]], V.writes_actions(agent_key))
+                if effective == "blocked" else [])
     status_v = status_view(effective, len(gap_list))
     if was:
         status_v["was"] = was
@@ -1105,7 +1120,8 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
         "gaps": gap_list,
         "findings": _findings_sorted(findings),
         "obligations": obligation_groups(record, data) if agent_key == "risk_classifier" else [],
-        "evrs": list((record.get("extension") or {}).get("evrs") or []) if agent_key == "requirements_reviewer" else [],
+        "evrs": (sorted((record.get("extension") or {}).get("evrs") or [],
+                        key=lambda e: -priority_rank(e.get("priority") or "")) if agent_key == "requirements_reviewer" else []),
         "headline": headline,
         "summary": summary,
         "kpis": kpis,
@@ -1115,7 +1131,7 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
         "actions": actions,
         "decisions": decisions,
         "owners": owners,
-        "deep": ([] if agent_key == "auditor" else [_findings_section(findings)])
+        "deep": ([] if agent_key == "auditor" or not V.writes_findings(agent_key) else [_findings_section(findings)])
                 + agent_sections + _trace_sections(record, data),
         "notices": notices,
         "unparsed": record.get("unparsed_response") or "",
@@ -1127,7 +1143,7 @@ def build(agent_key: str, record: Dict[str, Any], computed_data: Optional[Dict[s
 
 
 def gaps(findings: Sequence[Dict[str, Any]], actions: Sequence[Dict[str, Any]],
-         decisions: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+         decisions: Sequence[Dict[str, Any]], with_actions: bool = True) -> List[Dict[str, Any]]:
     """What makes a record Blocked, each with what unblocks it.
 
     Read only from what code already marks blocking: a blocking finding (with
@@ -1143,6 +1159,9 @@ def gaps(findings: Sequence[Dict[str, Any]], actions: Sequence[Dict[str, Any]],
             unblock = "Do " + " and ".join(answers) + (", or take decision " + ", ".join(deciding) if deciding else "")
         elif deciding:
             unblock = "Take decision " + " or ".join(deciding)
+        elif not with_actions:
+            unblock = ("Change the design so the risk no longer holds, and run this stage again; or approve "
+                       "the classification as it is and close the risk with a requirement at the next stage.")
         else:
             unblock = "Nothing answers it yet: add an action in Edit the record, or reject the card with a reason."
         out.append({"kind": "finding", "id": f.get("id", ""), "title": str(f.get("title") or "").rstrip("."),

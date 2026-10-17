@@ -1,4 +1,4 @@
-# The RAIA Output Contract (`raia-record/1.3`)
+# The RAIA Output Contract (`raia-record/1.5`)
 
 Every RAIA agent answers in the same standard record. Two projects that go
 through the same stage answer the same questions, on the same scales, with the
@@ -66,6 +66,29 @@ Every record, for every agent, has these fields.
 | computed `pruned_citations` | Citation tags code removed because they matched no excerpt retrieved for the run, with where they were (also `PRUNED_CITATION:` lines in `contract_notes`) | Grounded recommendations, verified |
 | computed `review` | What the person at the gate did with each card: `accepted[]`, `rejected[]` and `overridden[]`, each `{id, kind, origin, title, reason_code, reason, by, at}`. A rejected card the model wrote is no longer in the active lists; an overridden computed card stays, marked (an EVR carries `review.status = overridden`) | Human oversight; accountability |
 
+### What each stage writes of the core
+
+The core is the same for every stage, but not every stage fills all of it. The
+**Risk Classifier** analyses risk and stops there (NIST AI RMF MAP and
+MEASURE): it writes findings and the decisions on its analysis, and **no
+actions**. Responding to those risks starts at the **Requirements Reviewer**
+(MANAGE), and its response is the ethical value requirements themselves: it
+writes **no findings and no actions**. The approved risks reach it as the
+computed gaps — each gap names the approved risks behind it — and each
+requirement takes the priority of those risks (section 6). The User Story
+Refiner, in both modes, and the Auditor turn the requirements into work and
+write findings and actions.
+
+| Stage | `findings[]` | `actions[]` |
+|---|---|---|
+| Risk Classifier | yes | — |
+| Requirements Reviewer | — | — |
+| User Story Refiner (both modes), Auditor | yes | yes |
+
+The parts a stage does not write are left out of the schema the model is
+shown; anything returned in them anyway is removed by code and noted in
+`contract_notes` (`raia.contract.vocab.NO_ACTIONS`, `NO_FINDINGS`).
+
 ## 4. The agent extensions
 
 Each agent's extension is shaped by what its normative source produces.
@@ -89,7 +112,7 @@ Each agent's extension is shaped by what its normative source produces.
 | `stakeholders[]` | `name`, `kind` (`direct` · `indirect`), `values` |
 | `value_register[]` | Core values ranked (1 = highest) with the design's `threats` to and `opportunities` for each (risk-based design) |
 | `gap_analysis[]` | One entry per computed EVR id: why the gap matters here, cited |
-| `evrs[]` | One ethical value requirement per assigned id: `value`, `stakeholders`, `statement`, `fit_criterion`, `verification_method`, `traces_to` — traceable, verifiable, contextual, prioritised |
+| `evrs[]` | One ethical value requirement per assigned id: `value`, `stakeholders`, `statement`, `fit_criterion`, `verification_method`, `traces_to` — traceable, verifiable, contextual, prioritised; computed: `priority`, `priority_basis` and `answers_risks` (the approved risks behind its gap) |
 | `impact_assessment` | `intended_uses`, `harms_and_benefits[]` per stakeholder, `mitigations` (Microsoft RAI Standard v2 goal A1) |
 
 ### User Story Refiner — ECCOLA, Microsoft RAI Standard v2 (verifiable requirements)
@@ -263,6 +286,7 @@ Then floors, in this order, each recorded in `priority_basis`:
 | A prohibited or excessive-risk practice was declared | `critical`, blocking | EU AI Act Art. 5; PL 2338/2023 excessive risk |
 | The finding cites a legal instrument, or links a legal obligation code | at least `high` | Authority precedence legal > standard > advisory |
 | A requirement closes a legal obligation gap | at least `high` | Same |
+| A requirement answers approved risks (the risks behind its gap: on its principle, or linking its obligation) | the highest of their priorities; at least `medium` for a principle declared at stake, otherwise `low` | NIST AI RMF MANAGE 1 (prioritised response) |
 | An item is unverified on a high-risk system | at least `high` (otherwise `medium`) | Microsoft RAI Standard v2 accountability; NIST AI RMF GOVERN |
 
 An action takes the highest priority of the findings it answers. The overall
@@ -299,38 +323,48 @@ layout keeps an **Open Issues** section (the project's register is read from
 it) and ends with the traceability appendix and the machine block (`schema`,
 `verdict.*`, `coverage.*`).
 
-### Summary, actions, deep dive — Risk Classifier, Requirements Reviewer
-
-**Summary**
+### An analysis — Risk Classifier
 
 1. **Summary** — status with what it means here, headline (the summary paragraph
-   one click away); the stage's own picture; the figures (risks identified by
-   priority, actions to take and how many are urgent, decisions needed and how
-   many block, and — for the Requirements Reviewer — the requirements; the Risk
-   Classifier's tiers are its picture, so it shows three); **Gaps to close**
-   when the record is blocked, each blocking finding or decision with what
-   unblocks it; the risks found as compact cards, most pressing first; the
+   one click away); the tiers on their scales (its picture); two figures (risks
+   identified by priority, decisions needed and how many block); **Gaps to
+   close** when the record is blocked, each blocking finding or decision with
+   what unblocks it; the risks found as compact cards, most pressing first; the
    principles the findings touch. In the Markdown document the gaps are listed
    under the summary.
+2. **Open Issues** — on screen *Decisions on this classification*: the
+   decisions only a person can take about the analysis, with their options,
+   each taken on its card. There is no action plan: what to do about each risk
+   is written at the next stage, as requirements. The legal obligations follow,
+   by instrument, as compact cards.
 
-**What to do**
+### Requirements first — Requirements Reviewer
 
-2. **Action Plan** — actions grouped by computed priority: *Do now* (critical,
-   high), *Plan* (medium), *Track* (low). Each names its owner, when it happens,
-   what shows it is done, and the findings it answers. On screen a filter shows
-   one owner's share.
-3. **Open Issues** — the decisions only a person can take, with their options.
-   On screen each is taken on its card: an option (or one written by the
-   person) and why. The Risk Classifier then lists its legal obligations by
-   instrument, the Requirements Reviewer its requirements, as compact cards.
+1. **Summary** — status, headline, principle coverage (its picture), the
+   figures (requirements, decisions needed), **Gaps to close** when blocked.
+2. **Ethical Value Requirements** — one compact card per requirement, most
+   pressing first: its priority, the fit criterion, how it is verified, and the
+   approved risks it answers. There is no risk list of its own and no action
+   plan: the risks were found upstream, and the requirements are the response.
+3. **Open Issues** — the decisions only a person can take.
+
+### Summary, actions, deep dive — the shared shape
+
+The stages that write actions (the User Story Refiner's "why these changes",
+and the Auditor's pathway) group them by computed priority: *Do now*
+(critical, high), *Plan* (medium), *Track* (low). Each names its owner, when it
+happens, what shows it is done, and the findings it answers. On screen a filter
+shows one owner's share. Decisions only a person can take are taken on their
+card: an option (or one written by the person) and why, recorded together when
+the person presses *Record decision*.
 
 Every card on screen is compact: one line closed, the detail on a click. At the
 approval gate each reviewable card carries Accept and Reject.
 
 **Deep dive** (on screen, behind a dropdown; one tab per section)
 
-4. **Findings** — each finding with who is affected, why this priority and, when
-   a floor raised it, why.
+4. **Findings** (stages that write findings) — each finding with who is
+   affected, why this priority and, when a floor raised it, why.
 5. **The agent's own sections** (section 4).
 6. **Not Grounded in Retrieved Excerpts**, **Declared Coverage**, **Verdict
    Reconciliation** — the traceability appendix.
@@ -413,7 +447,7 @@ Run after every generation and again on what a person approves:
 |---|---|---|
 | The record conforms to the schema | fail | something to act on |
 | Code had to restore an upgraded verdict | fail | technical log (code corrected it) |
-| Every finding has an action or an open issue (NIST AI RMF MANAGE 1) | fail for high or critical, otherwise warning | something to act on |
+| Every finding has an action or an open issue (NIST AI RMF MANAGE 1); on the Risk Classifier, every risk is handed on to the next stage; on the Requirements Reviewer, the risks are answered by the requirements (checked by the requirement register) | fail for high or critical, otherwise warning | something to act on |
 | Every computed identifier is accounted for | fail | something to act on when computed ids are missing; technical log when only invented ids appeared |
 | Citations resolve to excerpts retrieved for this run | a tag that does not is removed by code (`citations.pruned`) | technical log |
 | The reply was not cut off; no claim at all is ungrounded | fail | something to act on |
@@ -452,7 +486,11 @@ free-text caps; 1.2 added the Auditor's `strengths`, `opportunities`,
 the refine mode's `evr_ids`, and the Auditor's `backlog_assessment`,
 `trajectory_comment`, `next_focus` and computed `project_state` and `progress`;
 1.4 added the computed `review` and `pruned_citations` and an EVR's computed
-`review`, and shortened the Risk Classifier's free-text caps);
+`review`, and shortened the Risk Classifier's free-text caps; 1.5 stopped the
+Risk Classifier writing actions and the Requirements Reviewer writing findings
+and actions — both lists stay in the core, empty for those stages, so older
+records still read — and added an EVR's computed `priority`, `priority_basis`
+and `answers_risks`);
 removing or renaming a field, or changing a vocabulary or the matrix, is a major
 change. Records keep the version they were written with. After any change run
 `python -m raia.contract.export_schema` and commit `docs/schema/`.

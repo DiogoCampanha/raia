@@ -210,7 +210,14 @@ def card(key: str) -> str:
         "## 7. The record it produces",
         "",
         f"Schema `{V.SCHEMA_VERSION}` — `docs/schema/{key}.schema.json`. Identifier prefix `{PREFIX[key]}`. "
-        "Shared core as in `docs/output-contract.md`; the extension:",
+        "Shared core as in `docs/output-contract.md`"
+        + ("" if V.writes_findings(key) and V.writes_actions(key) else
+           " — without " + " or ".join(p for p, w in (("findings", V.writes_findings(key)),
+                                                       ("actions", V.writes_actions(key))) if not w)
+           + (": this stage analyses risk; the response is written at the next stage, as requirements"
+              if V.writes_findings(key) else ": the approved risks reach it as computed gaps, and its "
+              "requirements are the response to them"))
+        + "; the extension:",
         "",
         "| Field | Content |", "|---|---|",
         *_fields(EXTENSIONS[key]),

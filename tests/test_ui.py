@@ -236,8 +236,17 @@ def main() -> None:
               "…with the form set aside, not left on screen under the draft")
         check("Recorded in the audit trail as" in text(at), "…naming the signed-in approver")
         check(any("Edit the record" in t.label for t in at.tabs), "…with the record editor, not a text box")
-        check("Risks identified" in text(at) and "What to do" in text(at) and "Do now" in text(at),
-              "…and the draft reads summary first, then what to do")
+        body = text(at)
+        if agent == "risk_classifier":
+            check("Risks identified" in body and "Decisions on this classification" in body
+                  and "What to do" not in body and "Do now" not in body,
+                  "…and the classification reads as an analysis: risks and its decisions, no action plan")
+        else:
+            check("Ethical value requirements" in body and "Risks found" not in body and "Risks identified" not in body
+                  and "What to do" not in body,
+                  "…and the review leads with the requirements: no risks of its own, no action plan")
+            check(body.index("Ethical value requirements") < body.index("Decisions for a person"),
+                  "…the requirements first, then the decisions")
         check(any(t.label == "Traceability" for t in at.tabs) and "Deep dive" in str(at._tree),
               "…with the deep dive, section by section, behind a dropdown")
         check(f'data-agent="{agent}"' in text(at) and "agent-hero" in text(at),
@@ -289,9 +298,8 @@ def main() -> None:
     goto(at, "project", id=pid1)
     ok(at.run(), "the project page renders after approvals")
     check(any("Action plan" in t.label for t in at.tabs), "the project has an action plan tab")
-    check("Action plan (CSV)" in [d.proto.label for d in at.get("download_button")] or
-          any("Action plan (CSV)" in str(d.proto) for d in at.get("download_button")),
-          "…with a CSV export")
+    check("Actions come from the User Story Refiner" in text(at),
+          "…empty while only the analysis and the requirements are approved, and saying where actions come from")
 
     print("== 3b. A redraw stays within a database budget ==")
     # Each statement is a network round trip on a hosted database. A stage page
@@ -513,6 +521,8 @@ def main() -> None:
     check('class="rv-report ' in text(at), "…still as a report")
     goto(at, "project", id=pid2)
     ok(at.run(), "the project page shows both records among its documents")
+    check(any("Action plan (CSV)" in str(d.proto) for d in at.get("download_button")),
+          "the action plan fills from the refined stories, with a CSV export")
     toggles = [t for t in at.toggle if t.key and (t.key.endswith("::why") or t.key.endswith("::appx"))]
     check(len(toggles) >= 2, "…each with its secondary part behind a toggle, inside the document's dropdown")
     for t in toggles:

@@ -41,8 +41,8 @@ Fields marked **\*** are required. Answers are saved to the project as you type,
 
 Press **Run Risk Classifier**. While it works, the page shows only that the agent is working and which step it is on; your answers are saved and set aside. The draft then opens at its top, under **Human review required**, with four tabs:
 
-- **Draft** — the result. It opens with the **status** and what it means here. *Blocked in its current form* says how many items stop the product as described and links to **Gaps to close**, each gap with what unblocks it. Under the status, from the second stage on, a **hand-off strip** says what this stage received from the stages before it, how much it addressed, and which items are still open. Then the risks found and **What to do** (actions grouped *Do now*, *Plan* and *Track*, and the decisions only a person can take). Every card shows one line; open it for the detail. A **Deep dive** holds the analysis behind each point. The User Story Refiner and the Auditor lead with what you take away instead (see below).
-- **Edit the record** — change the record's fields (the headline, a finding's placement, an action's owner). The software recomputes priorities and redraws the draft.
+- **Draft** — the result. It opens with the **status** and what it means here. *Blocked in its current form* says how many items stop the product as described and links to **Gaps to close**, each gap with what unblocks it. Under the status, from the second stage on, a **hand-off strip** says what this stage received from the stages before it, how much it addressed, and which items are still open. Each stage then leads with what it produces. The **Risk Classifier** is an analysis: the risks found and the **Decisions on this classification** — no action plan, because what to do about each risk is decided at the next stage. The **Requirements Reviewer** leads with the **ethical value requirements**, most pressing first, each showing the approved risks it answers, then the decisions only a person can take. The User Story Refiner and the Auditor lead with the stories and the audit report, with the actions behind them (see below). Every card shows one line; open it for the detail. A **Deep dive** holds the analysis behind each point.
+- **Edit the record** — change the record's fields (the headline, a finding's placement, an action's owner, where the stage has them). The software recomputes priorities and redraws the draft.
 - **Evidence** — the norm excerpts that were actually retrieved. Pick a citation in the draft and check that you can find it here.
 - **What the code computed** — what the rules decided before the model was called. Check that the verdict follows from your answers.
 
@@ -52,7 +52,7 @@ Above the tabs, the **automated checks** speak only when there is something for 
 
 Beside every risk, action, requirement and new acceptance criterion there is **Accept** and **Reject**. Rejecting a card asks for a reason (one line is enough); approval waits until each rejected card has one. Cards you leave unmarked are accepted as they are, and the Approve button says how many of each you are approving. A rejected card leaves the approved record and is kept in its review block with your reason. A requirement the rule engine computed is never deleted: rejecting it marks it overridden by you, and the override is recorded in the open issues. Turn on **Preview the version you will approve** to see the record with your rejections applied.
 
-Each **Decision needed** card is a choice you make where it stands: pick an option (or write your own), say why, and **Record decision**. On a draft, the decision is kept with it and reaches the project's open issues when you approve; on an approved stage it is recorded at once. Taking the blocking decisions lifts *Blocked in its current form*, and the status says which decision did.
+Each **Decision needed** card is a choice you make where it stands: pick an option (or write your own), say why, and **Record decision** — nothing is sent until you press it. On a draft, the decision is kept with it and reaches the project's open issues when you approve; on an approved stage it is recorded at once. Taking the blocking decisions lifts *Blocked in its current form*, and the status says which decision did.
 
 ### 5. Approve it, or reject it with a reason
 
@@ -88,7 +88,7 @@ Open the **Risk Classifier** again and press **Revise this stage**: change one a
 
 The project page has tabs for the work the stages produce:
 
-- **Action plan** — every action from every approved stage, sorted by priority. Is each one specific enough for someone to pick up?
+- **Action plan** — every action from every approved stage, sorted by priority (actions start with the User Story Refiner). Is each one specific enough for someone to pick up?
 - **Traceability** — one row per legal obligation and requirement, from the classification to the audit: which requirement answers it, which stories implement it, what the audit verified. The highlighted rows are the gaps still open.
 - **Open issues** — what only a person can decide, including the decisions taken on the stages (**Decided**). Take an open one, or mark it resolved or accept the risk, noting what was decided.
 - **Documents** — each approved artifact with its provenance (model, corpus version, attempt, edits, checks), and **Download project**.
@@ -131,7 +131,7 @@ These are what the study is asking you about.
 - **You get the evidence, not just the answer.** Every draft comes with the excerpts that were retrieved and what the automated checks found. A citation to an excerpt that was not retrieved is removed by code and logged; the checks ask you to act only when a person is needed.
 - **You decide card by card.** Accept or reject each risk, action, requirement and criterion, with a reason for each rejection, and take each decision where it is raised. What you rejected and decided is recorded, and the next stage builds on it.
 - **Each stage picks up where the last one left off.** The hand-off strip and the Traceability tab show which obligations became requirements, which requirements became stories, and what the audit verified — and which gaps are still open.
-- **Every stage answers in the same standard record.** Findings are placed on likelihood and magnitude, and the software, not the model, computes their priority. Every action names an owner, when it happens and what shows it is done. Every stage leads with what to act on and keeps the analysis for when you want it. You edit fields, not prose.
+- **Every stage answers in the same standard record.** Findings are placed on likelihood and magnitude, and the software, not the model, computes their priority; a requirement takes the priority of the risks it answers. Every action names an owner, when it happens and what shows it is done. Every stage leads with what to act on and keeps the analysis for when you want it. You edit fields, not prose.
 - **Disagreement is escalated, not resolved.** When a rule and an agent disagree, two norms of equal authority conflict, or your answers contradict each other, it goes to **Open issues** instead of being smoothed over.
 
 ## Worth trying to break

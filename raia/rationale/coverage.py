@@ -216,11 +216,13 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
     for i, g in enumerate(gaps, 1):
         g["evr_id"] = f"EVR-{i}"
     evr_ids = [g["evr_id"] for g in gaps]
+    _risks_behind(gaps, (risk.get("record") or {}).get("findings") or [], values)
 
     if gaps:
         r.tables["Ethical value requirements to write (ids are assigned — use exactly these)"] = md_table(
-            ["EVR id", "Derived from", "Reference", "What it must address"],
-            [[g["evr_id"], g["kind"], g["ref"], g["subject"][:90]] for g in gaps],
+            ["EVR id", "Derived from", "Reference", "What it must address", "Approved risks behind it", "Priority"],
+            [[g["evr_id"], g["kind"], g["ref"], g["subject"][:90], ", ".join(g["risks"]) or "—", g["priority"]]
+             for g in gaps],
         )
     else:
         r.notes.append(
@@ -320,6 +322,45 @@ def run(inputs: Dict[str, Any], upstream: Dict[str, Any]) -> RationaleResult:
 
 
 ADOPTED_STATUS = "addressed by an adopted suggestion"
+
+_PRIORITY_ORDER = ("low", "medium", "high", "critical")
+
+
+def _higher(a: str, b: str) -> str:
+    rank = lambda x: _PRIORITY_ORDER.index(x) if x in _PRIORITY_ORDER else -1  # noqa: E731
+    return a if rank(a) >= rank(b) else b
+
+
+def _risks_behind(gaps: List[Dict[str, Any]], risks: List[Dict[str, Any]], at_stake: List[str]) -> None:
+    """Which approved risks each gap carries, and the priority that gives its requirement.
+
+    This stage writes requirements, not risks: the risks were found and
+    approved at the Risk Classifier stage. A risk is behind a principle gap
+    when it concerns that principle, and behind an obligation gap when it
+    links that obligation. The requirement that closes the gap takes the
+    highest priority among those risks; one that closes a legal obligation gap
+    is at least high, and one for a principle declared at stake at least
+    medium. Everything else is low. Computed here, so the priority is the same
+    on every run.
+    """
+    for g in gaps:
+        behind = [f for f in risks if f.get("id") and (
+            (g["kind"] == "principle" and f.get("principle") == g["ref"])
+            or (g["kind"] != "principle" and g["ref"] in [str(x) for x in f.get("links") or []]))]
+        priority, basis = "", []
+        for f in behind:
+            priority = _higher(priority, str(f.get("priority") or ""))
+        if behind:
+            basis.append("answers " + ", ".join(f"{f['id']} ({f.get('priority') or '?'})" for f in behind))
+        if g["kind"] != "principle" and str(g["ref"]).startswith(("eu.", "br.")):
+            priority = _higher(priority, "high")
+            basis.append(f"closes legal obligation {g['ref']}")
+        elif g["kind"] == "principle" and g["ref"] in at_stake:
+            priority = _higher(priority, "medium")
+            basis.append("principle declared at stake")
+        g["risks"] = [str(f["id"]) for f in behind]
+        g["priority"] = priority or "low"
+        g["priority_basis"] = "; ".join(basis) or "no approved risk behind it"
 
 
 def _report_origin(r: RationaleResult, origin: Dict[str, Any], total: int,

@@ -143,9 +143,10 @@ class RequirementsReviewerAgent(BaseAgent):
             "Prefer \"selection outcomes shall be auditable per protected attribute\" to \"the "
             "system shall be fair\". `impact_assessment` records intended uses, potential harms "
             "and benefits per stakeholder, and mitigations.\n\n"
-            "Findings are the value threats that carry real risk, linked to EVR ids. Actions adopt "
-            "and verify the requirements. Where values trade off, raise a `value_tradeoff` issue; "
-            "never resolve one yourself."
+            "Write no findings and no actions. The risks were found and approved at the previous "
+            "stage and reach you as the gaps, each listing the approved risks behind it; the "
+            "requirements are the response to them. Where values trade off, raise a "
+            "`value_tradeoff` issue; never resolve one yourself."
         ),
     )
 

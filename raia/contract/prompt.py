@@ -54,12 +54,71 @@ def hints(agent_key: str, verdict_keys: List[str], rationale: RationaleResult,
         ids["approved_artifacts"] = [b.get("artifact") for b in data.get("baseline") or []]
     return {
         "agent_key": agent_key,
+        "writes": {"findings": V.writes_findings(agent_key), "actions": V.writes_actions(agent_key)},
         "verdict_keys": list(verdict_keys),
         "computed_verdict": {k: verdict.get(k) for k in verdict_keys},
         "checklist_keys": rationale.checklist_keys(),
         "citations": citations[:4],
         "ids": ids,
     }
+
+
+_FINDINGS = """- You identify **findings** and place each one on two anchored scales: impact **magnitude** and
+  **likelihood** (NIST AI RMF MAP 5), with a `placement_rationale`. You do **not** assign risk
+  level, priority or blocking: code computes them from the matrix below and raises them where a
+  legal obligation, a prohibited practice or a computed severity requires it."""
+
+_ACTIONS = """- For every finding, propose at least one **action** with a risk response (NIST AI RMF MANAGE 1),
+  an accountable `owner_role`, the `lifecycle_stage`, a `review_cadence`, how completion is
+  verified (test, audit, measurement or inspection) and the `evidence_artifact` that will show it.
+  Choosing `accept` always opens an issue: only a person can accept a risk."""
+
+_ANALYSIS_ONLY = """- This stage **analyses** risk; it does not say what to do about it. Write no actions: the
+  response to every risk is written at the next stage, as ethical value requirements. Link each
+  finding in `links` to the obligation codes it concerns, so the next stage can see which
+  requirement answers it. Decisions only a person can take about this analysis go in
+  `open_issues`."""
+
+_REQUIREMENTS_ONLY = """- This stage writes **requirements**, not risks. The risks were identified and approved at the
+  Risk Classifier stage; they reach you as the computed gaps, each with the approved risks behind
+  it. Write no findings and no actions: one ethical value requirement per assigned id is the
+  response to those risks. Decisions only a person can take go in `open_issues`."""
+
+
+def _division(agent_key: str) -> str:
+    if not V.writes_findings(agent_key):
+        lines = [_REQUIREMENTS_ONLY]
+    elif not V.writes_actions(agent_key):
+        lines = [_FINDINGS, _ANALYSIS_ONLY]
+    else:
+        lines = [_FINDINGS, _ACTIONS]
+    refs = (["`F1`"] if V.writes_findings(agent_key) else []) + (["`A1`"] if V.writes_actions(agent_key) else [])
+    lines.append(f"- Use local ids ({', '.join(refs + ['`I1`'])})"
+                 + (" and reference findings by them" if V.writes_findings(agent_key) else "")
+                 + ". Code assigns the final ids.")
+    return "\n".join(lines)
+
+
+def _style(agent_key: str) -> str:
+    if V.writes_actions(agent_key):
+        return """- Actions start with a verb and are done by one role. `evidence_artifact` names a concrete thing
+  (a test report, a signed log, a dashboard), not "documentation".
+- Prefer fewer, sharper findings and actions: merge findings that share a cause, and say once
+  when one action answers several findings."""
+    if V.writes_findings(agent_key):
+        return "- Prefer fewer, sharper findings: merge findings that share a cause."
+    return ("- Each requirement is bound to this product and its context of use, and its fit criterion "
+            "is a condition someone can check.")
+
+
+def _scales(agent_key: str) -> str:
+    if not V.writes_findings(agent_key):
+        return ""
+    parts = [_anchors("Magnitude", V.MAGNITUDE_ANCHORS), _anchors("Likelihood", V.LIKELIHOOD_ANCHORS)]
+    if V.writes_actions(agent_key):
+        parts.append(_anchors("Risk response", V.RESPONSE_ANCHORS))
+    return ("### Anchored scales\n\n" + "\n\n".join(parts)
+            + "\n\n**Risk level matrix (applied by code)**\n\n" + rubric.matrix_md() + "\n\n")
 
 
 def contract_text(agent_key: str, verdict_keys: List[str], rationale: RationaleResult,
@@ -78,15 +137,7 @@ this JSON Schema ({V.SCHEMA_VERSION}); a reply that does not validate is returne
 
 ### What you decide, and what code decides
 
-- You identify **findings** and place each one on two anchored scales: impact **magnitude** and
-  **likelihood** (NIST AI RMF MAP 5), with a `placement_rationale`. You do **not** assign risk
-  level, priority or blocking: code computes them from the matrix below and raises them where a
-  legal obligation, a prohibited practice or a computed severity requires it.
-- For every finding, propose at least one **action** with a risk response (NIST AI RMF MANAGE 1),
-  an accountable `owner_role`, the `lifecycle_stage`, a `review_cadence`, how completion is
-  verified (test, audit, measurement or inspection) and the `evidence_artifact` that will show it.
-  Choosing `accept` always opens an issue: only a person can accept a risk.
-- Use local ids (`F1`, `A1`, `I1`) and reference findings by them. Code assigns the final ids.
+{_division(agent_key)}
 - The rule engine's open issues are carried forward by code with their type and owner. Do not
   repeat them in `open_issues`; add only issues you raise.
 - `declared_verdict` must contain exactly these keys: {", ".join(verdict_keys) or "(none)"}. Set
@@ -106,10 +157,7 @@ seconds:
 - Be specific to this product: name the feature, the data, the group, the artefact. No generic
   advice, no definitions, no paraphrase of the law or the standards — cite the excerpt by its tag
   instead.
-- Actions start with a verb and are done by one role. `evidence_artifact` names a concrete thing
-  (a test report, a signed log, a dashboard), not "documentation".
-- Prefer fewer, sharper findings and actions: merge findings that share a cause, and say once
-  when one action answers several findings.
+{_style(agent_key)}
 - Stay inside every `maxLength` in the schema. The whole record must fit in a single reply — a
   reply cut off at the token limit cannot be read at all.
 
@@ -117,17 +165,5 @@ seconds:
 
 {id_lines}
 
-### Anchored scales
-
-{_anchors("Magnitude", V.MAGNITUDE_ANCHORS)}
-
-{_anchors("Likelihood", V.LIKELIHOOD_ANCHORS)}
-
-{_anchors("Risk response", V.RESPONSE_ANCHORS)}
-
-**Risk level matrix (applied by code)**
-
-{rubric.matrix_md()}
-
-{HINTS_MARKER} {json.dumps(h, ensure_ascii=False, default=str)}
+{_scales(agent_key)}{HINTS_MARKER} {json.dumps(h, ensure_ascii=False, default=str)}
 """

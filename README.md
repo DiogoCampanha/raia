@@ -367,6 +367,7 @@ RAIA_DATABASE_URL=postgresql://... python tests/test_projects.py   # on PostgreS
 python tests/test_backlog.py                       # the sprint cycle (also with RAIA_STORE=database)
 python tests/test_jira.py                          # optional Jira, against a mock Jira Cloud
 python tests/test_ui.py                            # headless UI walkthrough
+python tests/browser_check.py                      # the page stays still, in headless Chromium (needs Playwright)
 python tests/test_contract.py                      # the output contract (also run by the smoke test)
 python tests/consistency_check.py --agent risk_classifier --runs 5   # with a real provider
 ```

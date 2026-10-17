@@ -19,6 +19,7 @@ import re
 from typing import Any, Dict, Iterable, List, Sequence
 
 from ..validators import FAIL, PASS, WARN, ValidationItem
+from . import vocab as V
 
 
 def check_schema(record: Dict[str, Any], repairs: int = 0) -> ValidationItem:
@@ -91,8 +92,26 @@ def check_corrections(record: Dict[str, Any]) -> List[ValidationItem]:
 
 
 def check_responses(record: Dict[str, Any]) -> ValidationItem:
-    """NIST AI RMF MANAGE 1: every identified risk is responded to."""
+    """NIST AI RMF MANAGE 1: every identified risk is responded to.
+
+    Where the response is written depends on the stage. The Risk Classifier
+    analyses risk and hands every risk on; the Requirements Reviewer responds
+    with requirements, one per computed gap (checked by its own id check); the
+    stages after it respond with actions or a decision.
+    """
+    agent = str((record.get("meta") or {}).get("agent_key") or "")
     findings = record.get("findings") or []
+    if agent and not V.writes_findings(agent):
+        return ValidationItem("findings.upstream", PASS, "Risk responses",
+                              "This stage answers the approved risks with requirements: each gap carries the "
+                              "risks behind it, and every gap has a requirement.")
+    if agent and not V.writes_actions(agent) and findings:
+        severe = sum(1 for f in findings if f.get("priority") in ("high", "critical"))
+        return ValidationItem("findings.handed_on", PASS, "Risk responses",
+                              f"All {len(findings)} risk(s) are handed on to the Requirements Reviewer through their "
+                              "principle and the obligations they link"
+                              + (f" ({severe} high or critical)" if severe else "")
+                              + ". This stage analyses risk; the response is written there, as requirements.")
     if not findings:
         if record.get("schema_errors"):
             return ValidationItem("findings.none", WARN, "Risk responses", "No findings to respond to.")

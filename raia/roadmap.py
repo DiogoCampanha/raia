@@ -60,9 +60,11 @@ def _higher(a: str, b: str) -> str:
 def requirement_facts(review: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """Per approved requirement: its wording, whether it closes a legal gap, its priority.
 
-    The priority is the highest computed priority among the approved review's
-    findings that link the requirement; a requirement closing a legal
-    obligation gap is at least high. Both were computed by code at that gate.
+    The priority was computed by code at that gate, from the approved risks
+    behind the requirement's gap (the Requirements Reviewer writes no risks of
+    its own); a requirement closing a legal obligation gap is at least high. A
+    review approved before that, which did write risks, still raises a
+    requirement to the highest priority among the findings that link it.
     """
     review = review or {}
     evrs = review.get("evrs") or []
@@ -85,6 +87,8 @@ def requirement_facts(review: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
                 out[eid]["legal"] = True
                 out[eid]["obligation"] = ref
                 out[eid]["priority"] = _higher(out[eid]["priority"], "high")
+            if g.get("priority"):
+                out[eid]["priority"] = _higher(out[eid]["priority"], str(g["priority"]))
     record = review.get("record") or {}
     for f in record.get("findings") or []:
         for link in f.get("links") or []:

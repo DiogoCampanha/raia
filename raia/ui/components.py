@@ -379,21 +379,21 @@ def receives_card(info: Dict[str, Any], decide=None) -> None:
         if decisions:
             st.markdown("**Decisions still open from earlier stages**"
                         + (" — the blocking ones first" if any(d.get("blocking") for d in decisions) else ""))
+            # One line each, the choice one click away: a long list of inherited
+            # decisions must not push the form and its Run button off the page.
+            from .record_view import decision_form
+
             for d in decisions:
-                with st.container(border=True, key=f"ho-dec-{d['id']}"):
-                    st.markdown(("**Blocking** · " if d.get("blocking") else "") + f"`{d['id']}` {d.get('text', '')}")
+                with st.container(key=f"ho-dec-{d['id']}", horizontal=True, vertical_alignment="center"):
+                    st.markdown(("**Blocking** · " if d.get("blocking") else "") + f"`{d['id']}` {d.get('text', '')}",
+                                width="stretch")
                     if decide is None or not d.get("options"):
                         st.caption("Decide it on the project's Open issues tab, or on the stage that raised it.")
                         continue
-                    pick = st.radio("Decision", d["options"], key=f"ho-pick-{d['id']}", index=None)
-                    why = st.text_input("Why?", key=f"ho-why-{d['id']}")
-                    if st.button("Record decision", key=f"ho-go-{d['id']}", type="primary",
-                                 disabled=not (pick and (why or "").strip())):
-                        err = decide(d, pick, why)
-                        if err:
-                            st.error(err)
-                        else:
-                            st.rerun()
+                    with st.popover("Decide", icon=":material/gavel:"):
+                        st.markdown(f"`{d['id']}` {d.get('text', '')}")
+                        decision_form(d["options"], f"ho-{d['id']}", lambda choice, why, d=d: decide(d, choice, why),
+                                      allow_other=False)
 
 
 def icon_md(name: str) -> str:

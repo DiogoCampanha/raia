@@ -1,5 +1,5 @@
 {
-  "$id": "raia-record/1.4/auditor",
+  "$id": "raia-record/1.5/auditor",
   "title": "AuditorRecord",
   "$defs": {
     "Action": {

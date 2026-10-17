@@ -454,6 +454,13 @@ def finalize(
     floors = priority_floors(agent_key, rationale)
     prune = _Pruner(evidence, rec.get("pruned_citations") or [])
 
+    # -- the parts of the core this stage does not write ------------------------
+    for part, writes in (("findings", V.writes_findings(agent_key)), ("actions", V.writes_actions(agent_key))):
+        if not writes and rec.get(part):
+            notes.append(f"{len(rec[part])} {part} removed: this stage does not write {part}.")
+        if not writes:
+            rec[part] = []
+
     # -- findings -------------------------------------------------------------
     # An id code already assigned is kept, so a card a reviewer accepted or
     # rejected keeps its name when the record is finalised again; anything else
@@ -568,6 +575,17 @@ def finalize(
                 item["downgrade_reason"] = ("Restored to not_verified by code: no evidence was found "
                                             "for this item. A verdict may be downgraded, never upgraded.")
                 item["verdict"] = "not_verified"
+    if agent_key == "requirements_reviewer":
+        # Each requirement takes the priority of the approved risks behind its
+        # gap (computed by the rule engine); a re-finalise without the engine's
+        # data keeps what was computed at the run.
+        by_id = {str(g.get("evr_id")): g for g in (rationale.data or {}).get("gaps") or [] if g.get("evr_id")}
+        for e in ext.get("evrs") or []:
+            g = by_id.get(str(e.get("id")))
+            if g is not None:
+                e["priority"] = g.get("priority") or "low"
+                e["priority_basis"] = g.get("priority_basis") or ""
+                e["answers_risks"] = list(g.get("risks") or [])
     if agent_key == "auditor" and isinstance(rec.get("extension"), dict):
         _audit_project(ext, rationale, notes)
         _audit_opinion(ext, rationale, findings, issues, notes)

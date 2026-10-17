@@ -116,10 +116,15 @@ disagreement is recorded as an open issue.
 validated against the agent's schema (`raia/contract/`): a shared core —
 summary, findings placed on likelihood and magnitude, actions, typed open
 issues, declared coverage — and an extension shaped by the agent's normative
-source. Code assigns the identifiers, computes risk level and priority,
-carries the engine's issues forward, and renders each artifact's layout —
-summary, then what to do, then the deep dive; the refined stories first for the
-User Story Refiner; an audit report, rated by code, for the Auditor — on screen
+source. Not every stage fills the whole core: the Risk Classifier analyses
+risk and writes no actions; the Requirements Reviewer answers the approved
+risks with requirements and writes neither findings nor actions (each
+requirement carries the risks behind its gap and their priority). Code
+assigns the identifiers, computes risk level and priority, carries the
+engine's issues forward, and renders each artifact's layout — the risks and
+the decisions on them for the Risk Classifier; the requirements first for the
+Requirements Reviewer; the refined stories first for the User Story Refiner;
+an audit report, rated by code, for the Auditor — on screen
 and in the document alike (`raia/contract/digest.py`). A reviewer edits the record's fields at the gate, never its prose.
 The standard is specified in `docs/output-contract.md`.
 
@@ -475,7 +480,7 @@ stateDiagram-v2
 | Declared completeness | each engine emits a checklist; `validators.check_coverage` requires a status per key | code |
 | Anti-ethics-washing audit | `rationale/traceability.py` assigns NOT VERIFIED where no evidence exists; `validators.check_forbidden_verdicts` prevents an upgrade | code |
 | One standard output for every agent | `raia/contract/` — schema per agent (shared core + extension), closed vocabularies from the normative sources, code-computed identifiers, risk level and priority, one rendered layout, bounded repair and an honest fallback; published in `docs/schema/` and `docs/output-contract.md` | code + test_contract |
-| Every identified risk is responded to | `contract.checks.check_responses` — every finding has an action or an open issue; accepting a risk opens an issue | code |
+| Every identified risk is responded to | `contract.checks.check_responses` — every finding has an action or an open issue; accepting a risk opens an issue. The Risk Classifier hands its risks on; the Requirements Reviewer answers them with requirements, one per gap, each naming the risks it answers | code |
 | Structured human editing | the gate edits record fields; persistence re-finalises, re-renders and re-validates what was approved; free-text edits are refused | code + smoke test |
 | Project action plan | `contract.actions` — every action from every approved record, sorted by computed priority, exported as CSV/JSON | code |
 | Reproducible audit trail | `raia/provenance.py` — model, temperature, corpus version, excerpt ids, prompt hash, attempt, edits, rejection history, check results | code |
