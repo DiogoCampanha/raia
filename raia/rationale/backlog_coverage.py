@@ -78,6 +78,12 @@ def run(backlog: Dict[str, Any], review: Dict[str, Any], risk: Dict[str, Any]) -
 
     # 2: severe findings upstream that no story answers.
     obligation_to_evr = {str(g.get("ref")): str(g.get("evr_id")) for g in review.get("gaps") or [] if g.get("evr_id")}
+    # Each gap names the approved risks behind it (the requirement that closes it answers them).
+    risk_to_evr: Dict[str, set] = {}
+    for g in review.get("gaps") or []:
+        for fid in g.get("risks") or []:
+            if g.get("evr_id"):
+                risk_to_evr.setdefault(str(fid), set()).add(str(g["evr_id"]))
     severe_uncovered: List[str] = []
     for source, data in (("risk classification", risk), ("requirements review", review)):
         for f in _findings(data):
@@ -85,6 +91,7 @@ def run(backlog: Dict[str, Any], review: Dict[str, Any], risk: Dict[str, Any]) -
                 continue
             evrs = {str(l) for l in f.get("links") or [] if str(l) in by_id}
             evrs |= {obligation_to_evr[str(l)] for l in f.get("links") or [] if str(l) in obligation_to_evr}
+            evrs |= {e for e in risk_to_evr.get(str(f.get("id")), set()) if e in by_id}
             if any(by_id[e]["state"] != R.NO_STORY for e in evrs if e in by_id):
                 continue
             severe_uncovered.append(str(f.get("id")))

@@ -15,8 +15,16 @@ any point:
    cards, most pressing first.
 2. **What to do** — action cards grouped Do now / Plan / Track (the first
    group open), then the decisions only a person can take; a filter shows one
-   owner's share. The Risk Classifier adds its legal obligations by
-   instrument, the Requirements Reviewer its requirements.
+   owner's share. A stage that writes no actions shows only its decisions:
+   the Risk Classifier, an analysis, shows the risks, the *Decisions on this
+   classification* and its legal obligations by instrument; the Requirements
+   Reviewer leads with its requirements (most pressing first, each with the
+   risks it answers), then its decisions.
+
+Everything a person changes keeps the page still: a decision is a form sent
+by one button, every element that comes and goes sits in a slot drawn on
+every redraw, so Streamlit never rebuilds the elements below it (which would
+drop the person at the end of the page and close an open popover).
 3. **Deep dive** — behind a dropdown, one tab per topic, each opening with its
    conclusion; the traceability appendix last.
 
@@ -273,15 +281,19 @@ def obligation_card(o: Dict[str, Any], where: str) -> str:
 
 def evr_card(e: Dict[str, Any]) -> str:
     over = (e.get("review") or {}).get("status") == "overridden"
+    tone = D.tone_of_priority(e.get("priority")) if e.get("priority") and not over else "neutral"
     chips = ((chip("Overridden by " + str((e.get("review") or {}).get("by") or "a reviewer"), "neutral") if over else "")
+             + (chip(V.PRIORITY_LABELS.get(e["priority"], D.label(e["priority"])), tone) if e.get("priority") and not over else "")
              + chip(D.principle_name(e.get("value")), "neutral", quiet=True)
              + "".join(chip(t, "neutral", quiet=True) for t in (e.get("traces_to") or [])[:3]))
     body = (_meta([("Fit criterion", e.get("fit_criterion")),
                    ("Verified by", str(e.get("verification_method") or "").capitalize()),
-                   ("Stakeholders", ", ".join(e.get("stakeholders") or []))])
+                   ("Stakeholders", ", ".join(e.get("stakeholders") or [])),
+                   ("Answers", ", ".join(e.get("answers_risks") or [])),
+                   ("Why this priority", e.get("priority_basis"))])
             + (f'<div class="rv-card-foot">{_cites(e["citations"])}</div>' if e.get("citations") else "")
             + (f'<p class="rv-muted">Overridden: {esc((e.get("review") or {}).get("reason") or "")}</p>' if over else ""))
-    return _dcard(e.get("id", ""), "neutral", chips, esc(e.get("statement") or ""), body,
+    return _dcard(e.get("id", ""), tone, chips, esc(e.get("statement") or ""), body,
                   cls="rv-overridden" if over else "")
 
 
@@ -474,20 +486,24 @@ OTHER = "Something else"
 
 
 def decision_block(d: Dict[str, Any]) -> None:
-    """A decision card a person can act on: pick an option, say why, record it."""
+    """A decision card a person can act on: pick an option, say why, record it.
+
+    Open or decided, a decision is one container on the page, so taking it
+    changes what is inside that container and nothing after it moves.
+    """
     dc = _dc()
     if dc is None or (not dc.can_decide and not d.get("taken")):
         st.html(_decision_card(d))
         return
-    if d.get("taken"):
-        st.html(_decision_card(d))
-        if dc.reopen is not None and dc.can_decide:
-            if st.button("Reopen this decision", key=f"{dc.key}::reopen::{d['id']}", type="tertiary",
-                         icon=":material/undo:"):
-                dc.reopen(d)
-                st.rerun()
-        return
-    with st.container(border=True, key=f"{dc.key}::dbox::{d['id']}"):
+    with st.container(border=not d.get("taken"), key=f"{dc.key}::dbox::{d['id']}"):
+        if d.get("taken"):
+            st.html(_decision_card(d))
+            if dc.reopen is not None and dc.can_decide:
+                if st.button("Reopen this decision", key=f"{dc.key}::reopen::{d['id']}", type="tertiary",
+                             icon=":material/undo:"):
+                    dc.reopen(d)
+                    st.rerun()
+            return
         st.html(_decision_card(d, interactive=True))
         k = f"{dc.key}::d::{d['key'][:60]}"
         if d["blocking"]:
@@ -499,25 +515,43 @@ def decision_block(d: Dict[str, Any]) -> None:
                 _decision_form(d, dc, k)
 
 
-def _decision_form(d: Dict[str, Any], dc: "Decisions", k: str) -> None:
-    options = list(d["options"]) + [OTHER]
-    choice = st.radio("Your decision", options, key=k + "::choice", index=None)
-    own = st.text_input("Your decision, in a few words", key=k + "::own") if choice == OTHER else ""
-    why = st.text_input("Why? (required)", key=k + "::why", placeholder="The reason, recorded with the decision")
-    if st.button("Record decision", key=k + "::go", type="primary", icon=":material/gavel:"):
+def decision_form(options: Sequence[str], key: str, record: Callable[[str, str], Optional[str]],
+                  note: str = "", allow_other: bool = True) -> None:
+    """Pick an option, say why, record — as one form.
+
+    Nothing reaches the app until "Record decision" is pressed: choosing an
+    option or typing the reason does not redraw the page, so the page stays
+    where it is, a popover stays open, and the button is never greyed out by
+    an answer the app has not received yet. The answers are checked when the
+    button is pressed. ``record(choice, why)`` returns an error, or ``None``.
+    """
+    with st.form(key + "::form", border=False, enter_to_submit=False):
+        opts = list(options) + ([OTHER] if allow_other else [])
+        choice = st.radio("Your decision", opts, key=key + "::choice", index=None)
+        own = (st.text_input("Or your own decision, in a few words", key=key + "::own",
+                             placeholder=f"Only if you chose \"{OTHER}\"") if allow_other else "")
+        why = st.text_input("Why? (required)", key=key + "::why", placeholder="The reason, recorded with the decision")
+        go = st.form_submit_button("Record decision", key=key + "::go", type="primary", icon=":material/gavel:")
+        if note:
+            st.caption(note)
+    if go:
         final = (own or "").strip() if choice == OTHER else (choice or "")
         if not final:
-            st.error("Choose an option, or write the decision.")
+            st.error("Choose an option" + (", or write the decision." if allow_other else "."))
         elif not (why or "").strip():
             st.error("Say why: one line is enough.")
         else:
-            err = dc.record(d, final, why.strip())
+            err = record(final, why.strip())
             if err:
                 st.error(err)
             else:
                 st.rerun()
-    if dc.where == "draft":
-        st.caption("Recorded with the draft, and written to the project's open issues when it is approved.")
+
+
+def _decision_form(d: Dict[str, Any], dc: "Decisions", k: str) -> None:
+    decision_form(d["options"], k, lambda choice, why: dc.record(d, choice, why),
+                  note=("Recorded with the draft, and written to the project's open issues when it is approved."
+                        if dc.where == "draft" else ""))
 
 
 def _group_head(title: str, hint: str, tone: str, count: int) -> str:
@@ -525,7 +559,17 @@ def _group_head(title: str, hint: str, tone: str, count: int) -> str:
             f'<span class="rv-chip quiet tone-{tone}">{count}</span><span class="rv-muted">{esc(hint)}</span></div>')
 
 
+#: What a stage that writes no actions calls its decisions.
+DECISIONS_TITLE = {"risk_classifier": "Decisions on this classification"}
+
+
 def _actions(dg: Dict[str, Any], key: str, flat: bool = False) -> None:
+    if not V.writes_actions(dg["agent_key"]):
+        # An analysis (Risk Classifier) or a set of requirements (Requirements
+        # Reviewer): what to do comes at the next stage. Only the decisions a
+        # person must take on this record are shown, under their own heading.
+        _decisions(dg, dg["decisions"], DECISIONS_TITLE.get(dg["agent_key"], "Decisions for a person"))
+        return
     st.html('<div class="rv-h"><h4>What to do</h4>'
             '<span class="rv-muted">Grouped by the priority the software computed</span></div>')
     counts = D.owner_counts(dg)
@@ -569,17 +613,21 @@ def _actions(dg: Dict[str, Any], key: str, flat: bool = False) -> None:
                 + ("No actions for the selected owners." if picked and dg["actions"] else "No actions at this stage.")
                 + "</div>")
 
-    decisions = [d for d in dg["decisions"] if keep(d["owner"])]
-    if decisions:
-        open_n = sum(1 for d in decisions if not d.get("taken"))
-        hint = ("Choose an option and say why; the decision is recorded under your name"
-                if _dc() is not None and _dc().can_decide else "Open issues the software will not settle")
-        st.html(_group_head("Decisions for a person", hint, "decision", open_n if open_n else len(decisions)))
-        if _dc() is None:
-            st.html('<div class="rv-cards">' + "".join(_decision_card(d) for d in decisions) + "</div>")
-        else:
-            for d in decisions:
-                decision_block(d)
+    _decisions(dg, [d for d in dg["decisions"] if keep(d["owner"])], "Decisions for a person")
+
+
+def _decisions(dg: Dict[str, Any], decisions: List[Dict[str, Any]], title: str) -> None:
+    if not decisions:
+        return
+    open_n = sum(1 for d in decisions if not d.get("taken"))
+    hint = ("Choose an option and say why; the decision is recorded under your name"
+            if _dc() is not None and _dc().can_decide else "Open issues the software will not settle")
+    st.html(_group_head(title, hint, "decision", open_n if open_n else len(decisions)))
+    if _dc() is None:
+        st.html('<div class="rv-cards">' + "".join(_decision_card(d) for d in decisions) + "</div>")
+    else:
+        for d in decisions:
+            decision_block(d)
 
 
 def _agent_lists(dg: Dict[str, Any]) -> None:
@@ -594,7 +642,7 @@ def _agent_lists(dg: Dict[str, Any]) -> None:
                      + "".join(obligation_card(o, g["title"]) for o in g["items"]) + "</div></details>")
         st.html(body)
     if dg.get("evrs"):
-        st.html(_section_head("Ethical value requirements", "Each with a fit criterion; open one for how it is verified",
+        st.html(_section_head("Ethical value requirements", "Most pressing first; open one for its fit criterion and the risks it answers",
                               len(dg["evrs"])))
         if _rv() is not None:
             st.caption("Each requirement closes a gap the rule engine computed. Rejecting one does not delete it: "
@@ -772,6 +820,7 @@ def _story_choices(v: Dict[str, Any], key: str, dg: Optional[Dict[str, Any]] = N
             taken = d.get("taken")
             if taken:
                 choices[l["id"]] = "rewrite" if str(taken.get("choice", "")).lower().startswith("rewrite") else "keep"
+                st.markdown(f"**{l['id']}** — decided; the copy follows the decision:")
             else:
                 st.markdown(f"**{l['id']}** — decide which version stands (the copy follows your decision):")
                 choices[l["id"]] = "rewrite"
@@ -1108,9 +1157,19 @@ def _record_view(agent_key: str, record: Dict[str, Any], computed_data: Optional
         _audit_layout(dg, key, nested, before)
         return
     _summary(dg, before)
-    _findings(dg, key)
-    _actions(dg, key)
-    _agent_lists(dg)
+    if not V.writes_findings(agent_key):
+        # Requirements, not risks: the requirements lead, then the decisions.
+        _agent_lists(dg)
+        _actions(dg, key)
+    elif not V.writes_actions(agent_key):
+        # An analysis: the risks, the decisions on it, then its own lists.
+        _findings(dg, key)
+        _actions(dg, key)
+        _agent_lists(dg)
+    else:
+        _findings(dg, key)
+        _actions(dg, key)
+        _agent_lists(dg)
     _deep_dive(dg, key, nested)
 
 

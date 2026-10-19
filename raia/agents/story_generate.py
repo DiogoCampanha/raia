@@ -37,6 +37,7 @@ class StoryGeneratorMode(BaseAgent):
         name="User Story Refiner",
         parent="story_refiner",
         mode_label="Generate from requirements",
+        run_label="Generate stories",
         layer="Dev",
         sdlc_phase="Iterative development (sprints)",
         description=(

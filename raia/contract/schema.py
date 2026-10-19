@@ -230,6 +230,10 @@ class EthicalValueRequirement(_Model):
     verification_method: Verification
     traces_to: List[str] = Field(default_factory=list, description="Obligation codes or principle refs it derives from.")
     citations: List[str] = Citations
+    priority: Optional[str] = computed(description=(
+        "Computed: the highest priority among the approved risks behind its gap; a legal gap is at least high."))
+    priority_basis: Optional[str] = computed()
+    answers_risks: Optional[List[str]] = computed(description="Computed: the approved risks its gap carries.")
     review: Optional[Dict[str, Any]] = computed()
 
 
@@ -469,4 +473,11 @@ def model_facing_schema(agent_key: str) -> Dict[str, Any]:
                 strip(v)
 
     strip(schema)
+    # The parts of the shared core this stage does not write are not offered.
+    props = schema.get("properties") or {}
+    for name, writes in (("actions", V.writes_actions(agent_key)), ("findings", V.writes_findings(agent_key))):
+        if not writes:
+            props.pop(name, None)
+            if name in schema.get("required", []):
+                schema["required"].remove(name)
     return schema

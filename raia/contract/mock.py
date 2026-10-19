@@ -141,6 +141,7 @@ def build(prompt: str) -> Dict[str, Any]:
             "next_focus": "[MOCK MODE] Placeholder focus for the next sprint.",
         }
 
+    writes = h.get("writes") or {}
     return {
         "headline": "[MOCK MODE] Placeholder headline: no model was called.",
         "summary": MOCK_NOTE,
@@ -148,14 +149,14 @@ def build(prompt: str) -> Dict[str, Any]:
         "declared_verdict": verdict,
         "agrees_with_rule_engine": True,
         "disagreement_rationale": "",
-        "findings": [
+        "findings": [] if writes.get("findings") is False else [
             _finding(cite, links),
             _finding(cite, [], "transparency", "MEASURE 2", "F2", "significant", "likely",
                      "Second placeholder finding from mock mode"),
             _finding([], [], "privacy", "MAP 1", "F3", "limited", "possible",
                      "Third placeholder finding from mock mode"),
         ],
-        "actions": [
+        "actions": [] if writes.get("actions") is False else [
             _action("A1", "F1", "product", cite, "Placeholder action from mock mode."),
             _action("A2", "F2", "engineering", cite, "Second placeholder action from mock mode."),
             _action("A3", "F3", "data_science", [], "Third placeholder action from mock mode."),

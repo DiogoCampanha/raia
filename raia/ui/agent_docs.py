@@ -29,6 +29,9 @@ DOCS: Dict[str, Dict[str, object]] = {
             "Derives the risk tier for each jurisdiction and the obligations that follow "
             "from that tier and from your role (provider or deployer).",
             "Identifies the legal excerpts that must be in front of the reviewer.",
+            "Analyses risk and stops there: it lists the risks and the decisions on the "
+            "classification, not what to do about them. The response to each risk is written at "
+            "the next stage, as requirements.",
         ],
         "you": [
             "Whether a narrow-task exemption actually holds for your system.",
@@ -43,6 +46,8 @@ DOCS: Dict[str, Dict[str, object]] = {
             "each of the seven Responsible AI principles, tested against your requirements and "
             "existing controls.",
             "Lists the uncovered cells as gaps, so a gap is computed rather than asserted.",
+            "Writes requirements, not risks: the risks approved at the Risk Classifier reach it as "
+            "the gaps, and each requirement shows the risks it answers and takes their priority.",
             "On request, pre-fills the stakeholder and principle questions you left empty from the "
             "approved classification, with a reason per value, and offers a few candidate requirements "
             "for the gaps your answers leave. Candidates that cite no retrieved excerpt, address a gap "

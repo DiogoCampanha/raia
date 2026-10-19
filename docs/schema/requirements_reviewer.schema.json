@@ -1,5 +1,5 @@
 {
-  "$id": "raia-record/1.4/requirements_reviewer",
+  "$id": "raia-record/1.5/requirements_reviewer",
   "title": "RequirementsReviewerRecord",
   "$defs": {
     "Action": {
@@ -225,6 +225,50 @@
           },
           "title": "Citations",
           "type": "array"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "computed": true,
+          "default": null,
+          "description": "Computed: the highest priority among the approved risks behind its gap; a legal gap is at least high.",
+          "title": "Priority"
+        },
+        "priority_basis": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "computed": true,
+          "default": null,
+          "title": "Priority Basis"
+        },
+        "answers_risks": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "computed": true,
+          "default": null,
+          "description": "Computed: the approved risks its gap carries.",
+          "title": "Answers Risks"
         },
         "review": {
           "anyOf": [

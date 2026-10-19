@@ -148,6 +148,8 @@ Recorded so the log stays honest about its own errors.
 | D58 | Each card of a draft is accepted or rejected, a rejection with a reason; unmarked cards are accepted. A rejected card the model wrote leaves the approved record into its review block; a rejected computed card (an EVR) is kept, marked overridden, recorded in the register as a decided disagreement, and not handed on. Card ids stay stable across re-finalisation. | Whole-draft approval forced reviewers to accept what they disagreed with or regenerate everything. Computed facts are never deleted (D8): a person may override code, on the record. |
 | D59 | Decisions are taken on their card: an option (or the person's own) and why. On a draft they reach the register decided on approval; on an approved stage they are written at once. The register gains a Decided status; owners can reopen a decision. A decision is identified by its wording. A Story Refiner conflict is one decision, and the copy follows it. | "Decisions for a person" allowed no action where they were read. Keying by wording survives renumbering and matches the register's de-duplication. |
 | D60 | Stages hand on visibly, on identifiers code keeps across stages: what a stage receives, what it addressed, what is still open, what improved since the approved version, what travels on, and a Traceability tab from obligation to audit verdict. The next prompt is told what people decided and excluded upstream. While an agent runs, the page shows only that it is working; the draft then opens at its top. | The flow between agents existed only in the sidecars: nobody could see that one stage answered the last one's items, nor which gaps remained. A form left on screen during a run looked editable. |
+| D61 | The Risk Classifier writes no actions and the Requirements Reviewer writes neither findings nor actions (`raia-record/1.5`). The classifier is an analysis: its risks and the decisions on it. The reviewer's response to those risks is its requirements: each gap names the approved risks behind it and the requirement takes their priority. The lists stay in the core, empty for those stages, so older records still read. | Testers read "What to do" on a risk analysis as advice given before the requirements existed, and "Risks found" on the requirements as a second risk analysis repeating the first. Analysing risk and responding to it are separate steps (NIST AI RMF MAP/MEASURE, then MANAGE); keeping them in separate stages makes the hand-off between them visible. |
+| D62 | Everything a person changes keeps the page still: an element that comes and goes sits in a slot drawn on every redraw, and a decision is a form sent by one button, checked when pressed. A browser check (`tests/browser_check.py`) measures where the page is after each click. | An element drawn on one redraw and not the next moved every element after it; Streamlit then rebuilt the draft, dropping the person at the end of the page and closing any open popover. A button enabled only by a reason the app had not yet received looked broken. Neither is visible to the app-test harness. |
 
 ---
 
@@ -156,6 +158,84 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-10-17 — Each stage does its own job, and the page stays still (branch `agent-focus`)
+
+Decisions D61–D62. Requested after a second walk-through of the review loop.
+
+#### What was wrong
+
+- **REV-11** Accepting the first card of a new draft took the person to the end of
+  the page; on the Requirements Reviewer, choosing an option in *Take this
+  decision* closed the popover and did the same; in the User Story Refiner,
+  taking a decision was slow and left the person at the top or the end of the page.
+- **REV-12** In *What this stage receives*, **Record decision** stayed greyed out
+  after an option was chosen and a reason typed.
+- **REV-13** The Risk Classifier had a *What to do* section, though what to do is
+  the next stages' work.
+- **REV-14** The Requirements Reviewer listed *Risks found*, repeating the risk
+  analysis instead of focusing on what the requirements must contain.
+- **REV-15** In generate mode there seemed to be no button to generate the
+  stories: it read *Run User Story Refiner* and sat under every inherited
+  decision, each drawn as a full form.
+
+#### What changed
+
+- **A still page** (REV-11, D62). The review gate drew its one-off scroll script
+  only on the redraw that brought the draft; on the next redraw every element
+  after it moved one position and Streamlit rebuilt them all. The anchor and the
+  script are now one element drawn every time (`ui/gate.review_gate`); the flash
+  message has a slot drawn every time (`ui/state.show_flash`); the edit note has
+  a slot and the preview toggle is always there, off until there is something to
+  preview; a decision is one container open or decided (`ui/record_view.decision_block`).
+- **Decisions as forms** (REV-11, REV-12). `ui/record_view.decision_form`: the
+  option, the person's own wording, the reason and **Record decision** are one
+  form, so choosing and typing do not redraw the page and a popover stays open;
+  the answers are checked when the button is pressed. Used on every record and
+  in *What this stage receives* (`ui/components.receives_card`), where each
+  inherited decision is now one line with a **Decide** popover.
+- **The Risk Classifier analyses risk** (REV-13, D61). `contract/vocab.NO_ACTIONS`;
+  the model is not offered `actions` (`schema.model_facing_schema`), the prompt
+  says the stage analyses and hands on (`prompt._division`), code removes any it
+  returns (`assemble.finalize`). The screen shows the risks, *Decisions on this
+  classification* and the obligations; the document drops the Action Plan. The
+  risk-response check reports the risks handed on (`checks.check_responses`).
+  A blocking risk says what unblocks it without an action (`digest.gaps`).
+- **The Requirements Reviewer writes requirements** (REV-14, D61).
+  `contract/vocab.NO_FINDINGS`; no findings and no actions. The rule engine
+  names the approved risks behind each gap and gives it a priority
+  (`rationale/coverage._risks_behind`: the highest of those risks; a legal gap at
+  least high, a principle declared at stake at least medium); each EVR carries
+  computed `priority`, `priority_basis` and `answers_risks`. The screen and the
+  document lead with the requirements, most pressing first, then the decisions.
+  The roadmap reads a requirement's priority from its gap (`roadmap.requirement_facts`)
+  and the backlog check maps a severe risk to the requirement that answers it
+  (`rationale/backlog_coverage`); reviews approved before keep working through
+  their findings.
+- **Generate mode** (REV-15). `AgentSpec.run_label`: **Generate stories** and
+  **Refine stories**; the button is disabled, with the reason, when every
+  requirement has a story. The stage rail shows the mode's own status.
+- The project's Action plan says actions start with the User Story Refiner.
+  Guide, Agents page, agent cards, schemas, `docs/output-contract.md` and
+  `docs/TESTERS.md` updated; record schema `raia-record/1.5`.
+
+#### Tests
+
+- `tests/test_contract.py` — the Risk Classifier writes no actions and hands its
+  risks on; generic action checks use the generate mode; new
+  `test_requirements_answer_the_approved_risks` (gaps carry their risks and
+  priority, EVRs carry them, re-finalising keeps them, layouts, roadmap and
+  backlog check).
+- `tests/test_ui.py` — the classification reads as an analysis, the review leads
+  with the requirements; the Action plan fills from the refined stories.
+- `tests/browser_check.py` (new, Playwright, run by hand) — the first Accept, an
+  option chosen in a popover and a recorded decision leave the page where it was;
+  *What this stage receives* records on the first click; **Generate stories** is there.
+
+#### Still open, by decision
+
+- Card Accept/Reject still redraws the whole page (now without moving it). If it
+  feels slow on the hosted database, the card list can be redrawn on its own.
+
 ### 2026-10-12 — A review loop people can act on (branch `review-loop`)
 
 Decisions D51–D60. Requested after a walk-through of the deployed build, before

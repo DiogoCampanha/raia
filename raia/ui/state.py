@@ -90,6 +90,15 @@ def flash(message: str) -> None:
 
 
 def show_flash() -> None:
+    """The message left by the last action, in a slot that is always drawn.
+
+    The slot is there whether or not a message is, so everything below it keeps
+    its place on the page from one redraw to the next. Were the message drawn
+    only when present, every element after it would move down one position,
+    Streamlit would rebuild them all, and the browser would lose the person's
+    place on the page (and close any popover they had open).
+    """
+    slot = st.empty()
     msg = st.session_state.pop("flash", None)
     if msg:
-        st.success(msg, icon=I.OK)
+        slot.success(msg, icon=I.OK)

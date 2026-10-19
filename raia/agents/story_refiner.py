@@ -38,6 +38,7 @@ class UserStoryRefinerAgent(BaseAgent):
         key="story_refiner",
         name="User Story Refiner",
         mode_label="Refine sprint stories",
+        run_label="Refine stories",
         layer="Dev",
         sdlc_phase="Iterative development (sprints)",
         description=(

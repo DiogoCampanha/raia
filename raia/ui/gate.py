@@ -885,47 +885,51 @@ def record_editor(agent_key: str, payload: Dict[str, Any]) -> Tuple[Optional[Dic
         format_func=lambda v: v.replace("_", " ").capitalize(),
         help="The software raises this if a finding or issue requires it; it never lowers it.")
 
-    st.markdown("**Findings** — placement on the NIST AI RMF likelihood and magnitude scales")
-    f_cols = ["id", "title", "statement", "principle", "nist_category", "magnitude", "likelihood", "placement_rationale"]
-    findings = st.data_editor(
-        _frame(original.get("findings") or [], f_cols), key=k("findings"), num_rows="fixed",
-        hide_index=True, width="stretch",
-        column_config={
-            "id": st.column_config.TextColumn("ID", disabled=True),
-            "title": st.column_config.TextColumn("Finding"),
-            "statement": st.column_config.TextColumn("Statement"),
-            "placement_rationale": st.column_config.TextColumn("Why this placement"),
-            "principle": st.column_config.SelectboxColumn("Principle", **_options(V.PRINCIPLE_KEYS)),
-            "nist_category": st.column_config.SelectboxColumn("NIST AI RMF", **_options(V.NIST_CATEGORIES)),
-            "magnitude": st.column_config.SelectboxColumn("Magnitude", **_options(V.MAGNITUDE)),
-            "likelihood": st.column_config.SelectboxColumn("Likelihood", **_options(V.LIKELIHOOD)),
-        })
-    by_id = {f["id"]: f for f in original.get("findings") or []}
-    rec["findings"] = [{**by_id.get(r["id"], {}), **r} for r in _records(findings)]
+    # Only the parts of the core this stage writes are editable (a Risk Classifier
+    # record has no action plan; a Requirements Reviewer record has neither).
+    if V.writes_findings(agent_key):
+        st.markdown("**Findings** — placement on the NIST AI RMF likelihood and magnitude scales")
+        f_cols = ["id", "title", "statement", "principle", "nist_category", "magnitude", "likelihood", "placement_rationale"]
+        findings = st.data_editor(
+            _frame(original.get("findings") or [], f_cols), key=k("findings"), num_rows="fixed",
+            hide_index=True, width="stretch",
+            column_config={
+                "id": st.column_config.TextColumn("ID", disabled=True),
+                "title": st.column_config.TextColumn("Finding"),
+                "statement": st.column_config.TextColumn("Statement"),
+                "placement_rationale": st.column_config.TextColumn("Why this placement"),
+                "principle": st.column_config.SelectboxColumn("Principle", **_options(V.PRINCIPLE_KEYS)),
+                "nist_category": st.column_config.SelectboxColumn("NIST AI RMF", **_options(V.NIST_CATEGORIES)),
+                "magnitude": st.column_config.SelectboxColumn("Magnitude", **_options(V.MAGNITUDE)),
+                "likelihood": st.column_config.SelectboxColumn("Likelihood", **_options(V.LIKELIHOOD)),
+            })
+        by_id = {f["id"]: f for f in original.get("findings") or []}
+        rec["findings"] = [{**by_id.get(r["id"], {}), **r} for r in _records(findings)]
 
-    st.markdown("**Action plan** — add a row for a new action; leave its ID empty")
-    a_cols = ["id", "action", "finding_ids", "response", "owner_role", "lifecycle_stage",
-              "review_cadence", "verification_method", "evidence_artifact"]
-    actions_in = [{**a, "finding_ids": ", ".join(a.get("finding_ids") or [])} for a in original.get("actions") or []]
-    actions = st.data_editor(
-        _frame(actions_in, a_cols), key=k("actions"), num_rows="dynamic", hide_index=True, width="stretch",
-        column_config={
-            "id": st.column_config.TextColumn("ID", disabled=True),
-            "action": st.column_config.TextColumn("Action"),
-            "evidence_artifact": st.column_config.TextColumn("Evidence artifact"),
-            "finding_ids": st.column_config.TextColumn("Findings (comma-separated ids)"),
-            "response": st.column_config.SelectboxColumn("Response", **_options(V.RESPONSES)),
-            "owner_role": st.column_config.SelectboxColumn("Owner", **_options(V.OWNER_ROLES)),
-            "lifecycle_stage": st.column_config.SelectboxColumn("Lifecycle stage", **_options(V.LIFECYCLE_STAGES)),
-            "review_cadence": st.column_config.SelectboxColumn("Review cadence", **_options(V.REVIEW_CADENCES)),
-            "verification_method": st.column_config.SelectboxColumn("Verification", **_options(V.VERIFICATION_METHODS)),
-        })
-    a_by_id = {a["id"]: a for a in original.get("actions") or []}
-    rec["actions"] = []
-    for i, r in enumerate(_records(actions), 1):
-        base = a_by_id.get(r.get("id"), {})
-        rec["actions"].append({**base, **r, "id": r.get("id") or f"new-{i}",
-                               "finding_ids": _csv(r.get("finding_ids"))})
+    if V.writes_actions(agent_key):
+        st.markdown("**Action plan** — add a row for a new action; leave its ID empty")
+        a_cols = ["id", "action", "finding_ids", "response", "owner_role", "lifecycle_stage",
+                  "review_cadence", "verification_method", "evidence_artifact"]
+        actions_in = [{**a, "finding_ids": ", ".join(a.get("finding_ids") or [])} for a in original.get("actions") or []]
+        actions = st.data_editor(
+            _frame(actions_in, a_cols), key=k("actions"), num_rows="dynamic", hide_index=True, width="stretch",
+            column_config={
+                "id": st.column_config.TextColumn("ID", disabled=True),
+                "action": st.column_config.TextColumn("Action"),
+                "evidence_artifact": st.column_config.TextColumn("Evidence artifact"),
+                "finding_ids": st.column_config.TextColumn("Findings (comma-separated ids)"),
+                "response": st.column_config.SelectboxColumn("Response", **_options(V.RESPONSES)),
+                "owner_role": st.column_config.SelectboxColumn("Owner", **_options(V.OWNER_ROLES)),
+                "lifecycle_stage": st.column_config.SelectboxColumn("Lifecycle stage", **_options(V.LIFECYCLE_STAGES)),
+                "review_cadence": st.column_config.SelectboxColumn("Review cadence", **_options(V.REVIEW_CADENCES)),
+                "verification_method": st.column_config.SelectboxColumn("Verification", **_options(V.VERIFICATION_METHODS)),
+            })
+        a_by_id = {a["id"]: a for a in original.get("actions") or []}
+        rec["actions"] = []
+        for i, r in enumerate(_records(actions), 1):
+            base = a_by_id.get(r.get("id"), {})
+            rec["actions"].append({**base, **r, "id": r.get("id") or f"new-{i}",
+                                   "finding_ids": _csv(r.get("finding_ids"))})
 
     st.markdown("**Open issues raised by the agent** — the rule engine's and the software's are kept as they are")
     fixed = [i for i in original.get("open_issues") or [] if i.get("origin") in ("engine", "code")]
@@ -1139,11 +1143,17 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
 
     # The page opens at the top of a draft that just arrived, wherever the
     # person had scrolled to on the form before.
-    st.html('<div class="review-anchor" id="draft-top"></div>')
-    if st.session_state.pop(pkey("scroll_draft", agent_key), None):
-        st.html("<script>setTimeout(() => document.getElementById('draft-top')"
-                "?.scrollIntoView({behavior: 'smooth', block: 'start'}), 300)</script>",
-                unsafe_allow_javascript=True)
+    #
+    # The anchor and the one-off scroll are one element, drawn on every redraw:
+    # an element drawn only on the first redraw would be gone on the next, every
+    # element after it would move up one position, and Streamlit would rebuild
+    # the whole draft — dropping the person at the end of the page and closing
+    # any popover they had open, on their first click.
+    scroll = st.session_state.pop(pkey("scroll_draft", agent_key), None)
+    st.html('<div class="review-anchor" id="draft-top"></div>'
+            + ("<script>setTimeout(() => document.getElementById('draft-top')"
+               "?.scrollIntoView({behavior: 'smooth', block: 'start'}), 300)</script>" if scroll else ""),
+            unsafe_allow_javascript=True)
 
     with st.container(border=True):
         st.subheader("Human review required", anchor=False)
@@ -1191,14 +1201,19 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
     with tab_read:
         tally = _review_bar(agent_key, original, cards) if original else {}
         shown = original
+        # The edit note sits in a slot drawn every time, and the preview toggle
+        # is always there (off until there is something to preview), so the
+        # draft below never changes position when a card is reviewed.
+        edit_note = st.empty()
         if changed:
-            st.caption("Showing your edits, re-computed. Nothing is saved until you approve.")
+            edit_note.caption("Showing your edits, re-computed. Nothing is saved until you approve.")
             try:
                 shown = _preview(agent_key, payload, edited_record)
             except Exception as exc:  # noqa: BLE001 - shown to the reviewer
-                st.error(f"The edited record could not be rendered: {exc}")
-        if reviewed and st.toggle("Preview the version you will approve", key=pkey("pv", agent_key),
-                                  help="With the cards you rejected taken out and everything re-computed."):
+                edit_note.error(f"The edited record could not be rendered: {exc}")
+        if st.toggle("Preview the version you will approve", key=pkey("pv", agent_key), disabled=not reviewed,
+                     help="With the cards you rejected taken out and everything re-computed."
+                          + ("" if reviewed else " Available once your review changes the record.")) and reviewed:
             try:
                 draft_view(agent_key, payload, _preview(agent_key, payload, to_approve), decide=decisions)
             except Exception as exc:  # noqa: BLE001 - shown to the reviewer

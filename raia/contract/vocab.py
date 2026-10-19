@@ -33,7 +33,7 @@ from typing import Dict, List, Tuple
 
 from ..rationale.principles import PRINCIPLES
 
-SCHEMA_VERSION = "raia-record/1.4"
+SCHEMA_VERSION = "raia-record/1.5"
 
 # -- The seven principles -----------------------------------------------------
 
@@ -278,6 +278,29 @@ ACTION_GROUPS: Tuple[Tuple[str, str, Tuple[str, ...], str], ...] = (
 )
 
 AUTHORITY_LEVELS: Tuple[str, ...] = ("legal", "standard", "advisory")
+
+# -- What each stage writes of the shared core ---------------------------------
+#
+# Every record has the same core, but not every stage fills all of it. The
+# Risk Classifier analyses risk and stops there (NIST AI RMF MAP and MEASURE):
+# it writes risks, not what to do about them. Responding to those risks starts
+# at the Requirements Reviewer (MANAGE), and its response is the ethical value
+# requirements themselves, so it writes neither new risks — those were found
+# and approved upstream and reach it as computed gaps — nor separate actions.
+# The stages after it turn the requirements into work and do write actions.
+
+#: Stages whose record carries no actions.
+NO_ACTIONS = frozenset({"risk_classifier", "requirements_reviewer"})
+#: Stages whose record carries no findings (risks).
+NO_FINDINGS = frozenset({"requirements_reviewer"})
+
+
+def writes_actions(agent_key: str) -> bool:
+    return agent_key not in NO_ACTIONS
+
+
+def writes_findings(agent_key: str) -> bool:
+    return agent_key not in NO_FINDINGS
 
 
 def rank(scale: Tuple[str, ...], value: str) -> int:

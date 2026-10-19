@@ -100,13 +100,18 @@ STEPS: List[Step] = [
         "*Blocked in its current form* says how many items stop the product as described and "
         "links to **Gaps to close**, each gap with what unblocks it. Under the status, from the "
         "second stage on, a **hand-off strip** says what this stage received from the stages "
-        "before it, how much it addressed, and which items are still open. Then the risks found "
-        "and **What to do** (actions grouped *Do now*, *Plan* and *Track*, and the decisions only "
-        "a person can take). Every card shows one line; open it for the detail. A **Deep dive** "
-        "holds the analysis behind each point. The User Story Refiner and the Auditor lead with "
-        "what you take away instead (see below).\n"
+        "before it, how much it addressed, and which items are still open. Each stage then leads "
+        "with what it produces. The **Risk Classifier** is an analysis: the risks found and the "
+        "**Decisions on this classification** — no action plan, because what to do about each "
+        "risk is decided at the next stage. The **Requirements Reviewer** leads with the "
+        "**ethical value requirements**, most pressing first, each showing the approved risks it "
+        "answers, then the decisions only a person can take. The User Story Refiner and the "
+        "Auditor lead with the stories and the audit report, with the actions behind them (see "
+        "below). Every card shows one line; open it for the detail. A **Deep dive** holds the "
+        "analysis behind each point.\n"
         "- **Edit the record** — change the record's fields (the headline, a finding's placement, "
-        "an action's owner). The software recomputes priorities and redraws the draft.\n"
+        "an action's owner, where the stage has them). The software recomputes priorities and "
+        "redraws the draft.\n"
         "- **Evidence** — the norm excerpts that were actually retrieved. Pick a citation in "
         "the draft and check that you can find it here.\n"
         "- **What the code computed** — what the rules decided before the model was called. "
@@ -127,7 +132,7 @@ STEPS: List[Step] = [
         "override is recorded in the open issues. Turn on **Preview the version you will "
         "approve** to see the record with your rejections applied.\n\n"
         "Each **Decision needed** card is a choice you make where it stands: pick an option (or "
-        "write your own), say why, and **Record decision**. On a draft, the decision is kept with "
+        "write your own), say why, and **Record decision** — nothing is sent until you press it. On a draft, the decision is kept with "
         "it and reaches the project's open issues when you approve; on an approved stage it is "
         "recorded at once. Taking the blocking decisions lifts *Blocked in its current form*, and "
         "the status says which decision did.",
@@ -209,8 +214,8 @@ STEPS: List[Step] = [
     Step(
         "Use the results",
         "The project page has tabs for the work the stages produce:\n\n"
-        "- **Action plan** — every action from every approved stage, sorted by priority. Is each "
-        "one specific enough for someone to pick up?\n"
+        "- **Action plan** — every action from every approved stage, sorted by priority (actions "
+        "start with the User Story Refiner). Is each one specific enough for someone to pick up?\n"
         "- **Traceability** — one row per legal obligation and requirement, from the "
         "classification to the audit: which requirement answers it, which stories implement it, "
         "what the audit verified. The highlighted rows are the gaps still open.\n"
@@ -273,7 +278,8 @@ LOOK_FOR: List[Tuple[str, str]] = [
      "open."),
     ("Every stage answers in the same standard record.",
      "Findings are placed on likelihood and magnitude, and the software, not the model, computes "
-     "their priority. Every action names an owner, when it happens and what shows it is done. "
+     "their priority; a requirement takes the priority of the risks it answers. Every action "
+     "names an owner, when it happens and what shows it is done. "
      "Every stage leads with what to act on and keeps the analysis for when you want it. You edit fields, "
      "not prose."),
     ("Disagreement is escalated, not resolved.",

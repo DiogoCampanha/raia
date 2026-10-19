@@ -326,7 +326,8 @@ def body() -> None:
 
     receives_card(svc.handoff(user, proj.id, agent_key), decide=decide_upstream if proj.can("review") else None)
     st.subheader("Inputs", anchor=False)
-    if agent_key == "story_generate" and board and not board.get("uncovered"):
+    nothing_to_generate = agent_key == "story_generate" and bool(board) and not board.get("uncovered")
+    if nothing_to_generate:
         st.success("Every approved requirement already has a story in the backlog. Nothing to generate: "
                    "plan the next sprint on the board, or refine product stories.", icon=I.OK)
     elif agent_key == "story_generate" and board:
@@ -344,7 +345,9 @@ def body() -> None:
         st.checkbox("I reviewed the pre-filled answers (" + ", ".join(unreviewed) + ") and they "
                     "reflect this project", key=ack_key)
 
-    if st.button(f"Run {spec.name}", type="primary", key=pkey("run", agent_key), icon=I.RUN):
+    if st.button(spec.run_label or f"Run {spec.name}", type="primary", key=pkey("run", agent_key), icon=I.RUN,
+                 disabled=nothing_to_generate,
+                 help="Every approved requirement already has a story." if nothing_to_generate else None):
         blanks = agent.missing_inputs(inputs)
         if blanks:
             st.error("These answers decide the outcome, so they are required: **"
@@ -381,7 +384,10 @@ with st.container(key=look_key(ident, "page")):
                  eyebrow=f"{spec.layer} layer · Step {step} of {len(AGENTS)} · "
                          + (f"{spec.mode_label} · " if spec.mode_label else "") + spec.sdlc_phase,
                  status=state["status"], back=(proj.name, routes.PROJECT, {"id": proj.id}))
-    stage_rail(proj.id, stages, current=ident)
+    # A mode has its own status (the generate mode can be ready while a refine
+    # draft waits for review): the rail shows the one this page is about.
+    stage_rail(proj.id, [{**s, "status": state["status"]} if s["agent"] == ident else s for s in stages],
+               current=ident)
     show_flash()
     # One slot for everything between the rail and the footer: when an agent
     # runs, the working screen replaces the form in it at once, instead of the
