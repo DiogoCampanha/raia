@@ -29,6 +29,7 @@ from raia import auth, config                          # noqa: E402
 from raia.projects import ProjectService, normalize_email  # noqa: E402
 from raia.deploy import runtime_status                 # noqa: E402
 from raia.ui import legal, routes, theme               # noqa: E402
+from raia.ui.components import footer                   # noqa: E402
 from raia.ui.state import ensure_normative_index, get_service  # noqa: E402
 from raia.ui.theme import I                            # noqa: E402
 
@@ -81,6 +82,18 @@ def _account(identity: auth.Identity):
     return svc.sign_in(identity.email, identity.name)
 
 
+def _run(nav) -> None:
+    """Run the current page, then draw the footer under it.
+
+    ``finally``: a page that ends early with ``st.stop()`` (an empty project
+    list, a refused page) still gets its footer.
+    """
+    try:
+        nav.run()
+    finally:
+        footer()
+
+
 def main() -> None:
     with _profiled():
         _main()
@@ -100,7 +113,7 @@ def _main() -> None:
     if identity is None:
         st.session_state["_boot"] = {"status": status, "problem": problem}
         login = _page(routes.LOGIN, "Sign in", ":material/login:", "login", default=True)
-        st.navigation([login, privacy], position="top").run()
+        _run(st.navigation([login, privacy], position="top"))
         return
 
     user = _account(identity)
@@ -109,7 +122,7 @@ def _main() -> None:
     if legal.needs_acceptance(user.consented_at):
         consent = st.Page("views/consent.py", title="Welcome", icon=I.SHIELD,
                           url_path="welcome", default=True)
-        st.navigation([consent, privacy], position="top").run()
+        _run(st.navigation([consent, privacy], position="top"))
         return
 
     with st.spinner("Preparing the normative knowledge base (first start only)"):
@@ -138,7 +151,7 @@ def _main() -> None:
         position="top",
     )
     with ProjectService.request_scope():
-        nav.run()
+        _run(nav)
 
 
 if __name__ == "__main__":

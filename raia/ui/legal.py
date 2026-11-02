@@ -23,6 +23,17 @@ def text() -> str:
     return DOCUMENT.read_text(encoding="utf-8").replace("{contact}", contact)
 
 
+def sections(body: str):
+    """Split the document into (title, lead, [(heading, markdown)]) at its ``## `` headings."""
+    title, _, rest = body.partition("\n")
+    parts = rest.split("\n## ")
+    lead, out = parts[0], []
+    for chunk in parts[1:]:
+        head, _, md = chunk.partition("\n")
+        out.append((head.strip(), md))
+    return title.lstrip("# ").strip(), lead, out
+
+
 def needs_acceptance(consented_at: Optional[str]) -> bool:
     """Whether a person must (re)accept the current version before continuing."""
     return not consented_at or consented_at < config.LEGAL_EFFECTIVE

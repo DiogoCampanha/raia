@@ -59,6 +59,13 @@ def _likert(label: str, key: str) -> None:
              format_func=lambda v: f"{v} · {SCALE_LABELS[v]}")
 
 
+# Progress first, and it stays in view while the person scrolls the form. The
+# widgets have not been drawn yet, but Session State already holds their values.
+done = sum(st.session_state.get(f"a_dim_{key}") is not None for key, _, _ in DIMENSIONS)
+with st.container(key="assess-progress"):
+    st.progress(done / len(DIMENSIONS), text=f"{done} of {len(DIMENSIONS)} required answers"
+                + (" · ready to submit" if done == len(DIMENSIONS) else ""))
+
 with st.container(border=True):
     st.markdown(f"{I.SHIELD} **Consent**")
     st.checkbox(CONSENT_TEXT, key="a_consent")
@@ -75,14 +82,11 @@ with st.container(border=True):
 st.subheader("2. Evaluation of RAIA", anchor=False)
 st.caption("Required. Rate how much you agree with each statement, from 1 (strongly disagree) to "
            "5 (strongly agree).")
-done = 0
 for i, (key, dimension, statement) in enumerate(DIMENSIONS, start=1):
     with st.container(border=True):
         st.markdown(f"**{dimension}**")
         _likert(statement, f"a_dim_{key}")
         st.text_input("Why? (optional)", key=f"a_dim_{key}_why")
-        done += st.session_state.get(f"a_dim_{key}") is not None
-st.progress(done / len(DIMENSIONS), text=f"{done} of {len(DIMENSIONS)} required answers")
 
 st.subheader("3. Each stage", anchor=False)
 st.caption("Optional. Rate only the stages you used.")

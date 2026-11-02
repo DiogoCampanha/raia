@@ -6,19 +6,23 @@ from raia.agents import AGENTS
 from raia.examples import CASES, EXAMPLE_KEY
 from raia.lineage import next_steps
 from raia.ui import routes
-from raia.ui.components import (empty_state, page_header, risk_badge, role_badge, rule, stat_tiles,
-                                status_badge)
+from raia.ui.components import (empty_state, esc, page_header, progress_segments, risk_badge, role_badge,
+                                rule, stat_tiles, status_badge)
 from raia.ui.state import current_user, flash, get_service, show_flash
 from raia.ui.theme import I, look
 
 user = current_user()
 svc = get_service()
 
-page_header(
-    "Projects",
-    "Each project keeps its own stages, drafts, answers, open issues and audit trail. "
-    "Open one to continue where you left off.",
-)
+first_name = (user.name or "").split(" ")[0]
+head, actions = st.columns([3, 1.3], vertical_alignment="bottom")
+with head:
+    page_header(
+        f"Welcome, {first_name}" if first_name else "Your projects",
+        "Each project keeps its own stages, drafts, answers, open issues and audit trail. "
+        "Open one to continue where you left off.",
+    )
+new_project_slot = actions.container(horizontal=True, horizontal_alignment="right", key="home-actions")
 show_flash()
 
 
@@ -62,7 +66,7 @@ active = [p for p in projects if not p.archived_at]
 # ---- Assessment prompt -------------------------------------------------------
 
 if svc.my_latest_rating(user) is None and any(summaries[p.id]["approved"] for p in projects):
-    with st.container(border=True):
+    with st.container(border=True, key="card-notice-assessment"):
         c1, c2 = st.columns([5, 1], vertical_alignment="center")
         c1.markdown(f"{I.ASSESSMENT} **Share your assessment.** It takes about ten minutes and "
                     "is the evidence the study depends on.")
@@ -73,7 +77,7 @@ if svc.my_latest_rating(user) is None and any(summaries[p.id]["approved"] for p 
 
 if not st.session_state.get("guide_hint_hidden") and not any(
         summaries[p.id]["approved"] for p in projects):
-    with st.container(border=True):
+    with st.container(border=True, key="card-notice-guide"):
         c1, c2, c3 = st.columns([5, 1, 1], vertical_alignment="center")
         c1.markdown(f"{I.GUIDE} **New to RAIA?** The Guide walks you through a project step by "
                     "step: what each agent asks, how to review a draft, and what to look for.")
@@ -90,9 +94,9 @@ stale = sum(len(summaries[p.id]["stale"]) for p in active)
 issues = sum(summaries[p.id]["open_issues"] for p in active)
 stat_tiles([
     ("Active projects", len(active), "", False),
-    ("Awaiting review", awaiting, "Drafts waiting for a human decision", awaiting > 0),
-    ("Needs review", stale, "Approved stages whose upstream changed", stale > 0),
-    ("Open issues", issues, "Conflicts only a person can settle", issues > 0),
+    ("Awaiting review", awaiting, "Drafts waiting for a human decision", awaiting > 0, "rate_review"),
+    ("Needs review", stale, "Approved stages whose upstream changed", stale > 0, "sync_problem"),
+    ("Open issues", issues, "Conflicts only a person can settle", issues > 0, "gavel"),
 ])
 
 # ---- Needs your attention ------------------------------------------------------
@@ -106,8 +110,9 @@ for p in active:
         elif stg["status"] == "stale":
             attention.append((p, stg, "Upstream changed: " + ", ".join(stg["stale_because_names"])))
 if attention:
-    st.subheader("Needs your attention", anchor=False)
-    with st.container(border=True):
+    with st.container(border=True, key="card-attention"):
+        st.html('<div class="attn-head"><span class="raia-icon" aria-hidden="true">notifications_active</span>'
+                f'Needs your attention<span class="attn-n">{len(attention)}</span></div>')
         for i, (p, stg, why) in enumerate(attention):
             c1, c2, c3 = st.columns([4, 2, 1], vertical_alignment="center")
             c1.markdown(f"{look(stg['agent']).material} **{stg['name']}** · {p.name}")
@@ -123,10 +128,28 @@ if attention:
 
 head_l, head_r = st.columns([3, 2], vertical_alignment="bottom")
 head_l.subheader("All projects", anchor=False)
-with head_r:
+with head_r, st.container(horizontal=True, horizontal_alignment="right"):
     st.toggle("Show archived", key="show_archived")
 
-with st.expander("New project", icon=I.ADD, expanded=not projects):
+
+def _demo_cards(where) -> None:
+    """The two worked examples, side by side; each creates a pre-filled project."""
+    cols = where.columns(len(CASES), gap="small")
+    for col, (case, c) in zip(cols, CASES.items()):
+        with col, st.container(border=True, height="stretch", key=f"card-demo-{case}"):
+            st.html(f'<div class="demo-head demo-{esc(case)}"><span class="raia-icon" aria-hidden="true">'
+                    f'{esc(DEMO_ICON.get(case, "science"))}</span><b>{esc(c["title"])}</b></div>')
+            st.caption(f"{c['summary']} {c['shows']}")
+            if st.button("Create this demo project", key=f"demo_project_{case}", icon=I.DEMO):
+                p = _seed_demo(case)
+                flash("Demo project created. Every form is pre-filled.")
+                routes.go(routes.PROJECT, id=p.id)
+
+
+DEMO_ICON = {"resume_screening": "work", "customer_support": "support_agent"}
+newcomer = not any(summaries[p.id]["approved"] for p in projects)
+
+with new_project_slot.popover("New project", type="primary", icon=I.ADD):
     with st.form("new_project", clear_on_submit=True, border=False):
         name = st.text_input("Project name", placeholder="e.g. Credit-limit recommender")
         description = st.text_area("Description (optional)", height=80)
@@ -137,28 +160,26 @@ with st.expander("New project", icon=I.ADD, expanded=not projects):
                 routes.go(routes.PROJECT, id=p.id)
             except ValueError as exc:
                 st.error(str(exc))
-    st.caption("New to RAIA? Start from a pre-filled example instead. Two cases sit at opposite ends "
-               "of the risk scales; try one, then the other.")
-    cols = st.columns(len(CASES), gap="small")
-    for col, (case, c) in zip(cols, CASES.items()):
-        with col, st.container(border=True, height="stretch"):
-            st.markdown(f"**{c['title']}**")
-            st.caption(f"{c['summary']} {c['shows']}")
-            if st.button("Create this demo project", key=f"demo_project_{case}", icon=I.DEMO):
-                p = _seed_demo(case)
-                flash("Demo project created. Every form is pre-filled.")
-                routes.go(routes.PROJECT, id=p.id)
+    if not newcomer:
+        st.caption("Or start from a pre-filled example:")
+        _demo_cards(st)
+
+if newcomer:
+    st.html('<p class="raia-lead-in"><b>Start from an example.</b> Every form in a demo project is '
+            "pre-filled. The two cases sit at opposite ends of the risk scales: try one, then the other.</p>")
+    _demo_cards(st)
 
 if not projects:
-    empty_state("No projects yet", "Create a project or one of the demo projects above, or accept an "
-                "invitation from a colleague.")
+    empty_state("No projects yet", "Create a project with New project, start from one of the examples "
+                "above, or accept an invitation from a colleague.")
     st.stop()
 
 with st.container(border=True):
     widths = [4, 2, 2, 3, 1.4]
-    h = st.columns(widths, vertical_alignment="center")
-    for col, label in zip(h, ["Project", "Risk", "Progress", "Next step", "Role"]):
-        col.caption(f"**{label}**")
+    with st.container(key="proj-head"):
+        h = st.columns(widths, vertical_alignment="center")
+        for col, label in zip(h, ["Project", "Risk", "Progress", "Next step", "Role"]):
+            col.caption(f"**{label}**")
     for p in projects:
         s = summaries[p.id]
         rule()
@@ -171,7 +192,7 @@ with st.container(border=True):
         with c[1]:
             risk_badge(s["risk"])
         with c[2]:
-            st.progress(s["approved"] / s["total"], text=f"{s['approved']}/{s['total']} approved")
+            progress_segments(s["stages"])
         with c[3]:
             step = next(iter(next_steps(s["stages"])), None)
             if step:

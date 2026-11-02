@@ -19,7 +19,7 @@ Text only — no emoji, and labels quoted exactly as the interface shows them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -58,6 +58,8 @@ class Step:
     body: str
     #: (route name in :mod:`raia.ui.routes`, link label) for an in-app shortcut.
     link: Optional[Tuple[str, str]] = None
+    #: A screenshot of the screen the step describes, under ``docs/images/guide/``.
+    image: Optional[str] = None
 
 
 STEPS: List[Step] = [
@@ -249,6 +251,30 @@ STEPS: List[Step] = [
     ),
 ]
 
+#: Step title -> screenshot. The images are taken from the app itself by
+#: ``python tests/guide_screenshots.py`` (re-run it when a screen changes), and
+#: the Guide page and docs/TESTERS.md both show them.
+IMAGES = {
+    "Create a project": "create-project.png",
+    "Answer the Risk Classifier's questions": "risk-classifier-form.png",
+    "Run the agent and read the draft": "draft.png",
+    "Review each card, and take the decisions": "review-cards.png",
+    "Approve it, or reject it with a reason": "approve.png",
+    "Continue through the stages": "whats-next.png",
+    "Run sprints on the Board": "board.png",
+    "Complete the assessment": "assessment.png",
+}
+STEPS = [replace(s, image=IMAGES.get(s.title)) for s in STEPS]
+IMAGE_DIR = DOCUMENT.parent / "images" / "guide"
+
+
+def image_path(step: Step) -> Optional[Path]:
+    """The step's screenshot on disk, or None when it has none (or it was not generated)."""
+    if not step.image:
+        return None
+    path = IMAGE_DIR / step.image
+    return path if path.exists() else None
+
 STATUSES: List[Tuple[str, str]] = [
     ("Ready to run", "its inputs are approved; fill in the form and run it"),
     ("Awaiting review", "a draft is at the human gate"),
@@ -382,6 +408,8 @@ def markdown() -> str:
     out += ["", "## Step by step", ""]
     for n, step in enumerate(STEPS, 1):
         out += [f"### {n}. {step.title}", "", step.body, ""]
+        if step.image:
+            out += [f"![{step.title}](images/guide/{step.image})", ""]
     out += ["## The agents at a glance", "",
             "| Agent | What it asks you | Needs approved first | Produces |",
             "|---|---|---|---|"]

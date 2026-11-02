@@ -54,19 +54,40 @@ def artifact_body(markdown: str) -> str:
     return text.lstrip()
 
 
-def stat_tiles(tiles: Iterable[Tuple[str, object, str, bool]]) -> None:
-    """Row of (label, value, hint, needs_attention) tiles."""
+def stat_tiles(tiles: Iterable[Tuple]) -> None:
+    """Row of (label, value, hint, needs_attention[, icon]) tiles.
+
+    A tile that needs attention is tinted and shows its icon; a zero is muted, so
+    the eye goes to what asks for someone.
+    """
     cells = []
-    for label, value, hint, attention in tiles:
-        cls = "raia-stat is-attention" if attention else "raia-stat"
+    for label, value, hint, attention, *rest in tiles:
+        icon = rest[0] if rest else ""
+        zero = str(value).strip() in ("0", "0/0")
+        cls = "raia-stat" + (" is-attention" if attention else "") + (" is-zero" if zero and not attention else "")
         cells.append(
             f'<div class="{cls}" role="group" aria-label="{esc(label)}">'
-            f'<div class="raia-stat-label">{esc(label)}</div>'
+            f'<div class="raia-stat-label"><span>{esc(label)}</span>'
+            + (icon_html(icon) if icon and attention else "") + "</div>"
             f'<div class="raia-stat-value">{esc(value)}</div>'
             + (f'<div class="raia-stat-hint">{esc(hint)}</div>' if hint else "")
             + "</div>"
         )
     st.html('<div class="raia-stats">' + "".join(cells) + "</div>")
+
+
+def progress_segments(stages: List[Dict[str, Any]]) -> None:
+    """A project's progress as one segment per stage, in its agent's colour once approved.
+
+    Shows which stages are done, not only how many. Each segment carries the
+    stage name and status as a tooltip; the count is written out beside it.
+    """
+    done = sum(1 for s in stages if s["status"] == "approved")
+    segs = "".join(
+        f'<span class="seg look-{esc(s["agent"])}{" on" if s["status"] == "approved" else ""}" '
+        f'title="{esc(s["name"])}: {esc(STATUS[str(s["status"])][0])}"></span>' for s in stages)
+    st.html(f'<div class="raia-prog" role="img" aria-label="{done} of {len(stages)} stages approved">'
+            f'<div class="segs">{segs}</div><div class="lbl">{done} of {len(stages)} approved</div></div>')
 
 
 def _md_badge(label: str, color: str, icon: Optional[str] = None) -> str:
@@ -116,8 +137,22 @@ def layer_tag(layer: str) -> str:
             f'<span class="raia-dot"></span>{esc(layer)}</span>')
 
 
-def empty_state(title: str, body: str) -> None:
-    st.html(f'<div class="raia-empty"><h4>{esc(title)}</h4><p>{esc(body)}</p></div>')
+def empty_state(title: str, body: str, icon: str = "folder_open") -> None:
+    st.html(f'<div class="raia-empty"><div class="raia-empty-art">{icon_html(icon)}</div>'
+            f'<h4>{esc(title)}</h4><p>{esc(body)}</p></div>')
+
+
+INSTITUTION = "Universidade Presbiteriana Mackenzie"
+
+
+def footer() -> None:
+    """The foot of every page: what RAIA is, where it comes from, and the terms."""
+    with st.container(key="raia-footer", horizontal=True, vertical_alignment="center", gap="medium"):
+        st.html('<div class="raia-foot"><span class="mark">' + icon_html("verified_user")
+                + 'RAIA, Responsible AI Assistant</span>'
+                f'<span>Research prototype, {esc(INSTITUTION)}</span></div>', width="stretch")
+        if routes.PRIVACY in routes._PAGES:
+            routes.link(routes.PRIVACY, "Privacy & terms", icon=I.PRIVACY)
 
 
 def section(title: str, caption: str = "") -> None:
@@ -145,6 +180,25 @@ def stage_tracker(project_id: str, stages: List[Dict[str, object]], current: str
                          help=f"Open the {s['name']} stage", disabled=agent == current):
                 routes.go(routes.STAGE, project=project_id, agent=agent)
             status_badge(str(s["status"]))
+
+
+def pipeline_html(agents: List[Tuple[str, str]], caption: bool = True) -> str:
+    """The four agents in order with a human gate between each: RAIA's picture of itself.
+
+    ``agents`` is [(agent key, name)]. Each tile shows its agent's pattern (the
+    same one as its stage header) in its colour; drawn on the navy panel, so the
+    light (glow) variant of every colour is used.
+    """
+    tiles = []
+    for i, (key, name) in enumerate(agents):
+        if i:
+            tiles.append('<div class="pipe-gate" aria-hidden="true"><span>H</span></div>')
+        tiles.append(f'<div class="pipe-tile look-{esc(key)}"><span class="art" aria-hidden="true"></span>'
+                     f'<span class="tn">{icon_html(look(key).icon)}{esc(name)}</span></div>')
+    label = "The agents in order: " + ", then ".join(n for _, n in agents) + ", with a human approval between each."
+    return (f'<div class="pipe" role="img" aria-label="{esc(label)}">{"".join(tiles)}</div>'
+            + ('<p class="pipe-cap"><b>H</b> marks a human approval gate. Nothing moves to the next stage '
+               "until a person approves it.</p>" if caption else ""))
 
 
 # ---- Stage pages: identity and navigation ---------------------------------------------
