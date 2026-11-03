@@ -57,6 +57,7 @@ class I:  # noqa: E742 - short on purpose: I.HOME reads well at call sites
     REVISE = ":material/edit:"
     CONFIRM = ":material/task_alt:"
     DOWNLOAD = ":material/download:"
+    SKILL = ":material/smart_toy:"
     EXAMPLE = ":material/content_paste:"
     RESTORE = ":material/restore:"
     DISCARD = ":material/delete:"

@@ -151,6 +151,9 @@ Recorded so the log stays honest about its own errors.
 | D61 | The Risk Classifier writes no actions and the Requirements Reviewer writes neither findings nor actions (`raia-record/1.5`). The classifier is an analysis: its risks and the decisions on it. The reviewer's response to those risks is its requirements: each gap names the approved risks behind it and the requirement takes their priority. The lists stay in the core, empty for those stages, so older records still read. | Testers read "What to do" on a risk analysis as advice given before the requirements existed, and "Risks found" on the requirements as a second risk analysis repeating the first. Analysing risk and responding to it are separate steps (NIST AI RMF MAP/MEASURE, then MANAGE); keeping them in separate stages makes the hand-off between them visible. |
 | D62 | Everything a person changes keeps the page still: an element that comes and goes sits in a slot drawn on every redraw, and a decision is a form sent by one button, checked when pressed. A browser check (`tests/browser_check.py`) measures where the page is after each click. | An element drawn on one redraw and not the next moved every element after it; Streamlit then rebuilt the draft, dropping the person at the end of the page and closing any open popover. A button enabled only by a reason the app had not yet received looked broken. Neither is visible to the app-test harness. |
 | D63 | A visual identity that separates the chrome from the work: a navy menu bar in both themes with the four agents' colours as a stripe under it, white cards on a grey canvas, page titles in a serif (Source Serif 4), and tints only where something asks for a person (attention, notices, the next step, the danger zone). Fonts are served by the app; colours live in one table (`theme.CHROME`) whose contrast is tested. | Testers found the interface hard to read at a glance: a white menu on a white page with white cards gave every area the same weight, and the sign-in page was blank. The changes are presentation only; the record tones keep their meaning and agent colours stay chrome (D39). Self-hosting the fonts removes the one request every page made to a third party. |
+| D64 | A project can be downloaded as an **AI Skill**: a portable instructions folder (`SKILL.md` plus references), an `AGENTS.md` for the team's repository and the project's approved outputs, so a team continues the work in an AI assistant its organisation already approves. The skill restates RAIA's rules for that assistant (computed priorities are never lowered, verdicts only move down, a person decides, existing criteria are flagged, never rewritten) and uses the project's sources only. | Teams that may only use pre-approved assistants can give RAIA no more than a generic description, and their real backlog and Jira live elsewhere. Without the skill, the results stop at the download. The skill makes the reconciliation between the generic description and the real product an explicit first step, and sends material changes back to RAIA instead of letting the assistant re-classify. |
+| D65 | Every vocabulary, scale, rule and table in the skill is generated from the code (`raia.skill.build`), and the per-project facts (`PROJECT_CONTEXT.md`) by code from the approved records, never by a model; a copy is kept in `docs/ai-skill/` and tested against the code. The download leaves out the evaluation events, the version history and the hash chain. | A skill that drifted from the software would teach an assistant rules RAIA does not apply. The download goes into a product repository, where research data and RAIA's own integrity records have no reader. |
+| D66 | The assessment adds one required item on the AI Skill, apart from the five dimensions (instrument `raia-panel-v2`). | The skill is part of what the panel evaluates, but the plan's success criterion is computed over exactly the five dimensions; a separate item keeps that computation unchanged. |
 
 ---
 
@@ -159,6 +162,63 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-11-03 — Download AI Skill: continue with your own assistant (branch `ai-skill`)
+
+Decisions D64–D66.
+
+#### What was wrong
+
+- **SKILL-1** A team that may only use pre-approved AI assistants at work could run RAIA on a
+  generic description of its product, but the results stopped at the download: nothing told
+  their own assistant how to read the records, apply them to the real backlog and Jira, or
+  keep the work going between RAIA runs.
+
+#### What changed (D64–D66)
+
+- **The skill** (`raia/skill/`). `SKILL.md` (name `raia-responsible-ai`, under 8,000 characters
+  so it pastes into custom instructions): what the assistant is for, eight ground rules that
+  restate RAIA's invariants, a reconciliation step that compares what RAIA was told with the
+  real product and escalates when an escalation trigger is touched, the order to read the
+  outputs, and seven playbooks. References: `reading-the-outputs.md` (each stage, the shared
+  core, statuses, decisions, following an id through the chain), `vocabulary.md` (generated
+  whole), `rai-guidelines.md` (sources and authority, principles with their probes, ECCOLA
+  selection, how to analyse a new issue), `playbooks.md` (triage, refine, cover a requirement,
+  plan a sprint, self-audit, Jira, check a change; when to go back to RAIA, from the risk
+  screen's own lists) and `templates.md` (triage table, refined story, RAI story, decision,
+  self-audit note, Jira CSV from `raia.jira.to_csv`). The prose is in `raia/skill/text/`;
+  every `{{block}}` is filled from the code.
+- **Project facts** (`raia/skill/context.py`). `PROJECT_CONTEXT.md` from the blackboard: stage
+  states, the product brief and the answers the classification rests on, tiers, obligations
+  and risks, every requirement with its priority and roadmap state, open decisions, backlog
+  and sprints, the latest audit and the critical and high actions. Roles, not people.
+- **The download** (`raia.export.skill_bundle`). `README_FIRST.md` and `AGENTS.md` at the root,
+  the self-contained `raia-responsible-ai/` folder with the project's outputs under
+  `project/`; no evaluation events, version history or hash chain. The project download is
+  unchanged (`session_bundle` and `skill_bundle` share `_outputs`).
+- **The button.** Documents tab, *Download AI Skill*, available once the Risk Classifier is
+  approved.
+- **The assessment** (`raia-panel-v2`). A required AI Skill item after the stages, stored
+  under `extras`; the five dimensions are unchanged.
+- **Static copy.** `docs/ai-skill/`, regenerated by `python -m raia.skill.build`.
+
+#### Tests
+
+- `tests/test_skill.py`: SKILL.md is a valid skill and fits custom instructions; every file
+  and playbook it names exists; the vocabulary lists every closed value and the matrix code
+  applies; only the project's sources, no paper references; `docs/ai-skill/` matches the
+  code; the download holds the skill, `AGENTS.md` and the outputs and none of the research
+  files, works with only the classification approved, and its context lists every
+  requirement, story and open decision and no email address.
+- `tests/test_jira.py`: no Jira token in the AI Skill download.
+- `tests/test_ui.py`: the button waits for the Risk Classifier, then downloads; an assessment
+  without the AI Skill item is refused.
+
+#### Still open, by decision
+
+- Between RAIA runs the assistant has no rule engine, retrieval or approval gate; the skill
+  says so and sends material changes back to RAIA rather than imitating them.
+- Approver names stay in the artifacts' provenance headers: they are the team's audit trail.
+
 ### 2026-11-02 — A clearer, more distinctive interface (branch `ui-refresh`)
 
 #### What was wrong

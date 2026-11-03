@@ -1,11 +1,11 @@
-"""Tester assessment: optional profile, the five evaluation dimensions, stages, open questions."""
+"""Tester assessment: optional profile, the five evaluation dimensions, stages, the AI Skill, open questions."""
 
 import streamlit as st
 
 from raia.agents import AGENTS
 from raia.ui import routes
-from raia.ui.assessment import (CONSENT_TEXT, DIMENSIONS, INSTRUMENT_ID, NO_ANSWER, OPEN_QUESTIONS,
-                                PROFILE, SCALE, SCALE_LABELS, STAGE_ITEM)
+from raia.ui.assessment import (CONSENT_TEXT, DIMENSIONS, EXTRA_ITEMS, INSTRUMENT_ID, NO_ANSWER,
+                                OPEN_QUESTIONS, PROFILE, SCALE, SCALE_LABELS, STAGE_ITEM)
 from raia.ui.components import page_header
 from raia.ui.state import current_user, flash, get_service, show_flash
 from raia.ui.theme import I
@@ -49,6 +49,10 @@ for key in AGENTS:
     v = (source.get("stages") or {}).get(key, {})
     _prefill(f"a_stage_{key}", v.get("score") if v.get("score") in SCALE else None)
     _prefill(f"a_stage_{key}_comment", v.get("comment"))
+for key, *_ in EXTRA_ITEMS:
+    v = (source.get("extras") or {}).get(key, {})
+    _prefill(f"a_extra_{key}", v.get("score") if v.get("score") in SCALE else None)
+    _prefill(f"a_extra_{key}_comment", v.get("comment"))
 for key, _ in OPEN_QUESTIONS:
     _prefill(f"a_open_{key}", (source.get("open") or {}).get(key))
 _prefill("a_consent", True if source.get("consent") else None)
@@ -61,10 +65,11 @@ def _likert(label: str, key: str) -> None:
 
 # Progress first, and it stays in view while the person scrolls the form. The
 # widgets have not been drawn yet, but Session State already holds their values.
-done = sum(st.session_state.get(f"a_dim_{key}") is not None for key, _, _ in DIMENSIONS)
+REQUIRED = [f"a_dim_{key}" for key, _, _ in DIMENSIONS] + [f"a_extra_{key}" for key, *_ in EXTRA_ITEMS]
+done = sum(st.session_state.get(k) is not None for k in REQUIRED)
 with st.container(key="assess-progress"):
-    st.progress(done / len(DIMENSIONS), text=f"{done} of {len(DIMENSIONS)} required answers"
-                + (" · ready to submit" if done == len(DIMENSIONS) else ""))
+    st.progress(done / len(REQUIRED), text=f"{done} of {len(REQUIRED)} required answers"
+                + (" · ready to submit" if done == len(REQUIRED) else ""))
 
 with st.container(border=True):
     st.markdown(f"{I.SHIELD} **Consent**")
@@ -95,7 +100,16 @@ for key, agent in AGENTS.items():
         _likert(STAGE_ITEM, f"a_stage_{key}")
         st.text_input("Anything specific about this stage? (optional)", key=f"a_stage_{key}_comment")
 
-st.subheader("4. Open questions", anchor=False)
+st.subheader("4. The AI Skill", anchor=False)
+st.caption("Required. The AI Skill is a download that lets a team continue with its own AI assistant.")
+for key, title, statement, how in EXTRA_ITEMS:
+    with st.container(border=True):
+        st.markdown(f"**{title}**")
+        st.caption(how)
+        _likert(statement, f"a_extra_{key}")
+        st.text_input("Why? (optional)", key=f"a_extra_{key}_comment")
+
+st.subheader("5. Open questions", anchor=False)
 with st.container(border=True):
     for key, question in OPEN_QUESTIONS:
         st.text_area(question, key=f"a_open_{key}", height=90)
@@ -113,6 +127,9 @@ def _payload() -> dict:
         "stages": {k: {"score": ss.get(f"a_stage_{k}"),
                        "comment": (ss.get(f"a_stage_{k}_comment") or "").strip()}
                    for k in AGENTS},
+        "extras": {k: {"score": ss.get(f"a_extra_{k}"),
+                       "comment": (ss.get(f"a_extra_{k}_comment") or "").strip()}
+                   for k, *_ in EXTRA_ITEMS},
         "open": {k: (ss.get(f"a_open_{k}") or "").strip() for k, _ in OPEN_QUESTIONS},
     }
 
@@ -121,7 +138,8 @@ st.divider()
 row = st.container(horizontal=True)
 if row.button("Submit assessment", type="primary", key="assess_submit", icon=I.CONFIRM):
     body = _payload()
-    missing = [d for k, d, _ in DIMENSIONS if body["dimensions"][k]["score"] is None]
+    missing = ([d for k, d, _ in DIMENSIONS if body["dimensions"][k]["score"] is None]
+               + [t for k, t, *_ in EXTRA_ITEMS if body["extras"][k]["score"] is None])
     if not body["consent"]:
         st.error("Please give your consent before submitting.", icon=I.ERROR)
     elif missing:

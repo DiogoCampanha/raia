@@ -105,7 +105,7 @@ The project page has tabs for the work the stages produce:
 - **Action plan** — every action from every approved stage, sorted by priority (actions start with the User Story Refiner). Is each one specific enough for someone to pick up?
 - **Traceability** — one row per legal obligation and requirement, from the classification to the audit: which requirement answers it, which stories implement it, what the audit verified. The highlighted rows are the gaps still open.
 - **Open issues** — what only a person can decide, including the decisions taken on the stages (**Decided**). Take an open one, or mark it resolved or accept the risk, noting what was decided.
-- **Documents** — each approved artifact with its provenance (model, corpus version, attempt, edits, checks), and **Download project**.
+- **Documents** — each approved artifact with its provenance (model, corpus version, attempt, edits, checks), **Download project**, and **Download AI Skill**: a skill your own AI assistant can follow to apply these results to a real backlog and Jira. Open `README_FIRST.md` and `raia-responsible-ai/SKILL.md` in it; if you can, give it to an assistant you use with a few backlog items and see what it does.
 - **Activity** — the version history and the project log.
 
 ### 10. Optional: work with a colleague
@@ -114,7 +114,7 @@ Under **People and settings**, invite a colleague as a **reviewer** by the email
 
 ### 11. Complete the assessment
 
-Open **Assessment** in the top menu. It asks five required statements (utility, completeness, usability, methodological rigor, generalizability), optional profile questions and per-stage ratings, and three open questions. About ten minutes; you can save a draft and come back. It is the most useful thing you can leave behind.
+Open **Assessment** in the top menu. It asks five required statements (utility, completeness, usability, methodological rigor, generalizability), one required statement on the AI Skill, optional profile questions and per-stage ratings, and three open questions. About ten minutes; you can save a draft and come back. It is the most useful thing you can leave behind.
 
 ![Complete the assessment](images/guide/assessment.png)
 

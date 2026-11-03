@@ -42,7 +42,7 @@ import httpx                                                    # noqa: E402
 from raia import backlog as B                                   # noqa: E402
 from raia import jira as J                                      # noqa: E402
 from raia.examples import EXAMPLES                              # noqa: E402
-from raia.export import session_bundle                          # noqa: E402
+from raia.export import session_bundle, skill_bundle            # noqa: E402
 from raia.pipeline import StageRunner                           # noqa: E402
 from raia.projects import ProjectService                        # noqa: E402
 from raia.rag import ingest_corpus                              # noqa: E402
@@ -204,6 +204,10 @@ def main() -> None:
     check(not any(TOKEN in v for v in files.values()), "no token in the project's files")
     bundle = session_bundle(svc.repository(ana, p.id), p.name)
     check(TOKEN.encode() not in bundle, "no token in the project download")
+    import io as _io
+    import zipfile as _zf
+    with _zf.ZipFile(_io.BytesIO(skill_bundle(svc.repository(ana, p.id), p.name))) as z:
+        check(not any(TOKEN.encode() in z.read(n) for n in z.namelist()), "no token in the AI Skill download")
     check(TOKEN not in json.dumps(svc.repository(ana, p.id).events()), "no token in the event log")
     check(TOKEN not in svc.my_data_export(ana).decode(), "no token in the person's data export")
     svc.delete_jira_connection(ana)

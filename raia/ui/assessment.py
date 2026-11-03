@@ -15,11 +15,15 @@ responses from two different instruments would be pooled.
 
 The profile section asks only broad, optional categories: the evaluation plan
 reports aggregated profiles only, and no answer here identifies a person.
+
+``raia-panel-v2`` adds one required item on the AI Skill (:data:`EXTRA_ITEMS`),
+kept apart from the five dimensions so the plan's success criterion is still
+computed over exactly those five.
 """
 
 from __future__ import annotations
 
-INSTRUMENT_ID = "raia-panel-v1"
+INSTRUMENT_ID = "raia-panel-v2"
 
 SCALE = [1, 2, 3, 4, 5]
 SCALE_LABELS = {
@@ -46,6 +50,16 @@ DIMENSIONS = [
 ]
 
 STAGE_ITEM = "The output of this stage would be useful on a real project."
+
+#: Required items beyond the five dimensions and the stages: (key, title,
+#: statement, how to look at it first). Reported apart from the dimensions.
+EXTRA_ITEMS = [
+    ("ai_skill", "AI Skill",
+     "The AI Skill would help my team continue the Responsible AI work on our real backlog with an AI "
+     "assistant we are allowed to use.",
+     "Download it from a project's Documents tab (Download AI Skill) and read README_FIRST.md and "
+     "raia-responsible-ai/SKILL.md. Trying it with an assistant is welcome but not required."),
+]
 
 OPEN_QUESTIONS = [
     ("most_valuable", "What was most valuable about RAIA, and why?"),
