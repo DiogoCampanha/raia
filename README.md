@@ -150,8 +150,8 @@ artifact.
    (reviews and approves, does not run agents), and can require a **second
    approver**, so the person who ran a stage cannot approve it.
 9. **Assessment** — one page in the top menu: consent, optional profile, the
-   evaluation plan's five dimensions on a five-point scale, optional per-stage
-   ratings, one item on the AI Skill and open questions, with drafts.
+   evaluation plan's five dimensions on a five-point scale, one required item
+   per stage, one on the AI Skill and open questions, with drafts.
 10. **Work the action plan** — the Project page gathers every action from every
    approved record, sorted by computed priority, filterable by owner and stage,
    and exports it as CSV or JSON.

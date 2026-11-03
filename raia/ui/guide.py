@@ -241,7 +241,7 @@ STEPS: List[Step] = [
         "Complete the assessment",
         "Open **Assessment** in the top menu. It asks five required statements (utility, "
         "completeness, usability, methodological rigor, generalizability), one required statement "
-        "on the AI Skill, optional profile questions and per-stage ratings, and three open "
+        "for each stage and one on the AI Skill, optional profile questions, and three open "
         "questions. About ten minutes; you can "
         "save a draft and come back. It is the most useful thing you can leave behind.",
         ("assessment", "Open the assessment"),

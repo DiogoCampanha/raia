@@ -114,7 +114,7 @@ Under **People and settings**, invite a colleague as a **reviewer** by the email
 
 ### 11. Complete the assessment
 
-Open **Assessment** in the top menu. It asks five required statements (utility, completeness, usability, methodological rigor, generalizability), one required statement on the AI Skill, optional profile questions and per-stage ratings, and three open questions. About ten minutes; you can save a draft and come back. It is the most useful thing you can leave behind.
+Open **Assessment** in the top menu. It asks five required statements (utility, completeness, usability, methodological rigor, generalizability), one required statement for each stage and one on the AI Skill, optional profile questions, and three open questions. About ten minutes; you can save a draft and come back. It is the most useful thing you can leave behind.
 
 ![Complete the assessment](images/guide/assessment.png)
 

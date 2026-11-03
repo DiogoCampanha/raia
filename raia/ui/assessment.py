@@ -16,9 +16,12 @@ responses from two different instruments would be pooled.
 The profile section asks only broad, optional categories: the evaluation plan
 reports aggregated profiles only, and no answer here identifies a person.
 
-``raia-panel-v2`` adds one required item on the AI Skill (:data:`EXTRA_ITEMS`),
-kept apart from the five dimensions so the plan's success criterion is still
-computed over exactly those five.
+``raia-panel-v2`` changes three things, none of them the five dimensions, so
+the plan's success criterion is still computed over exactly those five: every
+stage is rated (one required statement per stage, naming it), one required
+item asks about the AI Skill (:data:`EXTRA_ITEMS`), and the expertise question
+of the profile asks about AI product development (key
+``ai_product_experience``).
 """
 
 from __future__ import annotations
@@ -49,7 +52,13 @@ DIMENSIONS = [
      "RAIA can be adapted to different organizational contexts."),
 ]
 
-STAGE_ITEM = "The output of this stage would be useful on a real project."
+#: One required statement per stage, the same for every stage but naming it.
+STAGE_ITEM = "The output of the {stage} would be useful on a real project."
+
+
+def stage_statement(stage_name: str) -> str:
+    """The statement a tester rates for one stage."""
+    return STAGE_ITEM.format(stage=stage_name)
 
 #: Required items beyond the five dimensions and the stages: (key, title,
 #: statement, how to look at it first). Reported apart from the dimensions.
@@ -78,7 +87,7 @@ PROFILE = [
       "Leadership or management", "Other"]),
     ("experience", "Years of professional experience",
      ["Less than 3", "3 to 5", "6 to 10", "11 to 20", "More than 20"]),
-    ("rai_expertise", "Experience with Responsible AI or AI governance",
+    ("ai_product_experience", "Experience with AI Product Development",
      ["None", "Basic", "Intermediate", "Advanced", "Expert"]),
     ("region", "Region where you mainly work",
      ["Latin America", "North America", "Europe", "Africa", "Asia-Pacific", "Middle East"]),

@@ -154,6 +154,7 @@ Recorded so the log stays honest about its own errors.
 | D64 | A project can be downloaded as an **AI Skill**: a portable instructions folder (`SKILL.md` plus references), an `AGENTS.md` for the team's repository and the project's approved outputs, so a team continues the work in an AI assistant its organisation already approves. The skill restates RAIA's rules for that assistant (computed priorities are never lowered, verdicts only move down, a person decides, existing criteria are flagged, never rewritten) and uses the project's sources only. | Teams that may only use pre-approved assistants can give RAIA no more than a generic description, and their real backlog and Jira live elsewhere. Without the skill, the results stop at the download. The skill makes the reconciliation between the generic description and the real product an explicit first step, and sends material changes back to RAIA instead of letting the assistant re-classify. |
 | D65 | Every vocabulary, scale, rule and table in the skill is generated from the code (`raia.skill.build`), and the per-project facts (`PROJECT_CONTEXT.md`) by code from the approved records, never by a model; a copy is kept in `docs/ai-skill/` and tested against the code. The download leaves out the evaluation events, the version history and the hash chain. | A skill that drifted from the software would teach an assistant rules RAIA does not apply. The download goes into a product repository, where research data and RAIA's own integrity records have no reader. |
 | D66 | The assessment adds one required item on the AI Skill, apart from the five dimensions (instrument `raia-panel-v2`). | The skill is part of what the panel evaluates, but the plan's success criterion is computed over exactly the five dimensions; a separate item keeps that computation unchanged. |
+| D67 | Every stage is rated, one required statement per stage that names it, shown in full; the profile's expertise question asks about AI product development (`ai_product_experience`). Both within `raia-panel-v2`. | Optional ratings behind dropdowns were mostly left empty, which leaves the per-stage results without data. The panel's profile that matters for interpreting a work tool is experience building AI products, not Responsible AI expertise as such. |
 
 ---
 
@@ -162,6 +163,35 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-11-03 — Assessment: every stage rated, AI product experience (branch `ai-skill`)
+
+Decision D67.
+
+#### What was wrong
+
+- **EVAL-1** The per-stage ratings were optional and closed in dropdowns, so a tester could
+  submit without rating any stage and most would never open them.
+- **EVAL-2** The profile asked for experience with Responsible AI or AI governance; what
+  matters for reading the panel's answers is experience developing AI products.
+
+#### What changed (D67)
+
+- `raia/ui/assessment.py`: `stage_statement()` — "The output of the <stage> would be useful on
+  a real project.", one per stage; the profile item is now *Experience with AI Product
+  Development* (key `ai_product_experience`). Instrument stays `raia-panel-v2` (unreleased).
+- `views/assessment.py`: section 3 shows every stage in its own card, as the dimensions are;
+  the stages count towards the required answers and a submission names any stage left unrated.
+- Guide/TESTERS, README and the research export notes say the stage items are required.
+
+#### Tests
+
+- `tests/test_ui.py`: every stage is asked in full, naming it; the profile asks about AI
+  product development; a submission with unrated stages is refused and names only those.
+
+#### Still open, by decision
+
+- None.
+
 ### 2026-11-03 — Download AI Skill: continue with your own assistant (branch `ai-skill`)
 
 Decisions D64–D66.
