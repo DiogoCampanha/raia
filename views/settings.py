@@ -91,7 +91,7 @@ with st.container(border=True):
                        icon=I.DOWNLOAD, key="my_data")
 
 st.subheader("Delete account", anchor=False)
-with st.container(border=True):
+with st.container(border=True, key="card-danger"):
     st.markdown("Deletes your account, your assessment answers, your memberships and every "
                 "project you are the only owner of, with all its data. Approvals you recorded on "
                 "projects that other people own stay in those projects' audit trails. "

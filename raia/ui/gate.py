@@ -25,6 +25,7 @@ and the approval is recorded under that person's verified identity.
 from __future__ import annotations
 
 import copy
+import html
 import json
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
@@ -646,6 +647,20 @@ def prefill(agent_key: str, values: Dict[str, Any]) -> None:
         st.session_state[_state_key(agent_key, key)] = copy.deepcopy(value)
 
 
+def _group_heading(group: str) -> None:
+    """A form group's title ("1 · The product") with its number in the agent's colour.
+
+    The groups are answered in order, so the number is real information; it is
+    drawn as a badge and the title as plain text.
+    """
+    num, sep, title = group.partition("·")
+    if sep and num.strip().isdigit():
+        st.html(f'<div class="fg-h"><span class="num">{html.escape(num.strip())}</span>'
+                f'<span>{html.escape(title.strip())}</span></div>')
+    else:
+        st.markdown(f"**{group}**")
+
+
 def intake_form(project: Project, agent, can_run: bool) -> Dict[str, Any]:
     """Render the agent's typed fields, grouped, honouring conditional visibility."""
     spec = agent.spec
@@ -716,7 +731,7 @@ def _intake_fields(project: Project, agent, can_run: bool) -> None:
         if not visible:
             continue
         with st.container(border=True):
-            st.markdown(f"**{group}**")
+            _group_heading(group)
             for f in visible:
                 _render_field(spec.key, f, disabled=not can_run)
                 _field_origin_note(spec.key, f)
@@ -1155,7 +1170,7 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
                "?.scrollIntoView({behavior: 'smooth', block: 'start'}), 300)</script>" if scroll else ""),
             unsafe_allow_javascript=True)
 
-    with st.container(border=True):
+    with st.container(border=True, key=pkey("gate_head", agent_key)):
         st.subheader("Human review required", anchor=False)
         ran_by = payload.get("run_by_name")
         st.caption(
@@ -1236,7 +1251,7 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
     impact = svc.revision_impact(user, project.id, agent_key)
 
     col_a, col_r = st.columns(2, gap="large")
-    with col_a, st.container(border=True):
+    with col_a, st.container(border=True, key=pkey("approve_box", agent_key)):
         st.markdown("**Approve**")
         st.caption(f"Recorded in the audit trail as **{user.label}**, your signed-in identity.")
         if impact:

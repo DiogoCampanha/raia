@@ -169,6 +169,25 @@ def agent_identity() -> None:
           "agent colours pass WCAG AA: as text on the light theme and under white text, and on the dark theme")
 
 
+    from raia.ui.theme import CHROME, NAV_TEXT
+    import tomllib
+
+    css = theme._css()
+    check(all(f"light-dark({a}, {b})" in css for a, b in CHROME.values()),
+          "every chrome colour is written in theme.css as the light/dark pair theme.py declares")
+    cfg = tomllib.loads((ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8"))["theme"]
+    check((cfg["light"]["backgroundColor"], cfg["dark"]["backgroundColor"]) == CHROME["canvas"],
+          "…and the canvas matches the Streamlit theme's background")
+    bars = CHROME["chrome"]
+    check(all(_contrast(NAV_TEXT, bar) >= 4.5 and _contrast("#ffffff", bar) >= 7 for bar in bars),
+          "menu text passes WCAG AA on the navy bar in both themes (white, the current page, passes AAA)")
+    check(all(_contrast(lk.glow, bars[0]) >= 4.5 for lk in AGENT_LOOK.values()),
+          "agent names drawn on the navy sign-in panel pass WCAG AA")
+    check(all(_contrast(CHROME[k][i], CHROME["card"][i]) >= 4.5 and _contrast(CHROME[k][i], CHROME["canvas"][i]) >= 4.5
+              for k in ("accent", "attn") for i in (0, 1)),
+          "accent and attention colours pass WCAG AA on cards and on the canvas, in both themes")
+
+
 def main() -> None:
     print("== Agent identity ==")
     agent_identity()
@@ -195,7 +214,7 @@ def main() -> None:
     ok(at.run(), "the agreement can be accepted")
     button(at, "consent_continue").click()
     ok(at.run(), "acceptance is recorded")
-    check("Projects" in text(at), "then lands on Home")
+    check("All projects" in text(at), "then lands on Home")
     check("New to RAIA?" in text(at) and has_button(at, "home_guide"),
           "a newcomer is pointed to the Guide")
     button(at, "home_guide_hide").click()
@@ -376,7 +395,7 @@ def main() -> None:
     print("== 5. A second project stays isolated ==")
     goto(at, "home")
     ok(at.run(), "Home opens")
-    check(any("2/4 approved" in str(p.proto) for p in at.get("progress")),
+    check(any("2 of 4 approved" in str(h.proto.body) for h in at.get("html")),
           "the project list shows derived progress")
     at.text_input[0].input("Credit-limit recommender")
     next(b for b in at.button if b.label == "Create project").click()

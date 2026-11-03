@@ -392,6 +392,6 @@ with st.container(key=look_key(ident, "page")):
     # One slot for everything between the rail and the footer: when an agent
     # runs, the working screen replaces the form in it at once, instead of the
     # form lingering, faded, until the run ends.
-    with st.empty().container():
+    with st.empty().container(key="stage-body"):
         body()
     stage_footer(proj.id, stages, ident)

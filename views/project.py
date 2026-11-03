@@ -4,7 +4,7 @@ import json
 
 import streamlit as st
 
-from raia.agents import AGENTS, RUNNABLE
+from raia.agents import AGENTS, RUNNABLE, identity_key
 from raia.contract import actions as action_plan
 from raia.contract import vocab as V
 from raia.export import bundle_name, session_bundle
@@ -54,8 +54,12 @@ board_ready = repo.read_artifact("requirements_review") is not None
 board_data = svc.board(user, proj.id) if board_ready else {"ready": False}
 cycle = sprint_step(proj, stages, board_data, repo.pending_agents()) if board_ready else None
 focus = next(iter(next_steps(stages)), None)
-with st.container(border=True):
-    c1, c2 = st.columns([4, 1.4], vertical_alignment="center")
+# The next step is a band: in the next agent's colour when it is a stage.
+band_key = (look_key(focus["agent"], "band") if cycle is None and focus is not None
+            else (look_key(identity_key(cycle["agent"]), "band") if cycle is not None and cycle.get("agent")
+                  else "card-band"))
+with st.container(border=True, key=band_key):
+    c1, c2 = st.columns([3.2, 2], vertical_alignment="center")
     if cycle is not None:
         c1.markdown(f"{cycle['icon']} **Next: {cycle['label']}**")
         c1.caption(cycle["why"])
@@ -111,9 +115,9 @@ with tab_board:
 with tab_overview:
     stat_tiles([
         ("Stages approved", f"{summary['approved']}/{summary['total']}", "", False),
-        ("Awaiting review", len(summary["in_review"]), "", bool(summary["in_review"])),
-        ("Needs review", len(summary["stale"]), "Upstream changed", bool(summary["stale"])),
-        ("Open issues", summary["open_issues"], "", summary["open_issues"] > 0),
+        ("Awaiting review", len(summary["in_review"]), "", bool(summary["in_review"]), "rate_review"),
+        ("Needs review", len(summary["stale"]), "Upstream changed", bool(summary["stale"]), "sync_problem"),
+        ("Open issues", summary["open_issues"], "", summary["open_issues"] > 0, "gavel"),
     ])
     st.subheader("Stages", anchor=False)
     st.caption("Every stage ends at a mandatory human approval gate. Open a stage to run it, "

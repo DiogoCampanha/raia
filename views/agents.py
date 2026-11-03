@@ -60,6 +60,7 @@ for i, n in enumerate(nodes):
         f'<button type="button" class="arch-node look-{esc(n["key"])}" data-key="{esc(n["key"])}" '
         f'aria-pressed="false"><span class="arch-layer"><span class="raia-icon">{esc(look(n["key"]).icon)}</span>'
         f'{esc(n["layer"])}</span>'
+        f'<span class="arch-art" aria-hidden="true"></span>'
         f'<span class="arch-name">{esc(n["name"])}</span>'
         f'<span class="arch-phase">{esc(n["phase"])}</span></button>'
     )
@@ -70,22 +71,24 @@ DIAGRAM = """
 .arch-flow { display: flex; flex-direction: column; gap: .35rem; }
 .arch-node { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: .2rem;
   padding: .75rem .85rem; border-radius: .625rem; border: 1px solid rgba(100,116,139,.28);
-  border-top: 3px solid var(--c); background: rgba(100,116,139,.05); transition: background .15s, box-shadow .15s; }
+  border-top: 3px solid var(--c); background: var(--raia-card, #fff); box-shadow: var(--raia-shadow); transition: background .15s, box-shadow .15s; }
 .arch-node:hover { background: rgba(100,116,139,.11); }
 .arch-node:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; }
 .arch-node[aria-pressed="true"] { background: color-mix(in srgb, var(--c) 9%, transparent); box-shadow: 0 0 0 1px var(--c) inset; }
 .arch-node { --c: var(--agent, #2563eb); }
-.arch-layer { display: flex; align-items: center; gap: .35rem; font-size: .6875rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--c); }
+.arch-layer { display: flex; align-items: center; gap: .35rem; font-size: .75rem; font-weight: 600; color: var(--c); }
 .arch-layer .raia-icon { font-size: 1.05rem; letter-spacing: 0; }
 .arch-name { font-weight: 600; font-size: .95rem; line-height: 1.25; }
+.arch-art { display: block; height: 2.6rem; margin: .35rem 0 .2rem; background: var(--c); opacity: .85;
+  -webkit-mask: var(--agent-motif) no-repeat left center / contain; mask: var(--agent-motif) no-repeat left center / contain; }
 .arch-phase { font-size: .75rem; opacity: .65; line-height: 1.3; }
 .arch-gate { display: flex; align-items: center; justify-content: center; }
-.arch-gate span { width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 2px solid #7c3aed; color: #7c3aed;
+.arch-gate span { width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 2px solid var(--raia-gate, #7c3aed); color: var(--raia-gate, #7c3aed);
   display: flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: 700; }
 .arch-repo { margin-top: .75rem; padding: .7rem .9rem; border-radius: .625rem; border: 1px dashed rgba(100,116,139,.45);
   font-size: .85rem; text-align: center; }
 .arch-repo strong { font-weight: 600; }
-.arch-detail { margin-top: .75rem; padding: .9rem 1rem; border-radius: .625rem; border: 1px solid rgba(100,116,139,.28);
+.arch-detail { margin-top: .75rem; padding: .9rem 1rem; border-radius: .625rem; border: 1px solid var(--raia-card-line, rgba(100,116,139,.28)); background: var(--raia-card, #fff);
   font-size: .875rem; line-height: 1.5; min-height: 3rem; }
 .arch-detail h4 { margin: 0 0 .35rem; font-size: 1rem; }
 .arch-detail dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .9rem; margin: .5rem 0 0; }
@@ -96,7 +99,7 @@ DIAGRAM = """
   .arch-node { flex: 1 1 0; min-width: 0; }
   .arch-gate { flex: 0 0 2.25rem; position: relative; }
   .arch-gate::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(100,116,139,.45); }
-  .arch-gate span { position: relative; background: var(--raia-bg, transparent); backdrop-filter: blur(2px); }
+  .arch-gate span { position: relative; background: var(--raia-card, #fff); }
 }
 </style>
 <div class="arch" id="raia-arch">

@@ -27,6 +27,8 @@ Work happens in **projects**. On **Home**, open **New project** and pick one of 
 
 Try one, then the other. You can also create an empty project and describe a product you know; on any form, **Load an example** fills in either case.
 
+![Create a project](images/guide/create-project.png)
+
 ### 2. Answer the Risk Classifier's questions
 
 On the project page, press **Continue with Risk Classifier**. Read the form before you run anything; it is what the result rests on.
@@ -36,6 +38,8 @@ On the project page, press **Continue with Risk Classifier**. Read the form befo
 - The remaining groups are dropdowns and checklists: your role, the markets, the purpose, how decisions are made, the data, and the lifecycle stage.
 
 Fields marked **\*** are required. Answers are saved to the project as you type, so you can leave and come back.
+
+![Answer the Risk Classifier's questions](images/guide/risk-classifier-form.png)
 
 ### 3. Run the agent and read the draft
 
@@ -48,15 +52,21 @@ Press **Run Risk Classifier**. While it works, the page shows only that the agen
 
 Above the tabs, the **automated checks** speak only when there is something for you to do (**Before you approve**), each with why RAIA checks it. What code already corrected on its own — a citation to an excerpt that was not retrieved is removed, for example — is listed in the technical log under **What the code computed**. Checks never block you.
 
+![Run the agent and read the draft](images/guide/draft.png)
+
 ### 4. Review each card, and take the decisions
 
 Beside every risk, action, requirement and new acceptance criterion there is **Accept** and **Reject**. Rejecting a card asks for a reason (one line is enough); approval waits until each rejected card has one. Cards you leave unmarked are accepted as they are, and the Approve button says how many of each you are approving. A rejected card leaves the approved record and is kept in its review block with your reason. A requirement the rule engine computed is never deleted: rejecting it marks it overridden by you, and the override is recorded in the open issues. Turn on **Preview the version you will approve** to see the record with your rejections applied.
 
 Each **Decision needed** card is a choice you make where it stands: pick an option (or write your own), say why, and **Record decision** — nothing is sent until you press it. On a draft, the decision is kept with it and reaches the project's open issues when you approve; on an approved stage it is recorded at once. Taking the blocking decisions lifts *Blocked in its current form*, and the status says which decision did.
 
+![Review each card, and take the decisions](images/guide/review-cards.png)
+
 ### 5. Approve it, or reject it with a reason
 
 Under **Reject and regenerate**, choose the main reason and say what the agent should fix (for example *consider candidates with disabilities explicitly*); the cards you rejected are already listed there. The next attempt receives it. When a draft is good enough, press **Approve and commit**. The approval is recorded under your signed-in identity; there is no name to type.
+
+![Approve it, or reject it with a reason](images/guide/approve.png)
 
 ### 6. Continue through the stages
 
@@ -70,6 +80,8 @@ In the **User Story Refiner**'s refine mode, add each story on its own card with
 
 The **Auditor** reads as an audit report of the whole project: an opinion the software rates from the evidence, where the project stands, its progress across sprints, whether the backlog is enough for the ethical risks, what comes next, the strengths the evidence supports, the risks with a recommendation each, opportunities, and the pathway forward. The registers behind it are in **Appendices**.
 
+![Continue through the stages](images/guide/whats-next.png)
+
 ### 7. Run sprints on the Board
 
 With the requirements approved, the project page opens on the **Board**, with three views:
@@ -79,6 +91,8 @@ With the requirements approved, the project page opens on the **Board**, with th
 - **Roadmap** — where each requirement stands, requirements verified per sprint, and an estimate of the sprints left.
 
 **Jira is optional.** Under **Jira (optional)** you can download a Jira-ready CSV, or, after connecting your Jira Cloud account in **Settings**, push the sprint and sync its status back. A sync never overrides what you ticked on the board; if Jira and the board disagree, the story says so and you pick.
+
+![Run sprints on the Board](images/guide/board.png)
 
 ### 8. Revise a stage and re-check what depends on it
 
@@ -101,6 +115,8 @@ Under **People and settings**, invite a colleague as a **reviewer** by the email
 ### 11. Complete the assessment
 
 Open **Assessment** in the top menu. It asks five required statements (utility, completeness, usability, methodological rigor, generalizability), optional profile questions and per-stage ratings, and three open questions. About ten minutes; you can save a draft and come back. It is the most useful thing you can leave behind.
+
+![Complete the assessment](images/guide/assessment.png)
 
 ### 12. Your data, and signing out
 

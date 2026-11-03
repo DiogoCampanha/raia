@@ -19,8 +19,23 @@ from typing import Dict
 import streamlit as st
 
 ASSETS = Path(__file__).parent / "assets"
-LOGO = str(ASSETS / "logo.svg")
+#: The menu bar is navy in both themes, so the logo is always the white one.
+LOGO = str(ASSETS / "logo-on-ink.svg")
 ICON = str(ASSETS / "icon.svg")
+
+#: Colours theme.css builds its chrome from, as (light theme, dark theme). They
+#: are written out in theme.css (light-dark() pairs) and the canvases in
+#: .streamlit/config.toml; tests/test_ui.py checks both copies agree and that
+#: every text colour passes WCAG AA on what it sits on.
+CHROME = {
+    "chrome": ("#0e1a38", "#16213f"),    # the menu bar, the sign-in panel
+    "canvas": ("#f2f4f8", "#0b1120"),    # the page behind the cards
+    "card": ("#ffffff", "#111a2e"),      # every bordered container
+    "accent": ("#1d4ed8", "#60a5fa"),    # links, notices, the eyebrow
+    "attn": ("#c2410c", "#fb923c"),      # a figure that needs someone
+}
+#: Menu text on the navy bar (both themes): resting, and current/hover (white).
+NAV_TEXT = "#c9d2e3"
 
 
 class I:  # noqa: E742 - short on purpose: I.HOME reads well at call sites
@@ -169,8 +184,23 @@ def motif_url(agent_key: str) -> str:
     return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
 
 
+def _stripe() -> str:
+    """The four agents, in pipeline order, as the stripe under the menu bar.
+
+    Chrome only, like every other use of an agent's colour. Segments are split by
+    a sliver of the bar's own navy so they read as four stages, not a gradient.
+    """
+    n, stops = len(AGENT_LOOK), []
+    for i, lk in enumerate(AGENT_LOOK.values()):
+        a, b = 100 * i / n, 100 * (i + 1) / n
+        c = f"light-dark({lk.ink}, {lk.glow})"
+        stops.append(f"{c} {a:.2f}%, {c} calc({b:.2f}% - 3px), var(--raia-chrome) calc({b:.2f}% - 3px), "
+                     f"var(--raia-chrome) {b:.2f}%")
+    return f".stApp {{ --raia-stripe: linear-gradient(90deg, {', '.join(stops)}); }}"
+
+
 def _agent_css() -> str:
-    rules = []
+    rules = [_stripe()]
     for key, lk in AGENT_LOOK.items():
         rules.append(
             f'.look-{key}, [class*="st-key-look-{key}-"] {{ --agent-ink: {lk.ink}; --agent-glow: {lk.glow}; '

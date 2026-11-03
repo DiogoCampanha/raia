@@ -16,9 +16,10 @@ page_header(
 )
 with st.container(border=True, height=420):
     st.markdown(legal.text())
-agree = st.checkbox("I have read the Privacy Policy and User Agreement and I accept them.",
-                    key="consent_agree")
-row = st.container(horizontal=True)
+with st.container(border=True, key="card-consent"):
+    agree = st.checkbox("I have read the Privacy Policy and User Agreement and I accept them.",
+                        key="consent_agree")
+    row = st.container(horizontal=True)
 if row.button("Continue", type="primary", disabled=not agree, key="consent_continue", icon=I.OPEN):
     get_service().record_consent(user)
     st.rerun()

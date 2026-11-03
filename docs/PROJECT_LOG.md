@@ -150,6 +150,7 @@ Recorded so the log stays honest about its own errors.
 | D60 | Stages hand on visibly, on identifiers code keeps across stages: what a stage receives, what it addressed, what is still open, what improved since the approved version, what travels on, and a Traceability tab from obligation to audit verdict. The next prompt is told what people decided and excluded upstream. While an agent runs, the page shows only that it is working; the draft then opens at its top. | The flow between agents existed only in the sidecars: nobody could see that one stage answered the last one's items, nor which gaps remained. A form left on screen during a run looked editable. |
 | D61 | The Risk Classifier writes no actions and the Requirements Reviewer writes neither findings nor actions (`raia-record/1.5`). The classifier is an analysis: its risks and the decisions on it. The reviewer's response to those risks is its requirements: each gap names the approved risks behind it and the requirement takes their priority. The lists stay in the core, empty for those stages, so older records still read. | Testers read "What to do" on a risk analysis as advice given before the requirements existed, and "Risks found" on the requirements as a second risk analysis repeating the first. Analysing risk and responding to it are separate steps (NIST AI RMF MAP/MEASURE, then MANAGE); keeping them in separate stages makes the hand-off between them visible. |
 | D62 | Everything a person changes keeps the page still: an element that comes and goes sits in a slot drawn on every redraw, and a decision is a form sent by one button, checked when pressed. A browser check (`tests/browser_check.py`) measures where the page is after each click. | An element drawn on one redraw and not the next moved every element after it; Streamlit then rebuilt the draft, dropping the person at the end of the page and closing any open popover. A button enabled only by a reason the app had not yet received looked broken. Neither is visible to the app-test harness. |
+| D63 | A visual identity that separates the chrome from the work: a navy menu bar in both themes with the four agents' colours as a stripe under it, white cards on a grey canvas, page titles in a serif (Source Serif 4), and tints only where something asks for a person (attention, notices, the next step, the danger zone). Fonts are served by the app; colours live in one table (`theme.CHROME`) whose contrast is tested. | Testers found the interface hard to read at a glance: a white menu on a white page with white cards gave every area the same weight, and the sign-in page was blank. The changes are presentation only; the record tones keep their meaning and agent colours stay chrome (D39). Self-hosting the fonts removes the one request every page made to a third party. |
 
 ---
 
@@ -158,6 +159,69 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-11-02 — A clearer, more distinctive interface (branch `ui-refresh`)
+
+#### What was wrong
+
+A review of every page (screenshots in light, dark and phone widths) found:
+the menu bar, the page and the cards were all white, so nothing marked the
+chrome off from the work or one area off from another; the Assessment menu item
+was permanently blue and read as a second current page; tiles that need someone
+differed from the rest only by a faint border, and a zero weighed as much as a
+three; the sign-in page was a heading and one button on an empty screen; long
+pages (Guide, Assessment, Privacy) had nothing to navigate by; labels were set in
+spaced capitals throughout; and there were no images.
+
+#### What changed (D63)
+
+- **Chrome.** Navy menu bar in both themes (`theme.css`, `--raia-chrome`) with
+  white menu text, a clear current page and the Assessment as an outlined pill;
+  under it a stripe in the four agents' colours, in pipeline order
+  (`theme._stripe`). White logo for the bar (`assets/logo-on-ink.svg`); on a phone
+  the menu button is white too. A footer on every page names RAIA, the research
+  prototype and Universidade Presbiteriana Mackenzie, with the terms
+  (`components.footer`, drawn by `app._run` even when a page stops early).
+- **Surfaces and type.** Grey canvas, every bordered container a white card
+  (selector notes in `theme.css`); larger section headings; page titles in
+  Source Serif 4; eyebrows and labels in sentence case. Fonts (Inter, Source
+  Serif 4, JetBrains Mono, SIL OFL) are served from `static/fonts` through
+  `server.enableStaticServing`, so no page asks Google for a font.
+- **Emphasis where it is needed.** Tiles that need someone are tinted with their
+  icon and zeros step back (`components.stat_tiles`); *Needs your attention*,
+  notices, the project's next step (a band in the next agent's colour), the gate
+  (violet, a person's decision), the Approve panel and the account deletion
+  (danger zone) each have their own treatment.
+- **Sign-in.** A navy panel with the headline and a picture of the pipeline (the
+  four agents' patterns, a human gate between each: `components.pipeline_html`),
+  and a sign-in card with the three principles. On a phone the card comes first.
+- **Home.** Greeting by first name, **New project** as a popover (form and the
+  two examples), the examples on the page for a newcomer, progress as one segment
+  per stage in its agent's colour once approved (`components.progress_segments`),
+  project names as links, an illustrated empty state.
+- **Stages.** Numbered form groups in the agent's colour (`gate._group_heading`),
+  H gates on the stage rail, tracker cards with their agent's pattern.
+- **Reading pages.** Privacy page split into sections with a table of contents
+  that stays in view; the Guide gets the same, numbered steps and a screenshot
+  per step (`guide.IMAGES`, `docs/images/guide/`, also in `docs/TESTERS.md`);
+  the Assessment keeps its progress in view and shows each scale as a row of
+  choices; the Agents diagram shows each agent's pattern.
+
+#### Tests
+
+- `tests/test_ui.py` — chrome colours are declared once (`theme.CHROME`), written
+  as the same light/dark pairs in `theme.css`, the canvas matches the Streamlit
+  theme, and menu text, agent names on the navy panel, accent and attention
+  colours pass WCAG AA in both themes; Home and the progress check follow the new
+  wording. All UI checks pass; `tests/browser_check.py` passes unchanged.
+- `tests/guide_screenshots.py` (new, Playwright, run by hand) — takes the Guide's
+  screenshots from the app in mock mode, replacing mock placeholders with example
+  wording; `--base` photographs a real deployment instead.
+
+#### Still open, by decision
+
+- The Streamlit version stays pinned (1.63): the new selectors, like the old ones,
+  target its `data-testid` attributes and keyed-container classes.
+
 ### 2026-10-17 — Each stage does its own job, and the page stays still (branch `agent-focus`)
 
 Decisions D61–D62. Requested after a second walk-through of the review loop.
