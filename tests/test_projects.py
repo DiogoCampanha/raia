@@ -262,6 +262,69 @@ def main() -> None:
     check(repo1.read_data("risk_classification")["provenance"]["approval"]["approver_id"] == bruno.id,
           "the current draft is approved normally")
 
+    print("== 7c. Approving over failed checks needs a recorded reason ==")
+    from raia.contract import mock as contract_mock
+    from raia.projects import OverrideRequired
+
+    real_reply = contract_mock.reply
+    contract_mock.reply = lambda prompt: "Sorry, I cannot produce that record."
+    try:
+        broken = svc.start_run(ana, p1.id, "risk_classifier", EXAMPLES["risk_classifier"])["payload"]
+    finally:
+        contract_mock.reply = real_reply
+    check(broken["record"].get("schema_errors") and svc.override_needed(broken),
+          "an unreadable reply yields the fallback record, and approving it is an override")
+    try:
+        svc.resume(bruno, p1.id, "risk_classifier", {"action": "approve", "draft_id": broken["draft_id"]})
+        check(False, "approving over failed checks without a reason is refused")
+    except OverrideRequired:
+        check(True, "approving over failed checks without a reason is refused")
+    svc.resume(bruno, p1.id, "risk_classifier", {"action": "approve", "draft_id": broken["draft_id"],
+                                                 "override_reason": "Kept on purpose for the walkthrough."})
+    override = repo1.read_data("risk_classification")["provenance"]["approval"].get("override") or {}
+    check(override.get("reason") == "Kept on purpose for the walkthrough." and override.get("checks"),
+          "…and with a reason it is approved, the reason and the failed checks recorded with it")
+    fixed = svc.start_run(ana, p1.id, "risk_classifier", EXAMPLES["risk_classifier"])["payload"]
+    svc.resume(bruno, p1.id, "risk_classifier", {"action": "approve", "draft_id": fixed["draft_id"]})
+    check("override" not in repo1.read_data("risk_classification")["provenance"]["approval"],
+          "a draft whose checks pass needs no reason")
+
+    print("== 7d. Every run keeps its exact prompt, sealed, and its token use ==")
+    from raia import provenance as _prov
+    from raia.contract.prompt import HINTS_MARKER, contract_text
+    from raia.rationale.types import empty_rationale
+
+    saved_key = config.TRANSCRIPT_KEY
+    config.TRANSCRIPT_KEY = "a-test-transcript-key"
+    try:
+        sealed_run = svc.start_run(ana, p1.id, "risk_classifier", EXAMPLES["risk_classifier"])["payload"]
+        kept = {r["draft_id"]: r for r in open_repository(p1.id).transcripts(unseal=True)}
+        mine = kept.get(sealed_run["draft_id"]) or {}
+        tr = mine.get("transcript") or {}
+        check(bool(tr) and _prov.prompt_hash(tr["system"], tr["user"]) == sealed_run["provenance"]["prompt_sha256_16"],
+              "the sealed transcript is the exact prompt the provenance hash was computed from")
+        check(tr.get("replies") and mine.get("calls") == sealed_run["provenance"]["usage"]["calls"] >= 1,
+              "…with the raw replies and the number of model calls")
+        if repo1.backend == "database":
+            raw = db.get_database().one("SELECT sealed FROM run_transcripts WHERE draft_id = ?",
+                                        (sealed_run["draft_id"],))["sealed"]
+            check("Computed by code" not in raw, "…stored encrypted, never as plain text")
+    finally:
+        config.TRANSCRIPT_KEY = saved_key
+    plain = svc.start_run(ana, p1.id, "risk_classifier", EXAMPLES["risk_classifier"])["payload"]
+    meta = {r["draft_id"]: r for r in open_repository(p1.id).transcripts(unseal=True)}[plain["draft_id"]]
+    check(not meta["stored"] and "transcript" not in meta and meta["prompt_sha256_16"],
+          "without a key no text is stored: only the prompt hash and token use")
+    saved_provider = config.LLM_PROVIDER
+    config.LLM_PROVIDER = "anthropic"
+    try:
+        check(HINTS_MARKER not in contract_text("risk_classifier", [], empty_rationale("x"), []),
+              "a real model's prompt carries no test-double hints")
+    finally:
+        config.LLM_PROVIDER = saved_provider
+    check(HINTS_MARKER in contract_text("risk_classifier", [], empty_rationale("x"), []),
+          "…the offline mock still gets them")
+
     print("== 8. Durability across a restart ==")
     svc.save_intake(ana, p1.id, "requirements_reviewer", EXAMPLES["requirements_reviewer"])
     started = svc.start_run(ana, p1.id, "requirements_reviewer", EXAMPLES["requirements_reviewer"])
@@ -523,6 +586,7 @@ def main() -> None:
     svc.delete_project(ana, p2.id)
     check(svc.runner._checkpointer.get_tuple(thread) is None,
           "deleting a project deletes its graph threads (answers, drafts, feedback, names)")
+    check(open_repository(p2.id).transcripts() == [], "…and its run transcripts")
     check(denied(svc.get_project, ana, p2.id) and open_repository(p2.id).read_artifact("risk_classification") is None,
           "deleting a project removes it and its blackboard")
     svc.delete_account(carla)

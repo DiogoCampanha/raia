@@ -169,6 +169,12 @@ MAX_RUNS_PER_DAY: int = int(os.getenv("RAIA_MAX_RUNS_PER_DAY", "60"))
 #: exports and prevents anyone re-deriving them from a known email address.
 PSEUDONYM_KEY: str = os.getenv("RAIA_PSEUDONYM_KEY", "")
 
+#: Key that encrypts the exact prompt and raw reply of every run, so a draft can
+#: be reproduced and audited later (comma-separated: the first encrypts, all
+#: decrypt, for rotation). Without it the text is not stored at all; a run keeps
+#: only its prompt hash and token counts.
+TRANSCRIPT_KEY: str = os.getenv("RAIA_TRANSCRIPT_KEY", "")
+
 # Optional Jira integration. A person's Jira API token is stored encrypted with
 # this key; without it the token lives only in the browser session and is asked
 # for again next time. Jira is never required: the board works without it.

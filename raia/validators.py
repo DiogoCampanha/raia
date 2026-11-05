@@ -264,6 +264,21 @@ def audience(item: Dict[str, Any]) -> str:
     return aud
 
 
+def critical_failures(validation: Dict[str, Any]) -> List[str]:
+    """Failed checks a reviewer must act on, by name.
+
+    These are the failures code could not handle on its own — an unreadable
+    reply (the fallback record), a cut-off reply, claims with no source,
+    risks with no response. Approving a draft that still has one needs a
+    recorded reason (see :meth:`raia.projects.ProjectService.resume`).
+    """
+    out: List[str] = []
+    for item in (validation or {}).get("items") or []:
+        if item.get("level") == FAIL and audience(item) == ACT:
+            out.append(check_info(item.get("code", "")).get("name") or item.get("title", ""))
+    return out
+
+
 def partition(validation: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
     """A validation report's items grouped by audience, each with its catalogue entry."""
     out: Dict[str, List[Dict[str, Any]]] = {ACT: [], HANDLED: [], DECISION: [], PASSED: []}

@@ -60,6 +60,12 @@ git_history.txt       One line per recorded version. Every approval is one.
 history_chain.json    (database-backed projects) the full hash chain, so the
                       history can be re-verified offline.
 
+runs.json             Every model run: stage, draft id, model, prompt hash and the
+                      tokens it used. transcripts/ holds the exact prompt and raw
+                      replies of each run, when this deployment keeps them
+                      (RAIA_TRANSCRIPT_KEY); the prompt hash in an artifact's
+                      provenance is computed from that prompt.
+
 people.json           Who each user:<id> reference in the files is, at export
                       time. The record names people only by reference, so a
                       person who deletes their account is no longer named
@@ -109,6 +115,14 @@ def session_bundle(repo: "BaseRepository", project_label: str = "",
             z.writestr("history_chain.json", json.dumps(repo.chain(), indent=2, default=str))
         if people:
             z.writestr("people.json", json.dumps(people, indent=2, ensure_ascii=False, sort_keys=True))
+        if hasattr(repo, "transcripts"):
+            runs = repo.transcripts(unseal=True)
+            z.writestr("runs.json", json.dumps([{k: v for k, v in r.items() if k != "transcript"} for r in runs],
+                                               indent=2, ensure_ascii=False))
+            for r in runs:
+                if r.get("transcript"):
+                    z.writestr(f"transcripts/{r['draft_id']}.json",
+                               json.dumps(r["transcript"], indent=2, ensure_ascii=False))
 
         events = [pseudonymize_event(e, "this-project") for e in repo.events()]
         z.writestr(

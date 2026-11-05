@@ -517,6 +517,50 @@ class BaseRepository:
             ),
         }
 
+    # -- Run transcripts (reproducibility) ---------------------------------------
+
+    def save_transcript(self, agent_key: str, draft_id: str, transcript: Dict[str, Any],
+                        meta: Dict[str, Any]) -> None:
+        """Keep a run's exact prompt and raw replies, sealed, with its token use.
+
+        The provenance of an approved artifact carries a hash of the prompt;
+        the transcript is what that hash was computed from, so a past draft
+        can be reproduced and audited. The text is stored only encrypted
+        (``RAIA_TRANSCRIPT_KEY``); without a key only the metadata is kept.
+        It is working data, not part of the hash chain, and is deleted with
+        the project.
+        """
+        from . import sealed
+
+        row = {
+            "draft_id": draft_id, "agent_key": agent_key, "created_at": _now(),
+            "prompt_sha256_16": meta.get("prompt_sha256_16", ""), "model": meta.get("model", ""),
+            "input_tokens": int(meta.get("input_tokens") or 0), "output_tokens": int(meta.get("output_tokens") or 0),
+            "calls": int(meta.get("calls") or 0),
+            "sealed": sealed.seal(json.dumps(transcript, ensure_ascii=False, default=str)),
+        }
+        self._transcript_write(row)
+
+    def transcripts(self, unseal: bool = False) -> List[Dict[str, Any]]:
+        """Every kept run, oldest first; with ``unseal``, the decrypted transcript too."""
+        from . import sealed
+
+        out = []
+        for row in self._transcript_rows():
+            item = {k: v for k, v in row.items() if k != "sealed"}
+            item["stored"] = bool(row.get("sealed"))
+            if unseal and row.get("sealed"):
+                text = sealed.unseal(row["sealed"])
+                item["transcript"] = json.loads(text) if text else None
+            out.append(item)
+        return out
+
+    def _transcript_write(self, row: Dict[str, Any]) -> None:
+        raise NotImplementedError
+
+    def _transcript_rows(self) -> List[Dict[str, Any]]:
+        raise NotImplementedError
+
     # -- Pending drafts (restart resilience) -----------------------------------
 
     def save_pending(self, agent_key: str, payload: Dict[str, Any]) -> None:
@@ -685,6 +729,23 @@ class ArtifactRepository(BaseRepository):
             return json.loads(f.read_text(encoding="utf-8")).get("values", {})
         except (ValueError, OSError):
             return {}
+
+    def _transcript_write(self, row: Dict[str, Any]) -> None:
+        folder = self.path / ".transcripts"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"{row['draft_id']}.json").write_text(json.dumps(row, ensure_ascii=False), encoding="utf-8")
+
+    def _transcript_rows(self) -> List[Dict[str, Any]]:
+        folder = self.path / ".transcripts"
+        if not folder.exists():
+            return []
+        rows = []
+        for f in folder.glob("*.json"):
+            try:
+                rows.append(json.loads(f.read_text(encoding="utf-8")))
+            except ValueError:
+                continue
+        return sorted(rows, key=lambda r: r.get("created_at", ""))
 
     # -- Evaluation instrumentation -------------------------------------------
 

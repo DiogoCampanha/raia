@@ -40,7 +40,7 @@ from raia.deploy import friendly_llm_error
 from raia.examples import CASES, DEFAULT_CASE, EXAMPLE_KEY, example_for
 from raia.fields import InputField
 from raia.rationale.coverage import ORIGIN_KEY, next_requirement
-from raia.projects import AccessDenied, Project, StaleDraft, UsageLimitReached
+from raia.projects import AccessDenied, OverrideRequired, Project, StaleDraft, UsageLimitReached
 
 from raia.contract import review as RV
 
@@ -1270,6 +1270,16 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
         if missing:
             st.warning("Say why you rejected **" + "**, **".join(missing) + "** before approving: a rejection "
                        "needs a reason.", icon=I.WARN)
+        # Checks a reviewer must act on that still fail make approval an
+        # override: allowed, but only with a reason that is recorded with it.
+        needed = svc.override_needed(payload)
+        override_reason = ""
+        if needed:
+            st.warning("**Approving overrides failed checks:** " + "; ".join(needed) + ". Rejecting "
+                       "regenerates the draft. To approve it as it is, say why; the reason is recorded "
+                       "with the approval.", icon=I.WARN)
+            override_reason = st.text_area("Why approve despite these checks?", height=70,
+                                           key=pkey("override", agent_key))
         counts = ""
         if tally and tally.get("total"):
             counts = (f": {tally['accepted'] + tally['unmarked']} accepted, {tally['rejected']} rejected"
@@ -1279,11 +1289,12 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
             with st.spinner("Committing to the audit trail"):
                 try:
                     decision = {"action": "approve", "draft_id": payload.get("draft_id", ""),
-                                "review": payload.get("review") or RV.empty()}
+                                "review": payload.get("review") or RV.empty(),
+                                "override_reason": override_reason}
                     if changed or reviewed:
                         decision["record"] = to_approve
                     result = svc.resume(user, project.id, agent_key, decision)
-                except (AccessDenied, StaleDraft) as exc:
+                except (AccessDenied, StaleDraft, OverrideRequired) as exc:
                     st.error(str(exc))
                     if isinstance(exc, StaleDraft):
                         st.session_state.pop(pkey("pending", agent_key), None)

@@ -14,16 +14,14 @@ the gaps. Requirement identifiers are assigned by the engine so that downstream
 agents can be checked against a register that actually exists.
 """
 
-import json
+import uuid
 from typing import Any, Dict, List, Sequence
 
-from langchain_core.messages import HumanMessage, SystemMessage
 
 from .. import provenance, validators
 from ..contract import checks as contract_checks
-from ..contract.prompt import HINTS_MARKER
+from ..contract.prompt import hints_line
 from ..fields import InputField
-from ..llm import invoke_chat
 from ..rag import NormativeRetriever
 from ..rationale import coverage, principles
 from ..rationale.types import RationaleResult
@@ -37,6 +35,19 @@ MAX_CANDIDATES = 5
 #: Gaps shown to the model, most binding first.
 MAX_GAPS_IN_PROMPT = 8
 VERIFICATION_METHODS = ("test", "audit", "measurement", "inspection")
+
+def _read_candidates(text: str):
+    """Read a recommendation reply: an object with a ``candidates`` list."""
+    from ..contract.assemble import extract_json
+
+    try:
+        data = extract_json(text)
+    except (ValueError, AttributeError):
+        return None, ["the reply was not one readable JSON object"]
+    if not isinstance(data, dict) or not isinstance(data.get("candidates"), list):
+        return None, ['the reply has no "candidates" list']
+    return data, []
+
 
 RECOMMEND_SYSTEM = """\
 You are the Requirements Reviewer of RAIA (Responsible AI Assistant). You are
@@ -212,7 +223,8 @@ class RequirementsReviewerAgent(BaseAgent):
             pins=[(p.source, p.section, p.reason) for p in rationale.pins],
         )
         allowed = NormativeRetriever.citation_index(list(chunks))
-        brief = sanitize_free_text(repo.upstream_context(["product_brief"]) or "").text
+        cleaned = sanitize_free_text(repo.upstream_context(["product_brief"]) or "")
+        brief = cleaned.text
 
         refs = [g["ref"] for g in gaps]
         gap_lines = "\n".join(f"| {g['ref']} | {g['kind']} | {g['subject'][:140]} |" for g in gaps)
@@ -232,9 +244,14 @@ class RequirementsReviewerAgent(BaseAgent):
             '"fit_criterion": "<the measurable condition that settles it>", '
             '"verification_method": "<test | audit | measurement | inspection>", '
             '"citations": ["<a citation tag copied exactly>"]}]}\n\n'
-            f"{HINTS_MARKER} {json.dumps(hints, ensure_ascii=False)}\n"
+            + hints_line(hints)
         )
-        response = invoke_chat([SystemMessage(content=RECOMMEND_SYSTEM), HumanMessage(content=user)])
+        # The same model pass as every agent turn: bounded repair when the
+        # reply cannot be read, token accounting and a sealed transcript.
+        turn = self.converse(RECOMMEND_SYSTEM, user, _read_candidates, repair=lambda errors: (
+            "Your reply could not be read: " + "; ".join(errors) + ". Reply with ONE JSON object of the "
+            'form {"candidates": [...]} as specified, and nothing else.'))
+        response = turn.response
         candidates, dropped = self._check_candidates(response.text, refs, allowed, gaps)
 
         prov = provenance.build(
@@ -243,7 +260,15 @@ class RequirementsReviewerAgent(BaseAgent):
             prompt_digest=provenance.prompt_hash(RECOMMEND_SYSTEM, user), attempt=1,
             engine=rationale.engine, retries=response.retries, finish_reason=response.finish_reason,
         )
+        prov["usage"] = turn.usage
+        prov["contract"] = {"repairs": turn.repairs}
+        run_id = uuid.uuid4().hex
+        prov["run_id"] = run_id
+        repo.save_transcript(f"{self.spec.key}:recommend", run_id, turn.transcript, {
+            "prompt_sha256_16": prov.get("prompt_sha256_16", ""),
+            "model": (prov.get("model") or {}).get("name", ""), **turn.usage})
         return {
+            "sanitization": list(cleaned.findings),
             "candidates": candidates,
             "dropped": dropped,
             "gaps": [{"ref": g["ref"], "kind": g["kind"], "subject": g["subject"]} for g in gaps],

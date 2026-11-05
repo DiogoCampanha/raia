@@ -366,11 +366,25 @@ class DatabaseRepository(BaseRepository):
             out.append({"at": r["at"], "kind": r["kind"], **body})
         return out
 
+    def _transcript_write(self, row: Dict[str, Any]) -> None:
+        self.db.execute(
+            "INSERT INTO run_transcripts (project_id, draft_id, agent_key, created_at, prompt_sha256_16, model, "
+            "input_tokens, output_tokens, calls, sealed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT (project_id, draft_id) DO NOTHING",
+            (self.project, row["draft_id"], row["agent_key"], row["created_at"], row["prompt_sha256_16"],
+             row["model"], row["input_tokens"], row["output_tokens"], row["calls"], row["sealed"]),
+        )
+
+    def _transcript_rows(self) -> List[Dict[str, Any]]:
+        return self.db.query(
+            "SELECT draft_id, agent_key, created_at, prompt_sha256_16, model, input_tokens, output_tokens, "
+            "calls, sealed FROM run_transcripts WHERE project_id = ? ORDER BY created_at", (self.project,))
+
     def reset(self) -> None:
         """Erase every trace of this project (used when a project is deleted)."""
         with self.db.tx() as t:
             for table in ("project_files", "project_commits", "pending_reviews",
-                          "intake_drafts", "project_events"):
+                          "intake_drafts", "project_events", "run_transcripts"):
                 t.execute(f"DELETE FROM {table} WHERE project_id = ?", (self.project,))
         _bump(self.project)
 

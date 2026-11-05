@@ -211,10 +211,28 @@ def _m003_admin_audit(t: "Tx") -> None:
     t.execute("CREATE INDEX IF NOT EXISTS ix_audit_at ON audit_log (at)")
 
 
+def _m004_transcripts(t: "Tx") -> None:
+    """The exact prompt and raw reply of each run, sealed, plus its token use."""
+    t.execute("""CREATE TABLE IF NOT EXISTS run_transcripts (
+        project_id TEXT NOT NULL,
+        draft_id TEXT NOT NULL,
+        agent_key TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        prompt_sha256_16 TEXT,
+        model TEXT,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        calls INTEGER,
+        sealed TEXT,
+        PRIMARY KEY (project_id, draft_id)
+    )""")
+
+
 MIGRATIONS = [
     ("001_chain_events", _m001_chain_events),
     ("002_assessments", _m002_assessments),
     ("003_admin_audit", _m003_admin_audit),
+    ("004_transcripts", _m004_transcripts),
 ]
 
 

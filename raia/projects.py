@@ -89,6 +89,10 @@ class StaleDraft(RuntimeError):
     """The decision was taken on a draft that is no longer the one at the gate."""
 
 
+class OverrideRequired(ValueError):
+    """Approving this draft needs a recorded reason: critical checks failed."""
+
+
 @dataclass(frozen=True)
 class User:
     id: str
@@ -697,6 +701,19 @@ class ProjectService:
         self.touch(project_id)
         return result
 
+    @staticmethod
+    def override_needed(payload: Dict[str, Any]) -> List[str]:
+        """Failed checks that make approving this draft an override (empty: none).
+
+        The fallback record — a reply that could not be read — always counts.
+        """
+        from .validators import critical_failures
+
+        needed = critical_failures(payload.get("validation") or {})
+        if (payload.get("record") or {}).get("schema_errors") and not needed:
+            needed = ["The reply could not be read"]
+        return needed
+
     def second_approver_blocks(self, user: User, project_id: str, payload: Dict[str, Any]) -> bool:
         project = self.get_project(user, project_id)
         return bool(project.require_second_approver and payload.get("run_by") == user.id)
@@ -726,6 +743,17 @@ class ProjectService:
                 "approve its draft. Ask another editor, reviewer or owner to review it."
             )
         clean = dict(decision)
+        clean.pop("override", None)
+        if action == "approve":
+            needed = self.override_needed(at_gate)
+            reason = " ".join(str(decision.get("override_reason") or "").split())
+            if needed and not reason:
+                raise OverrideRequired(
+                    "Checks a reviewer must act on failed (" + "; ".join(needed) + "). Reject the "
+                    "draft to regenerate it, or say why it should be approved as it is."
+                )
+            if needed:
+                clean["override"] = {"reason": reason[:1000], "checks": needed}
         # Identity comes from the session, never from the caller's payload.
         # Recorded as a reference, resolved to a name only when displayed: the
         # chained history never holds a name or an email that cannot be erased.

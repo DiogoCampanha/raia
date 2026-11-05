@@ -103,6 +103,11 @@ def _generate(state: StageState) -> StageState:
     payload["run_by"] = actor.get("id", "")
     payload["run_by_name"] = actor.get("name", "")
     payload["inputs"] = state.get("inputs") or {}
+    prov = payload.get("provenance") or {}
+    usage = prov.get("usage") or {}
+    repo.save_transcript(agent.spec.key, payload["draft_id"], result.transcript, {
+        "prompt_sha256_16": prov.get("prompt_sha256_16", ""),
+        "model": (prov.get("model") or {}).get("name", ""), **usage})
     repo.save_pending(agent.spec.key, payload)
     return {"run": payload}
 
@@ -200,6 +205,10 @@ def _persist(state: StageState) -> StageState:
     )
     if decision.get("approver_id"):
         prov["approval"]["approver_id"] = decision["approver_id"]
+    if decision.get("override"):
+        # Approved although checks a reviewer must act on had failed: the
+        # reason travels with the approval, in the chained record.
+        prov["approval"]["override"] = dict(decision["override"])
     if run.get("run_by"):
         prov["approval"]["run_by"] = run["run_by"]
 
@@ -277,6 +286,7 @@ def _persist(state: StageState) -> StageState:
             "cards": {k: v for k, v in RV.tally(agent.spec.key, run.get("record") or {}, rv).items()
                       if k != "missing_reason"},
             "decisions_taken": sum(1 for d in taken.values() if (d or {}).get("choice")),
+            "override_checks": list((decision.get("override") or {}).get("checks") or []),
         },
     )
     return {"commit": commit, "approved_content": content}
