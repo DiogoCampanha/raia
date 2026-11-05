@@ -225,7 +225,10 @@ STEPS: List[Step] = [
         "stages (**Decided**). Take an open one, or mark it resolved or accept the risk, noting "
         "what was decided.\n"
         "- **Documents** — each approved artifact with its provenance (model, corpus version, "
-        "attempt, edits, checks), and **Download project**.\n"
+        "attempt, edits, checks), **Download project**, and **Download AI Skill**: a skill your "
+        "own AI assistant can follow to apply these results to a real backlog and Jira. Open "
+        "`README_FIRST.md` and `raia-responsible-ai/SKILL.md` in it; if you can, give it to an "
+        "assistant you use with a few backlog items and see what it does.\n"
         "- **Activity** — the version history and the project log.",
     ),
     Step(
@@ -237,8 +240,9 @@ STEPS: List[Step] = [
     Step(
         "Complete the assessment",
         "Open **Assessment** in the top menu. It asks five required statements (utility, "
-        "completeness, usability, methodological rigor, generalizability), optional profile "
-        "questions and per-stage ratings, and three open questions. About ten minutes; you can "
+        "completeness, usability, methodological rigor, generalizability), one required statement "
+        "for each stage and one on the AI Skill, optional profile questions, and three open "
+        "questions. About ten minutes; you can "
         "save a draft and come back. It is the most useful thing you can leave behind.",
         ("assessment", "Open the assessment"),
     ),

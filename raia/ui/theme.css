@@ -258,24 +258,28 @@ h1, h2, h3 { letter-spacing: -0.015em; }
   padding: .55rem .9rem .6rem;
 }
 /* Agreement scales read as a row of choices, not a row of small circles. */
-[class*="st-key-a_dim_"] [data-testid="stRadioGroup"], [class*="st-key-a_stage_"] [data-testid="stRadioGroup"] { gap: .4rem; flex-wrap: wrap; }
-[class*="st-key-a_dim_"] [data-testid="stRadioOption"], [class*="st-key-a_stage_"] [data-testid="stRadioOption"] {
+[class*="st-key-a_dim_"] [data-testid="stRadioGroup"], [class*="st-key-a_stage_"] [data-testid="stRadioGroup"], [class*="st-key-a_extra_"] [data-testid="stRadioGroup"] { gap: .4rem; flex-wrap: wrap; }
+[class*="st-key-a_dim_"] [data-testid="stRadioOption"], [class*="st-key-a_stage_"] [data-testid="stRadioOption"], [class*="st-key-a_extra_"] [data-testid="stRadioOption"] {
   margin: 0; padding: .35rem .85rem; border: 1px solid var(--raia-card-line); border-radius: 999px;
   background: var(--raia-card); cursor: pointer; transition: background-color .12s, border-color .12s;
 }
 [class*="st-key-a_dim_"] [data-testid="stRadioOption"] > div > div > div:first-child,
-[class*="st-key-a_stage_"] [data-testid="stRadioOption"] > div > div > div:first-child { display: none; }
-[class*="st-key-a_dim_"] [data-testid="stRadioOption"]:hover, [class*="st-key-a_stage_"] [data-testid="stRadioOption"]:hover {
+[class*="st-key-a_stage_"] [data-testid="stRadioOption"] > div > div > div:first-child,
+[class*="st-key-a_extra_"] [data-testid="stRadioOption"] > div > div > div:first-child { display: none; }
+[class*="st-key-a_dim_"] [data-testid="stRadioOption"]:hover, [class*="st-key-a_stage_"] [data-testid="stRadioOption"]:hover, [class*="st-key-a_extra_"] [data-testid="stRadioOption"]:hover {
   border-color: var(--raia-accent);
 }
 [class*="st-key-a_dim_"] [data-testid="stRadioOption"]:has(input:checked),
-[class*="st-key-a_stage_"] [data-testid="stRadioOption"]:has(input:checked) {
+[class*="st-key-a_stage_"] [data-testid="stRadioOption"]:has(input:checked),
+[class*="st-key-a_extra_"] [data-testid="stRadioOption"]:has(input:checked) {
   background: var(--raia-accent); border-color: var(--raia-accent);
 }
 [class*="st-key-a_dim_"] [data-testid="stRadioOption"]:has(input:checked) p,
-[class*="st-key-a_stage_"] [data-testid="stRadioOption"]:has(input:checked) p { color: light-dark(#fff, #0b1120); font-weight: 600; }
+[class*="st-key-a_stage_"] [data-testid="stRadioOption"]:has(input:checked) p,
+[class*="st-key-a_extra_"] [data-testid="stRadioOption"]:has(input:checked) p { color: light-dark(#fff, #0b1120); font-weight: 600; }
 [class*="st-key-a_dim_"] [data-testid="stRadioOption"]:has(input:focus-visible),
-[class*="st-key-a_stage_"] [data-testid="stRadioOption"]:has(input:focus-visible) { outline: 2px solid var(--raia-accent); outline-offset: 2px; }
+[class*="st-key-a_stage_"] [data-testid="stRadioOption"]:has(input:focus-visible),
+[class*="st-key-a_extra_"] [data-testid="stRadioOption"]:has(input:focus-visible) { outline: 2px solid var(--raia-accent); outline-offset: 2px; }
 
 /* ---- Settings ------------------------------------------------------------------- */
 

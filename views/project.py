@@ -7,7 +7,7 @@ import streamlit as st
 from raia.agents import AGENTS, RUNNABLE, identity_key
 from raia.contract import actions as action_plan
 from raia.contract import vocab as V
-from raia.export import bundle_name, session_bundle
+from raia.export import bundle_name, session_bundle, skill_bundle, skill_bundle_name
 from raia.lineage import next_steps
 from raia.projects import EDITOR, OWNER, REVIEWER, ROLE_LABELS
 from raia.repository import ACCEPTED, ARTIFACT_FILES, DECIDED, OPEN, RESOLVED, RETIRED_ARTIFACTS
@@ -34,6 +34,11 @@ def _bundle() -> bytes:
     re-opens the repository, so membership is checked again at download time.
     """
     return session_bundle(svc.repository(user, proj.id, "view"), proj.name)
+
+
+def _skill() -> bytes:
+    """The AI Skill download, built on press like the project download."""
+    return skill_bundle(svc.repository(user, proj.id, "view"), proj.name)
 
 stages = summary["stages"]
 
@@ -149,6 +154,22 @@ with tab_docs:
                        file_name=bundle_name(proj.name), mime="application/zip",
                        icon=I.DOWNLOAD, key="docs_export", width="stretch")
     existing = repo.existing_artifacts()
+    with st.container(border=True, key="card-ai-skill"):
+        s1, s2 = st.columns([4, 1.4], vertical_alignment="center")
+        s1.markdown(f"{I.SKILL} **Continue with your own AI assistant**")
+        s1.caption("The AI Skill teaches an assistant your organisation already approves how to read these "
+                   "outputs and apply them to your real backlog and Jira: it classifies stories, writes ethical "
+                   "acceptance criteria, suggests sprints and self-audits, with RAIA's rules. The download holds "
+                   "the skill, an AGENTS.md for your repository and this project's approved outputs, without the "
+                   "research data.")
+        ready = repo.read_artifact("risk_classification") is not None
+        s2.download_button("Download AI Skill", data=_skill, file_name=skill_bundle_name(proj.name),
+                           mime="application/zip", icon=I.SKILL, key="docs_skill", width="stretch",
+                           disabled=not ready,
+                           help=None if ready else "Available once the Risk Classifier is approved.")
+        if ready and repo.read_artifact("requirements_review") is None:
+            s1.caption("It grows with the project: approve the requirements and the backlog to give the "
+                       "assistant more to work with.")
     if not existing:
         empty_state("No approved documents yet",
                     "Approve a stage's draft and its document appears here.")

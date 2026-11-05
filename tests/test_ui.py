@@ -230,6 +230,9 @@ def main() -> None:
     ok(at.run(), "the project page renders")
     check("Demo — resume screening" in text(at), "…with its name")
     check("Continue with Risk Classifier" in text(at), "the primary action is the next stage")
+    skill_btn = next((d for d in at.get("download_button") if "Download AI Skill" in str(d.proto.label)), None)
+    check(skill_btn is not None and skill_btn.proto.disabled,
+          "the AI Skill download is offered, and waits for the Risk Classifier")
     no_emoji(at, "project page")
 
     print("== 3. Run and approve the first two stages ==")
@@ -317,6 +320,8 @@ def main() -> None:
     goto(at, "project", id=pid1)
     ok(at.run(), "the project page renders after approvals")
     check(any("Action plan" in t.label for t in at.tabs), "the project has an action plan tab")
+    skill_btn = next((d for d in at.get("download_button") if "Download AI Skill" in str(d.proto.label)), None)
+    check(skill_btn is not None and not skill_btn.proto.disabled, "…and the AI Skill can be downloaded")
     check("Actions come from the User Story Refiner" in text(at),
           "…empty while only the analysis and the requirements are approved, and saying where actions come from")
 
@@ -662,6 +667,13 @@ def main() -> None:
     radios = {r.key: r for r in at.radio if r.key}
     dims = [k for k in radios if k.startswith("a_dim_")]
     check(len(dims) == 5, "the five evaluation dimensions are asked")
+    from raia.agents import AGENTS as _AGENTS
+    stage_radios = [radios.get(f"a_stage_{k}") for k in _AGENTS]
+    check(all(r is not None for r in stage_radios), "every stage is asked, in full (no dropdown)")
+    check(all(a.spec.name in r.label for a, r in zip(_AGENTS.values(), stage_radios) if r is not None),
+          "…one statement per stage, naming it")
+    check(any(s.label == "Experience with AI Product Development" for s in at.selectbox),
+          "the profile asks about AI product development")
     button(at, "assess_submit").click()
     ok(at.run(), "an incomplete submission is refused")
     check("Please give your consent" in text(at), "…consent comes first")
@@ -676,6 +688,17 @@ def main() -> None:
         radios[k].set_value(4)
     radios["a_stage_risk_classifier"].set_value(5)
     next(s for s in at.selectbox if s.key == "a_profile_context").set_value("Industry")
+    button(at, "assess_submit").click()
+    ok(at.run(), "a submission with stages and the AI Skill item unrated is refused")
+    refusal = " ".join(str(e.value) for e in at.error)
+    check("Please rate every evaluation statement" in refusal and "AI Skill" in refusal
+          and "Auditor" in refusal and "Risk Classifier" not in refusal,
+          "…naming the unrated stages and the AI Skill item, and only those")
+    radios = {r.key: r for r in at.radio if r.key}
+    for k in _AGENTS:
+        if k != "risk_classifier":
+            radios[f"a_stage_{k}"].set_value(4)
+    radios["a_extra_ai_skill"].set_value(4)
     button(at, "assess_submit").click()
     ok(at.run(), "the assessment is submitted")
     check("your assessment was recorded" in text(at).lower(), "…and confirmed")

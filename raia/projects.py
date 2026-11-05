@@ -1223,7 +1223,9 @@ evaluation_events.jsonl   One line per event in any project: runs rejected with
                           (edited or not) or rejected.
 experience_ratings.jsonl  Each submitted tester assessment (instrument id in
                           "instrument"): optional broad profile, the five Likert
-                          dimensions, optional per-stage items and open answers.
+                          dimensions, one item per stage (required from
+                          raia-panel-v2), the AI Skill item ("extras", from
+                          raia-panel-v2) and open answers.
                           Drafts are excluded. A participant may submit more
                           than once; keep the latest per participant unless the
                           analysis says otherwise.

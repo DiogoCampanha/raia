@@ -15,11 +15,18 @@ responses from two different instruments would be pooled.
 
 The profile section asks only broad, optional categories: the evaluation plan
 reports aggregated profiles only, and no answer here identifies a person.
+
+``raia-panel-v2`` changes three things, none of them the five dimensions, so
+the plan's success criterion is still computed over exactly those five: every
+stage is rated (one required statement per stage, naming it), one required
+item asks about the AI Skill (:data:`EXTRA_ITEMS`), and the expertise question
+of the profile asks about AI product development (key
+``ai_product_experience``).
 """
 
 from __future__ import annotations
 
-INSTRUMENT_ID = "raia-panel-v1"
+INSTRUMENT_ID = "raia-panel-v2"
 
 SCALE = [1, 2, 3, 4, 5]
 SCALE_LABELS = {
@@ -45,7 +52,23 @@ DIMENSIONS = [
      "RAIA can be adapted to different organizational contexts."),
 ]
 
-STAGE_ITEM = "The output of this stage would be useful on a real project."
+#: One required statement per stage, the same for every stage but naming it.
+STAGE_ITEM = "The output of the {stage} would be useful on a real project."
+
+
+def stage_statement(stage_name: str) -> str:
+    """The statement a tester rates for one stage."""
+    return STAGE_ITEM.format(stage=stage_name)
+
+#: Required items beyond the five dimensions and the stages: (key, title,
+#: statement, how to look at it first). Reported apart from the dimensions.
+EXTRA_ITEMS = [
+    ("ai_skill", "AI Skill",
+     "The AI Skill would help my team continue the Responsible AI work on our real backlog with an AI "
+     "assistant we are allowed to use.",
+     "Download it from a project's Documents tab (Download AI Skill) and read README_FIRST.md and "
+     "raia-responsible-ai/SKILL.md. Trying it with an assistant is welcome but not required."),
+]
 
 OPEN_QUESTIONS = [
     ("most_valuable", "What was most valuable about RAIA, and why?"),
@@ -64,7 +87,7 @@ PROFILE = [
       "Leadership or management", "Other"]),
     ("experience", "Years of professional experience",
      ["Less than 3", "3 to 5", "6 to 10", "11 to 20", "More than 20"]),
-    ("rai_expertise", "Experience with Responsible AI or AI governance",
+    ("ai_product_experience", "Experience with AI Product Development",
      ["None", "Basic", "Intermediate", "Advanced", "Expert"]),
     ("region", "Region where you mainly work",
      ["Latin America", "North America", "Europe", "Africa", "Asia-Pacific", "Middle East"]),

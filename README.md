@@ -150,8 +150,8 @@ artifact.
    (reviews and approves, does not run agents), and can require a **second
    approver**, so the person who ran a stage cannot approve it.
 9. **Assessment** — one page in the top menu: consent, optional profile, the
-   evaluation plan's five dimensions on a five-point scale, optional per-stage
-   ratings and open questions, with drafts.
+   evaluation plan's five dimensions on a five-point scale, one required item
+   per stage, one on the AI Skill and open questions, with drafts.
 10. **Work the action plan** — the Project page gathers every action from every
    approved record, sorted by computed priority, filterable by owner and stage,
    and exports it as CSV or JSON.
@@ -160,6 +160,15 @@ artifact.
    what the audit verified, gaps highlighted.
 12. **Export a project** — artifacts, structured records, the action plan,
    version history with its integrity check, and pseudonymized activity, in one zip.
+13. **Continue with your own AI assistant** — *Download AI Skill* (Documents
+   tab) packs a portable skill, an `AGENTS.md` for your repository and the
+   project's approved outputs. An assistant your organisation already approves
+   then reads RAIA's records, applies them to your real backlog and Jira
+   (triage, ethical acceptance criteria, sprint suggestions, self-audits,
+   Jira CSV) with RAIA's rules, and says when a change needs a new RAIA run.
+   Teams that can give RAIA only a generic description reconcile it with the
+   real product as the first step. No research data is included. See
+   [`docs/ai-skill/`](docs/ai-skill/).
 
 ## How Reliability Is Handled
 
@@ -262,13 +271,16 @@ raia/
 │   ├── auth.py                # Google sign-in via Streamlit, or a local dev identity
 │   ├── pipeline.py            # the graph: generate → human gate → persist
 │   ├── sanitize.py            # injection screening (EN + PT), flag-never-delete
-│   ├── export.py              # one-zip project export
+│   ├── export.py              # one-zip project export, and the AI Skill download
+│   ├── skill/                 # the AI Skill: instructions and references (text/ + build.py),
+│   │                          #   PROJECT_CONTEXT.md from the blackboard (context.py)
 │   └── agents/                # the four agent specifications (and the Refiner's generate mode)
 ├── corpus/                    # curated normative summaries (extensible)
 ├── docs/
 │   ├── architecture.md        # diagrams and the traceability table
 │   ├── output-contract.md     # the standard record every agent produces
 │   ├── agents/                # one generated agent card per agent
+│   ├── ai-skill/              # the AI Skill as downloaded, without a project (generated)
 │   ├── schema/                # published JSON Schemas of the record
 │   ├── templates/             # agent card and project-log entry templates
 │   ├── PROJECT_LOG.md         # what was wrong, what was decided, what changed
@@ -282,6 +294,7 @@ raia/
     ├── test_projects.py       # isolation, roles, durability, tamper evidence
     ├── test_backlog.py        # the sprint cycle: generate, plan, tick, audit, close, change control
     ├── test_jira.py           # optional Jira: CSV, push, sync, token privacy (mock Jira)
+    ├── test_skill.py          # the AI Skill: generated from the code, portable, no research data
     └── test_ui.py             # headless walkthrough of the project-based UI
 ```
 
@@ -370,6 +383,8 @@ python tests/test_ui.py                            # headless UI walkthrough
 python tests/browser_check.py                      # the page stays still, in headless Chromium (needs Playwright)
 python tests/guide_screenshots.py                  # re-take the Guide's screenshots (needs Playwright)
 python tests/test_contract.py                      # the output contract (also run by the smoke test)
+python tests/test_skill.py                         # the AI Skill and its download
+python -m raia.skill.build                         # regenerate docs/ai-skill/ after changing raia/skill/text/
 python tests/consistency_check.py --agent risk_classifier --runs 5   # with a real provider
 ```
 
