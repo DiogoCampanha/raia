@@ -1,0 +1,52 @@
+# Continuous integration: every push and pull request runs the whole offline
+# test-suite (mock model, hash embeddings: no API key, no network beyond PyPI)
+# and audits the locked dependencies for known vulnerabilities.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    env:
+      RAIA_LLM_PROVIDER: mock
+      RAIA_FAKE_EMBED: "1"
+      RAIA_AUTH: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Install
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Test suites
+        run: |
+          set -e
+          for t in smoke_test test_contract test_projects test_backlog test_jira test_skill test_ui; do
+            echo "::group::$t"
+            python tests/$t.py
+            echo "::endgroup::"
+          done
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Audit locked dependencies
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt $(grep -v '^#' .pip-audit-ignore | grep -v '^$' | sed 's/^/--ignore-vuln /')

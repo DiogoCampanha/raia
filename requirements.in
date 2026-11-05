@@ -1,0 +1,42 @@
+# RAIA — Responsible AI Assistant: direct dependencies.
+# Python >= 3.10 recommended.
+#
+# This file holds the allowed ranges. requirements.txt is the lock generated
+# from it (see the command at its top); install from requirements.txt.
+
+# UI
+# Pinned to one minor version: the design layer (raia/ui/theme.css) targets
+# Streamlit's data-testid attributes, which may change between minor releases.
+streamlit>=1.63,<1.64
+# Google sign-in (Streamlit's native OpenID Connect login)
+Authlib>=1.3.2
+
+# Orchestration (state graph with native human-interruption points)
+langgraph>=0.2.60
+langchain-core>=0.3
+
+# Reference LLM. Swap/add providers freely:
+langchain-anthropic>=0.3
+# langchain-openai>=0.2   # uncomment to use OpenAI models
+
+# RAG vector store
+chromadb>=0.5.5
+# Hosted platforms (Streamlit Community Cloud) ship an old system sqlite3;
+# this provides a modern one, swapped in by raia/__init__.py. Linux-only.
+pysqlite3-binary; sys_platform == "linux"
+
+# Data handling (the reviewer's record editor)
+pandas>=2.0
+
+# Users, projects and durable storage on hosted deployments (PostgreSQL, e.g. Neon).
+# Locally everything falls back to SQLite and needs none of these at runtime.
+psycopg[binary]>=3.2
+psycopg-pool>=3.2
+langgraph-checkpoint-postgres>=2.0
+
+# Optional Jira integration: HTTP client, and encryption of a person's API token
+httpx>=0.27
+cryptography>=42
+
+# Configuration
+python-dotenv>=1.0
