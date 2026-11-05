@@ -85,6 +85,10 @@ class UsageLimitReached(RuntimeError):
     """The person reached the daily model-call allowance."""
 
 
+class StaleDraft(RuntimeError):
+    """The decision was taken on a draft that is no longer the one at the gate."""
+
+
 @dataclass(frozen=True)
 class User:
     id: str
@@ -360,6 +364,8 @@ class ProjectService:
     @_changes_access
     def _delete_project_data(self, project_id: str) -> None:
         open_repository(project_id).reset()
+        # The graph checkpointer keeps every run's answers, drafts and feedback.
+        self.runner.forget(project_id)
         with self.db.tx() as t:
             t.execute("DELETE FROM invitations WHERE project_id = ?", (project_id,))
             t.execute("DELETE FROM project_members WHERE project_id = ?", (project_id,))
@@ -660,7 +666,18 @@ class ProjectService:
             raise ValueError("A decision is either approve or reject.")
         repo = open_repository(project_id)
         pending = repo.load_pending(agent_key) or {}
-        if action == "approve" and self.second_approver_blocks(user, project_id, pending):
+        # The decision is bound to the draft the person saw. Another member may
+        # have regenerated the stage since the page was drawn; acting on the
+        # newer draft would record an approval of something nobody reviewed.
+        at_gate = self.runner.draft_at_gate(project_id, agent_key) or pending
+        current = str(at_gate.get("draft_id") or "")
+        sent = str(decision.get("draft_id") or "")
+        if not sent or (current and sent != current):
+            raise StaleDraft(
+                "This draft is no longer the one waiting for review: the stage was run again "
+                "after this page was opened. Reload the stage to review the current draft."
+            )
+        if action == "approve" and self.second_approver_blocks(user, project_id, at_gate):
             raise AccessDenied(
                 "This project requires a second approver: the person who ran a stage cannot "
                 "approve its draft. Ask another editor, reviewer or owner to review it."

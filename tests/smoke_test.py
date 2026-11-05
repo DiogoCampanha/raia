@@ -31,6 +31,7 @@ from pathlib import Path
 # Force offline-friendly configuration BEFORE importing raia.
 os.environ["RAIA_LLM_PROVIDER"] = "mock"
 os.environ["RAIA_FAKE_EMBED"] = "1"
+os.environ.setdefault("RAIA_AUTH", "dev")
 _tmp = tempfile.mkdtemp(prefix="raia_smoke_")
 os.environ["RAIA_WORKSPACE_DIR"] = str(Path(_tmp) / "workspace")
 os.environ["RAIA_CHROMA_DIR"] = str(Path(_tmp) / "chroma")

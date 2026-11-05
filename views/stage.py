@@ -14,7 +14,7 @@ from raia import backlog as B
 from raia import progress
 from raia.agents import AGENTS, RUNNABLE, identity_key
 from raia.deploy import friendly_llm_error
-from raia.projects import AccessDenied, UsageLimitReached
+from raia.projects import AccessDenied, StaleDraft, UsageLimitReached
 from raia.ui import routes
 from raia.ui.components import (agent_header, artifact_body, handoff_strip, next_step_card, receives_card,
                                 stage_footer, stage_rail)
@@ -159,8 +159,10 @@ def working_screen() -> bool:
                     result = svc.resume(user, proj.id, agent_key, req["decision"])
                 else:
                     result = svc.start_run(user, proj.id, agent_key, req["inputs"])
-        except (AccessDenied, UsageLimitReached) as exc:
+        except (AccessDenied, UsageLimitReached, StaleDraft) as exc:
             st.error(str(exc))
+            if isinstance(exc, StaleDraft):
+                st.session_state.pop(pkey("pending", agent_key), None)
             st.button("Back to the form", icon=I.BACK, key=pkey("work_back", agent_key))
             return True
         except Exception as exc:  # noqa: BLE001 - surfaced to the person

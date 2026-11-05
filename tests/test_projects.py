@@ -55,7 +55,7 @@ from raia.examples import EXAMPLES                               # noqa: E402
 from raia.export import session_bundle                           # noqa: E402
 from raia.pipeline import StageRunner                            # noqa: E402
 from raia.projects import (                                      # noqa: E402
-    EDITOR, OWNER, REVIEWER, AccessDenied, ProjectService, UsageLimitReached, pseudonym,
+    EDITOR, OWNER, REVIEWER, AccessDenied, ProjectService, StaleDraft, UsageLimitReached, pseudonym,
 )
 from raia.rag import ingest_corpus                               # noqa: E402
 from raia.storage import open_repository                         # noqa: E402
@@ -161,7 +161,8 @@ def main() -> None:
     check(repo1.read_artifact("risk_classification") is None,
           "INVARIANT: nothing is persisted while a draft is under review")
     svc.resume(ana, p2.id, "risk_classifier",
-               {"action": "approve", "content": out2["payload"]["draft"], "approver": "Mallory"})
+               {"action": "approve", "draft_id": out2["payload"]["draft_id"], "content": out2["payload"]["draft"],
+                "approver": "Mallory"})
     check(repo2.read_artifact("risk_classification") is not None, "approving in one project persists there")
     check(repo1.read_artifact("risk_classification") is None and svc.has_thread(ana, p1.id, "risk_classifier"),
           "…and leaves the other project's review untouched")
@@ -207,17 +208,45 @@ def main() -> None:
     svc.update_project(ana, p1.id, require_second_approver=True)
     pending = open_repository(p1.id).load_pending("risk_classifier")
     check(pending["run_by"] == ana.id, "the draft records who ran the stage")
-    check(denied(svc.resume, ana, p1.id, "risk_classifier", {"action": "approve", "content": pending["draft"]}),
+    check(denied(svc.resume, ana, p1.id, "risk_classifier", {"action": "approve", "draft_id": pending["draft_id"],
+                                                                   "content": pending["draft"]}),
           "with a second approver required, the runner cannot approve their own stage")
     check(repo1.read_artifact("risk_classification") is None, "INVARIANT: the refused approval persisted nothing")
     out = svc.resume(bruno, p1.id, "risk_classifier",
-                     {"action": "reject", "feedback": "Name the oversight measures.", "reason": "too_vague"})
+                     {"action": "reject", "draft_id": pending["draft_id"],
+                      "feedback": "Name the oversight measures.", "reason": "too_vague"})
     check(out["payload"]["run_by"] == ana.id, "a regeneration keeps the original runner")
-    done = svc.resume(bruno, p1.id, "risk_classifier", {"action": "approve", "content": out["payload"]["draft"]})
+    done = svc.resume(bruno, p1.id, "risk_classifier", {"action": "approve", "draft_id": out["payload"]["draft_id"],
+                                                         "content": out["payload"]["draft"]})
     check(bool(done["commit"]), "a different member approves")
     prov = repo1.read_data("risk_classification")["provenance"]["approval"]
     check(prov["approver_id"] == bruno.id and prov["run_by"] == ana.id,
           "the record shows both the runner and the approver")
+
+    print("== 7b. A decision is bound to the draft it was taken on ==")
+    seen = svc.start_run(ana, p1.id, "risk_classifier", EXAMPLES["risk_classifier"])["payload"]
+    newer = svc.start_run(ana, p1.id, "risk_classifier", EXAMPLES["risk_classifier"])["payload"]
+    check(seen["draft_id"] != newer["draft_id"], "every draft has its own id")
+
+    def stale(decision) -> bool:
+        try:
+            svc.resume(bruno, p1.id, "risk_classifier", decision)
+        except StaleDraft:
+            return True
+        return False
+
+    approved_before = repo1.read_data("risk_classification")["provenance"]["approval"]
+    check(stale({"action": "approve", "draft_id": seen["draft_id"], "content": seen["draft"]}),
+          "approving a draft another run has replaced is refused")
+    check(stale({"action": "approve", "content": newer["draft"]}), "a decision that names no draft is refused")
+    check(stale({"action": "reject", "draft_id": seen["draft_id"], "feedback": "x"}),
+          "…and so is rejecting a replaced draft")
+    check(repo1.read_data("risk_classification")["provenance"]["approval"] == approved_before,
+          "INVARIANT: a refused decision persisted nothing")
+    svc.resume(bruno, p1.id, "risk_classifier",
+               {"action": "approve", "draft_id": newer["draft_id"], "content": newer["draft"]})
+    check(repo1.read_data("risk_classification")["provenance"]["approval"]["approver_id"] == bruno.id,
+          "the current draft is approved normally")
 
     print("== 8. Durability across a restart ==")
     svc.save_intake(ana, p1.id, "requirements_reviewer", EXAMPLES["requirements_reviewer"])
@@ -236,7 +265,8 @@ def main() -> None:
     if svc.has_thread(bruno, p1.id, "requirements_reviewer"):
         check(True, "the paused graph thread itself survived (durable checkpointer)")
         resumed = svc.resume(bruno, p1.id, "requirements_reviewer",
-                             {"action": "approve", "content": repo1.load_pending("requirements_reviewer")["draft"]})
+                             {"action": "approve", "draft_id": svc.runner.draft_at_gate(p1.id, "requirements_reviewer")["draft_id"],
+                              "content": repo1.load_pending("requirements_reviewer")["draft"]})
     else:
         restored = svc.restore(bruno, p1.id, "requirements_reviewer")
         check(restored["status"] == "awaiting_review",
@@ -244,10 +274,12 @@ def main() -> None:
         check(repo1.read_artifact("requirements_review") is None, "INVARIANT: recovery persists nothing on its own")
         check(restored["payload"]["run_by"] == ana.id, "the restored draft still knows who ran it")
         check(denied(svc.resume, ana, p1.id, "requirements_reviewer",
-                     {"action": "approve", "content": restored["payload"]["draft"]}),
+                     {"action": "approve", "draft_id": restored["payload"]["draft_id"],
+                      "content": restored["payload"]["draft"]}),
               "separation of duties still applies after a restore")
         resumed = svc.resume(bruno, p1.id, "requirements_reviewer",
-                             {"action": "approve", "content": restored["payload"]["draft"]})
+                             {"action": "approve", "draft_id": restored["payload"]["draft_id"],
+                      "content": restored["payload"]["draft"]})
     check(bool(resumed["commit"]) and repo1.read_artifact("requirements_review") is not None,
           "the review completes after the restart")
 
@@ -275,9 +307,10 @@ def main() -> None:
     config.MAX_RUNS_PER_DAY = 1
     try:
         carla_p = svc.create_project(carla, "Allowance")
-        svc.start_run(carla, carla_p.id, "risk_classifier", EXAMPLES["risk_classifier"])
+        first = svc.start_run(carla, carla_p.id, "risk_classifier", EXAMPLES["risk_classifier"])
         try:
-            svc.resume(carla, carla_p.id, "risk_classifier", {"action": "reject", "feedback": "again"})
+            svc.resume(carla, carla_p.id, "risk_classifier",
+                       {"action": "reject", "draft_id": first["payload"]["draft_id"], "feedback": "again"})
             check(False, "a regeneration beyond the daily allowance is refused")
         except UsageLimitReached:
             check(True, "a regeneration beyond the daily allowance is refused")
@@ -318,7 +351,8 @@ def main() -> None:
           "…and so are dependents")
     svc.update_project(ana, p1.id, require_second_approver=False)
     run = svc.start_run(ana, p1.id, "requirements_reviewer", EXAMPLES["requirements_reviewer"])
-    svc.resume(ana, p1.id, "requirements_reviewer", {"action": "approve", "content": run["payload"]["draft"]})
+    svc.resume(ana, p1.id, "requirements_reviewer", {"action": "approve", "draft_id": run["payload"]["draft_id"],
+                                                        "content": run["payload"]["draft"]})
     states = {x["agent"]: x for x in svc.stage_summary(ana, p1.id)["stages"]}
     check(states["requirements_reviewer"]["status"] == "approved", "a normal approval is not flagged")
     check(svc.revision_impact(ana, p1.id, "risk_classifier") == ["Requirements Reviewer"],
@@ -333,7 +367,8 @@ def main() -> None:
     check(states["risk_classifier"]["status"] == "in_review" and
           states["requirements_reviewer"]["status"] == "approved",
           "a revision waiting at its gate flags nothing: the approved version is still in force")
-    svc.resume(ana, p1.id, "risk_classifier", {"action": "approve", "content": run["payload"]["draft"]})
+    svc.resume(ana, p1.id, "risk_classifier", {"action": "approve", "draft_id": run["payload"]["draft_id"],
+                                                        "content": run["payload"]["draft"]})
     summary = svc.stage_summary(ana, p1.id)
     states = {x["agent"]: x for x in summary["stages"]}
     check(states["requirements_reviewer"]["status"] == "stale" and
@@ -398,7 +433,12 @@ def main() -> None:
     print("== 12. Leaving, deleting ==")
     svc.remove_member(bruno, p1.id, bruno.id)
     check(denied(svc.get_project, bruno, p1.id), "a member who leaves loses access immediately")
+    svc.start_run(ana, p2.id, "risk_classifier", EXAMPLES["risk_classifier"])
+    thread = {"configurable": {"thread_id": f"{p2.id}::risk_classifier"}}
+    check(svc.runner._checkpointer.get_tuple(thread) is not None, "a project's runs are kept as graph threads")
     svc.delete_project(ana, p2.id)
+    check(svc.runner._checkpointer.get_tuple(thread) is None,
+          "deleting a project deletes its graph threads (answers, drafts, feedback, names)")
     check(denied(svc.get_project, ana, p2.id) and open_repository(p2.id).read_artifact("risk_classification") is None,
           "deleting a project removes it and its blackboard")
     svc.delete_account(carla)
@@ -410,6 +450,11 @@ def main() -> None:
     config.DATABASE_URL, config.AUTH_MODE = "postgresql://u:p@host/db", ""
     check(auth.mode() == "dev" and auth.configuration_problem() is not None,
           "a database-backed deployment without sign-in refuses to open")
+    config.DATABASE_URL = "sqlite:///somewhere.db"
+    check(auth.mode() == "dev" and auth.configuration_problem() is not None,
+          "a SQLite deployment without sign-in refuses to open too: dev mode is never a fallback")
+    config.AUTH_MODE = "dev"
+    check(auth.configuration_problem() is None, "…and opens when dev mode is chosen explicitly")
     config.AUTH_MODE = "google"
     check(auth.configuration_problem() is not None, "Google sign-in without an [auth] block refuses to open")
     config.DATABASE_URL, config.AUTH_MODE = saved_url, saved_mode

@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("RAIA_LLM_PROVIDER", "mock")
 os.environ.setdefault("RAIA_FAKE_EMBED", "1")
+os.environ.setdefault("RAIA_AUTH", "dev")
 _tmp = tempfile.mkdtemp(prefix="raia_consistency_")
 os.environ.setdefault("RAIA_WORKSPACE_DIR", str(Path(_tmp) / "workspace"))
 

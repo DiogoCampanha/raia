@@ -36,6 +36,7 @@ still requires an explicit approval, and still reaches ``persist`` the only way
 anything ever reaches it. Nothing is written that a human did not approve.
 """
 
+import uuid
 from typing import Any, Dict, List, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -75,6 +76,9 @@ def _generate(state: StageState) -> StageState:
     preset = state.get("preset")
     if preset and not state.get("feedback"):
         payload = dict(preset)
+        # A draft saved before drafts carried an id gets one now; the gate
+        # binds every decision to it either way.
+        payload["draft_id"] = payload.get("draft_id") or uuid.uuid4().hex
         payload["restored"] = True
         payload["attempt"] = payload.get("attempt", attempt)
         return {"run": payload, "preset": {}}
@@ -87,6 +91,9 @@ def _generate(state: StageState) -> StageState:
         artifact_key=agent.spec.output_key,
         attempt=attempt,
     )
+    # Every draft has its own identity. A decision at the gate names the draft
+    # it was taken on, and is refused if a newer draft has replaced it since.
+    payload["draft_id"] = uuid.uuid4().hex
     payload["required_sections"] = list(agent.spec.required_sections)
     payload["checklist_keys"] = result.rationale.checklist_keys() if result.rationale else []
     # Who ran the stage and with which answers. The first lets a project
@@ -500,6 +507,32 @@ class StageRunner:
             Command(resume=decision), config=self._config(project, agent_key)
         )
         return self._outcome(result)
+
+    def draft_at_gate(self, project: str, agent_key: str) -> Optional[Dict[str, Any]]:
+        """The draft the paused graph thread will act on, or ``None``."""
+        try:
+            state = self._graph.get_state(self._config(project, agent_key))
+        except Exception:  # noqa: BLE001 - no thread is the same as no draft
+            return None
+        if not (state and state.next):
+            return None
+        return (state.values or {}).get("run") or None
+
+    def forget(self, project: str) -> None:
+        """Delete every graph thread of a project from the checkpointer.
+
+        A paused or finished thread holds the intake answers, drafts, reviewer
+        feedback and approver names of its runs. Deleting a project must not
+        leave them behind in the checkpoint store.
+        """
+        from .agents import RUNNABLE
+
+        for key in RUNNABLE:
+            thread = self._config(project, key)["configurable"]["thread_id"]
+            try:
+                self._checkpointer.delete_thread(thread)
+            except Exception:  # noqa: BLE001 - a thread that never existed
+                pass
 
     def has_thread(self, project: str, agent_key: str) -> bool:
         """True when a paused graph thread still exists in this process.

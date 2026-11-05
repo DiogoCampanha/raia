@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("RAIA_LLM_PROVIDER", "mock")
 os.environ.setdefault("RAIA_FAKE_EMBED", "1")
+os.environ.setdefault("RAIA_AUTH", "dev")
 
 from raia import validators as V                                  # noqa: E402
 from raia.rationale import coverage, principles, risk_screen, story_map, traceability  # noqa: E402

@@ -84,7 +84,9 @@ streamlit run app.py
 
 Locally there is nothing else to configure: users and projects live in a
 SQLite file under `workspace/`, each project's blackboard is a Git repository,
-and you are signed in as a fixed local developer identity. A shared deployment
+and you are signed in as a fixed local developer identity (`RAIA_AUTH=dev`,
+already set in `.env.example`; without it, or Google sign-in, the app refuses
+to open, so a deployment that forgot its sign-in fails closed). A shared deployment
 uses Google sign-in and PostgreSQL instead — see
 [Hosted deployment](#hosted-deployment-streamlit-community-cloud--neon--google-sign-in).
 
@@ -329,7 +331,7 @@ only when its file really is the official wording.
 | `RAIA_WORKSPACE_DIR` | `./workspace` | local git blackboards and SQLite registry (git-ignored) |
 | `RAIA_DATABASE_URL` | SQLite under the workspace | PostgreSQL URL (e.g. Neon) for a shared deployment |
 | `RAIA_STORE` | `git` locally, `database` with PostgreSQL | where project blackboards live |
-| `RAIA_AUTH` | `google` if `[auth]` is set, else `dev` | a PostgreSQL deployment never falls back to `dev` |
+| `RAIA_AUTH` | `google` if `[auth]` is set | `dev` must be set explicitly; with neither, the app refuses to open |
 | `RAIA_ADMIN_EMAILS` | — | may download the pseudonymized research dataset |
 | `RAIA_PSEUDONYM_KEY` | — | keyed participant codes, stable across exports |
 | `RAIA_JIRA_KEY` | — | optional: encrypts a person's Jira API token; without it the token is kept for the session only |

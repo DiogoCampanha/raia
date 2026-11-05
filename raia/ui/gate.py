@@ -40,7 +40,7 @@ from raia.deploy import friendly_llm_error
 from raia.examples import CASES, DEFAULT_CASE, EXAMPLE_KEY, example_for
 from raia.fields import InputField
 from raia.rationale.coverage import ORIGIN_KEY, next_requirement
-from raia.projects import AccessDenied, Project, UsageLimitReached
+from raia.projects import AccessDenied, Project, StaleDraft, UsageLimitReached
 
 from raia.contract import review as RV
 
@@ -1275,12 +1275,15 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
                      disabled=blocked_by_four_eyes or bool(edit_errors) or bool(missing), icon=I.APPROVE):
             with st.spinner("Committing to the audit trail"):
                 try:
-                    decision = {"action": "approve", "review": payload.get("review") or RV.empty()}
+                    decision = {"action": "approve", "draft_id": payload.get("draft_id", ""),
+                                "review": payload.get("review") or RV.empty()}
                     if changed or reviewed:
                         decision["record"] = to_approve
                     result = svc.resume(user, project.id, agent_key, decision)
-                except AccessDenied as exc:
+                except (AccessDenied, StaleDraft) as exc:
                     st.error(str(exc))
+                    if isinstance(exc, StaleDraft):
+                        st.session_state.pop(pkey("pending", agent_key), None)
                     return
                 except Exception as exc:  # noqa: BLE001 - surfaced to the person
                     st.error(friendly_llm_error(exc))
@@ -1315,6 +1318,7 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
             # screen, and the new draft opens at its top.
             st.session_state[pkey("work", agent_key)] = {
                 "kind": "reject",
-                "decision": {"action": "reject", "feedback": feedback or dict(REJECTION_REASONS)[reason],
+                "decision": {"action": "reject", "draft_id": payload.get("draft_id", ""),
+                             "feedback": feedback or dict(REJECTION_REASONS)[reason],
                              "reason": reason}}
             st.rerun()
