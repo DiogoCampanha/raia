@@ -298,6 +298,7 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
     gpai = is_yes(inputs, "gpai_provider")
     public_sector = is_yes(inputs, "public_sector")
     art63 = is_yes(inputs, "art63_claim")
+    profiling = is_yes(inputs, "profiling")
     significant = chosen(inputs, "significant_effects", "unsure")
 
     techniques = _clean(selected(inputs, "ai_techniques"))
@@ -397,12 +398,33 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
 
     # -- 3. Tier assignment -------------------------------------------------
 
+    # A prohibition always dominates a high-risk match. A restricted practice
+    # (allowed only under a narrow legal exception) stays restricted even when
+    # its purpose area is also on a high-risk list — answering the area question
+    # honestly must never soften the verdict. If the exception does apply, the
+    # system is still high-risk, so the high-risk obligations are assembled too.
+    eu_high_match = bool(annex_i or eu_areas)
+    br_high_match = bool(br_areas)
+
+    # The narrow-task exemption (EU AI Act Art. 6(3)) exists only for Annex III
+    # systems, and never for one that profiles natural persons: such a system is
+    # always high-risk. A claim outside those bounds is recorded and refused.
+    art63_valid = art63 and bool(eu_areas) and not profiling
+    if art63 and profiling and eu_areas:
+        r.findings.append(
+            Finding(
+                code="exemption.profiling",
+                label="Narrow-task exemption claimed for a system that profiles people",
+                detail="not available: an Annex III system that profiles natural persons is always high-risk",
+            )
+        )
+
     if hard_eu:
         tier_eu = TIER_UNACCEPTABLE
-    elif conditional and not (eu_areas or annex_i):
+    elif conditional:
         tier_eu = TIER_RESTRICTED
-    elif annex_i or eu_areas:
-        tier_eu = TIER_HIGH_EXEMPT if art63 else TIER_HIGH
+    elif eu_high_match:
+        tier_eu = TIER_HIGH_EXEMPT if art63_valid else TIER_HIGH
     elif [t for t in triggers if t]:
         tier_eu = TIER_LIMITED
     else:
@@ -410,15 +432,15 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
 
     if hard_br:
         tier_br = BR_EXCESSIVE
-    elif conditional and not br_areas:
+    elif conditional:
         tier_br = TIER_RESTRICTED
-    elif br_areas:
+    elif br_high_match:
         tier_br = BR_HIGH
     else:
         tier_br = BR_NOT_LISTED
 
-    eu_is_high = tier_eu in (TIER_HIGH, TIER_HIGH_EXEMPT)
-    br_is_high = tier_br == BR_HIGH
+    eu_is_high = tier_eu in (TIER_HIGH, TIER_HIGH_EXEMPT) or (tier_eu == TIER_RESTRICTED and eu_high_match)
+    br_is_high = tier_br == BR_HIGH or (tier_br == TIER_RESTRICTED and br_high_match)
 
     r.verdict = {
         "eu_tier": tier_eu,
@@ -427,6 +449,8 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
         "br_in_scope": br_in_scope,
         "role": role,
         "art_6_3_exemption_claimed": art63,
+        "art_6_3_exemption_available": art63_valid,
+        "profiling": profiling,
         "gpai_obligations": gpai,
     }
 
@@ -454,7 +478,7 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
                     SECTION_EU_DEPLOYER,
                     "deployer is a public body or provides essential services",
                 )
-        if art63:
+        if art63_valid:
             add(
                 "eu.art6_3_doc",
                 "EU",
@@ -504,7 +528,18 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
             "specific legal basis and authorisation before proceeding.",
             type="prohibited_practice", decision_owner="legal_compliance", blocking=True,
         )
-    if art63:
+    if art63 and not art63_valid:
+        if profiling and eu_areas:
+            why = ("the system profiles natural persons, and an Annex III system that profiles people "
+                   "is always high-risk")
+        else:
+            why = "the exemption applies only to the Annex III high-risk areas, and none was selected"
+        r.raise_issue(
+            "The narrow-task exemption is claimed but is not available: " + why + ". The screen "
+            "classifies the system as high-risk. Withdraw the claim, or correct the answers if they are wrong.",
+            type="missing_information", decision_owner="legal_compliance", blocking=False,
+        )
+    if art63_valid:
         r.raise_issue(
             "The narrow-task exemption is claimed. It must be documented before market placement "
             "and remains reviewable by authorities — the rule engine cannot confirm it.",
@@ -675,6 +710,8 @@ def run(inputs: Dict[str, Any]) -> RationaleResult:
             "annex_i_product": annex_i,
             "gpai_provider": gpai,
             "art_6_3_claimed": art63,
+            "art_6_3_available": art63_valid,
+            "profiling": profiling,
             "art_6_3_reason": text_of(inputs, "art63_reason"),
             "ai_techniques": techniques,
             "ai_pipeline": pipeline,

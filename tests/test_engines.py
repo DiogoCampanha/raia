@@ -69,6 +69,29 @@ def test_risk_screen() -> None:
     check(any("exemption" in i.lower() for i in exempt.open_issues),
           "narrow-task claim is escalated, never confirmed by the engine")
 
+    profiled = risk_screen.run({**RESUME_INTAKE, "art63_claim": "yes", "profiling": "yes"})
+    check(profiled.verdict["eu_tier"] == risk_screen.TIER_HIGH,
+          "a system that profiles people cannot claim the narrow-task exemption: plain high-risk")
+    check(not profiled.verdict["art_6_3_exemption_available"]
+          and "eu.art6_3_doc" not in {o["code"] for o in profiled.data["obligations"]},
+          "…the exemption is recorded as unavailable and no exemption paperwork is assembled")
+    check(any("not available" in i for i in profiled.open_issues),
+          "…and the refused claim is escalated for a person to withdraw or correct")
+    annex_i_only = risk_screen.run({**RESUME_INTAKE, "purpose_areas": ["none"], "annex_i_product": "yes",
+                                    "art63_claim": "yes"})
+    check(annex_i_only.verdict["eu_tier"] == risk_screen.TIER_HIGH,
+          "the exemption exists only for the Annex III areas, not the product-safety route")
+
+    for areas in (["law_enforcement"], ["biometrics", "law_enforcement"]):
+        rbi = risk_screen.run({**RESUME_INTAKE, "purpose_areas": areas, "prohibited_practices": ["realtime_rbi"]})
+        check(rbi.verdict["eu_tier"] == risk_screen.TIER_RESTRICTED
+              and rbi.verdict["br_tier"] == risk_screen.TIER_RESTRICTED,
+              f"a restricted practice stays restricted when its area is also declared ({', '.join(areas)})")
+    check({"eu.art9", "eu.art14", "br.aia"} <= {o["code"] for o in rbi.data["obligations"]},
+          "…and the high-risk obligations still apply if the legal exception is used")
+    check(any(m["blocking"] and m["type"] == "prohibited_practice" for m in rbi.typed_issues()),
+          "…with a blocking issue for legal")
+
     chat = risk_screen.run({**RESUME_INTAKE, "purpose_areas": ["none"],
                             "transparency_triggers": ["chat_interaction"]})
     check(chat.verdict["eu_tier"] == risk_screen.TIER_LIMITED, "chatbot -> limited risk")
