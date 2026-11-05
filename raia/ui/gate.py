@@ -1075,7 +1075,7 @@ def _card_review(project: Project, agent_key: str, payload: Dict[str, Any]) -> C
     user = current_user()
     return CardReview(state=review["cards"], key=pkey("cr", agent_key, str(payload.get("attempt", 1))),
                       on_change=lambda: _persist_review(project.id, agent_key, payload),
-                      by=user.label, enabled=project.can("review"))
+                      by=user.ref, enabled=project.can("review"))
 
 
 def _draft_decisions(project: Project, agent_key: str, payload: Dict[str, Any]) -> Decisions:
@@ -1083,7 +1083,7 @@ def _draft_decisions(project: Project, agent_key: str, payload: Dict[str, Any]) 
     user = current_user()
 
     def take(d: Dict[str, Any], choice: str, why: str) -> Optional[str]:
-        review["decisions"][d["key"]] = {"choice": choice, "rationale": why, "by": user.label,
+        review["decisions"][d["key"]] = {"choice": choice, "rationale": why, "by": user.ref,
                                          "at": RV._now(), "issue": d["id"]}
         _persist_review(project.id, agent_key, payload)
         return None
@@ -1211,7 +1211,7 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
     base = edited_record if changed else original
     # What will be approved: the record with the reviewer's edits, and the
     # cards they rejected taken out (or, if computed, marked overridden).
-    to_approve = RV.apply(agent_key, base, payload.get("review"), by=user.label) if base else base
+    to_approve = RV.apply(agent_key, base, payload.get("review"), by=user.ref) if base else base
     reviewed = bool(base) and _core_differs(base, to_approve)
     with tab_read:
         tally = _review_bar(agent_key, original, cards) if original else {}
@@ -1226,16 +1226,19 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
                 shown = _preview(agent_key, payload, edited_record)
             except Exception as exc:  # noqa: BLE001 - shown to the reviewer
                 edit_note.error(f"The edited record could not be rendered: {exc}")
+        # What is shown names people; what is approved keeps references.
+        shown_payload = svc.humanize(payload)
         if st.toggle("Preview the version you will approve", key=pkey("pv", agent_key), disabled=not reviewed,
                      help="With the cards you rejected taken out and everything re-computed."
                           + ("" if reviewed else " Available once your review changes the record.")) and reviewed:
             try:
-                draft_view(agent_key, payload, _preview(agent_key, payload, to_approve), decide=decisions)
+                draft_view(agent_key, shown_payload, svc.humanize(_preview(agent_key, payload, to_approve)),
+                           decide=decisions)
             except Exception as exc:  # noqa: BLE001 - shown to the reviewer
                 st.error(f"The reviewed record could not be rendered: {exc}")
         else:
-            draft_view(agent_key, payload, shown, review=cards if original else None, decide=decisions,
-                       before=strip)
+            draft_view(agent_key, shown_payload, svc.humanize(shown), review=cards if original else None,
+                       decide=decisions, before=strip)
     with tab_evidence:
         evidence_panel(payload.get("evidence") or [])
     with tab_reason:

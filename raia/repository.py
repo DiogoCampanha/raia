@@ -35,10 +35,12 @@ cannot drift apart in behaviour:
 
 import datetime as _dt
 import json
+import re
 import shutil
 import subprocess
+import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import config, provenance
 from .sanitize import sanitize_artifact
@@ -75,6 +77,22 @@ DECIDED = "decided"
 ISSUE_STATUSES = (OPEN, DECIDED, RESOLVED, ACCEPTED)
 
 
+#: How many times a read-modify-write of a register is recomputed when another
+#: writer committed in between (see :meth:`BaseRepository.atomic`).
+ATOMIC_ATTEMPTS = 5
+
+
+class ConcurrentEdit(RuntimeError):
+    """Another write reached the project between this write's read and its commit."""
+
+    def __init__(self, project: str = "") -> None:
+        super().__init__(
+            "Someone else changed this project at the same moment. Nothing was lost: "
+            "reload and try again."
+        )
+        self.project = project
+
+
 def _apply_decision(issue: Dict[str, Any], decision: Dict[str, Any]) -> None:
     """Record a person's decision on a register entry."""
     issue["status"] = DECIDED
@@ -103,7 +121,8 @@ def _git_available() -> bool:
 
 
 def _now() -> str:
-    return _dt.datetime.now().isoformat(timespec="seconds")
+    """UTC, like every other timestamp in the audit trail."""
+    return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
 
 
 class BaseRepository:
@@ -126,8 +145,22 @@ class BaseRepository:
     def _read_file(self, name: str) -> Optional[str]:
         raise NotImplementedError
 
-    def _commit_files(self, files: Dict[str, str], message: str) -> str:
+    def _commit_files(self, files: Dict[str, str], message: str,
+                      expected_head: Optional[str] = None) -> str:
+        """Record ``files`` as one version.
+
+        With ``expected_head``, refuse with :class:`ConcurrentEdit` unless the
+        project's latest version is still that one: the write was computed
+        from what was read at that version.
+        """
         raise NotImplementedError
+
+    def head(self) -> str:
+        """An identifier of the project's latest recorded version."""
+        raise NotImplementedError
+
+    def refresh(self) -> None:
+        """Forget any read cache, so the next read sees other writers' versions."""
 
     def history(self, limit: int = 50) -> List[Dict[str, str]]:
         raise NotImplementedError
@@ -214,9 +247,33 @@ class BaseRepository:
                                            indent=2, ensure_ascii=False, default=str),
         }
 
-    def commit_files(self, files: Dict[str, str], message: str) -> str:
+    def commit_files(self, files: Dict[str, str], message: str,
+                     expected_head: Optional[str] = None) -> str:
         """Record several files as one version (used for register updates)."""
-        return self._commit_files(files, message)
+        return self._commit_files(files, message, expected_head=expected_head)
+
+    def atomic(self, build: Callable[[], Tuple[Dict[str, str], str, Any]]) -> Tuple[Any, str]:
+        """Run a read-modify-write of the registers without losing anyone's change.
+
+        ``build`` reads what it needs from this repository, computes the new
+        content and returns ``(files, message, result)``. The files are
+        committed only if no other version was recorded since the read began;
+        otherwise ``build`` runs again on the fresh state. Two people ticking
+        two stories at the same moment therefore both see their tick kept.
+        Returns ``(result, commit)``; ``commit`` is empty when nothing changed.
+        """
+        for attempt in range(ATOMIC_ATTEMPTS):
+            self.refresh()
+            base = self.head()
+            files, message, result = build()
+            if not files:
+                return result, ""
+            try:
+                return result, self._commit_files(files, message, expected_head=base)
+            except ConcurrentEdit:
+                if attempt == ATOMIC_ATTEMPTS - 1:
+                    raise
+        raise RuntimeError("unreachable")
 
     def upstream_context(self, keys: List[str]) -> str:
         """Approved upstream artifacts, concatenated as prompt context."""
@@ -257,6 +314,7 @@ class BaseRepository:
         run_provenance: Optional[Dict[str, Any]] = None,
         extra_files: Optional[Dict[str, str]] = None,
         sprint_id: str = "",
+        expected_head: Optional[str] = None,
     ) -> str:
         """Persist an approved artifact — Markdown and sidecar, one commit.
 
@@ -294,6 +352,7 @@ class BaseRepository:
             files,
             f"raia({key}): human-approved update by {approved_by}"
             + (f" ({sprint_id})" if sprint_id else ""),
+            expected_head=expected_head,
         )
         self.clear_pending_for(key)
         return commit
@@ -326,52 +385,59 @@ class BaseRepository:
         draft before approving it — as ``issue["decision"] = {"choice",
         "rationale", "by", "at"}``. It is recorded decided; if the same issue is
         already in the register and still open, the decision is applied to it.
+
+        The register is read and written in one :meth:`atomic` step, so an
+        issue raised at the same moment by another approval is never lost and
+        no identifier is handed out twice.
         """
-        existing = self.open_issues()
-        known = {_fingerprint(i.get("text", "")) for i in existing}
-        stamp = _now()
-        added = 0
 
-        decided_existing = 0
-        for item in issues:
-            meta = item if isinstance(item, dict) else {"description": item}
-            text = str(meta.get("description") or meta.get("text") or "").strip()
-            decision = meta.get("decision") if isinstance(meta.get("decision"), dict) else None
-            if not text:
-                continue
-            if _fingerprint(text) in known:
+        def build():
+            existing = self.open_issues()
+            known = {_fingerprint(i.get("text", "")) for i in existing}
+            stamp = _now()
+            added = decided_existing = 0
+            for item in issues:
+                meta = item if isinstance(item, dict) else {"description": item}
+                text = str(meta.get("description") or meta.get("text") or "").strip()
+                decision = meta.get("decision") if isinstance(meta.get("decision"), dict) else None
+                if not text:
+                    continue
+                if _fingerprint(text) in known:
+                    if decision and decision.get("choice"):
+                        for old in existing:
+                            if _fingerprint(old.get("text", "")) == _fingerprint(text) and old.get("status") == OPEN:
+                                _apply_decision(old, decision)
+                                decided_existing += 1
+                    continue
+                known.add(_fingerprint(text))
+                existing.append(
+                    {
+                        "id": _next_issue_id(existing),
+                        "text": text,
+                        "type": meta.get("type") or "missing_information",
+                        "decision_owner": meta.get("decision_owner") or "product",
+                        "blocking": bool(meta.get("blocking")),
+                        "options": list(meta.get("options") or []),
+                        "links": list(meta.get("links") or []),
+                        "record_id": meta.get("id", ""),
+                        "origin": meta.get("origin") or "agent",
+                        "raised_by": raised_by,
+                        "artifact": artifact,
+                        "commit": commit,
+                        "raised_at": stamp,
+                        "status": OPEN,
+                    }
+                )
                 if decision and decision.get("choice"):
-                    for old in existing:
-                        if _fingerprint(old.get("text", "")) == _fingerprint(text) and old.get("status") == OPEN:
-                            _apply_decision(old, decision)
-                            decided_existing += 1
-                continue
-            known.add(_fingerprint(text))
-            existing.append(
-                {
-                    "id": f"ISSUE-{len(existing) + 1}",
-                    "text": text,
-                    "type": meta.get("type") or "missing_information",
-                    "decision_owner": meta.get("decision_owner") or "product",
-                    "blocking": bool(meta.get("blocking")),
-                    "options": list(meta.get("options") or []),
-                    "links": list(meta.get("links") or []),
-                    "record_id": meta.get("id", ""),
-                    "origin": meta.get("origin") or "agent",
-                    "raised_by": raised_by,
-                    "artifact": artifact,
-                    "commit": commit,
-                    "raised_at": stamp,
-                    "status": OPEN,
-                }
-            )
-            if decision and decision.get("choice"):
-                _apply_decision(existing[-1], decision)
-            added += 1
+                    _apply_decision(existing[-1], decision)
+                added += 1
+            if not (added or decided_existing):
+                return {}, "", 0
+            message = (f"raia(open_issues): {added} raised by {raised_by}"
+                       + (f", {decided_existing} decided" if decided_existing else ""))
+            return self._issue_files(existing), message, added
 
-        if added or decided_existing:
-            self._write_open_issues(existing, f"raia(open_issues): {added} raised by {raised_by}"
-                                    + (f", {decided_existing} decided" if decided_existing else ""))
+        added, _ = self.atomic(build)
         return added
 
     def set_issue_status(self, issue_id: str, status: str, note: str = "", by: str = "human",
@@ -379,32 +445,35 @@ class BaseRepository:
         """Settle (or reopen) one register entry. ``decision`` is the option chosen, for DECIDED."""
         if status not in ISSUE_STATUSES:
             raise ValueError(f"Unknown status '{status}'. Use one of {ISSUE_STATUSES}.")
-        issues = self.open_issues()
-        for issue in issues:
-            if issue.get("id") == issue_id:
-                if status == OPEN:
-                    for k in ("decision", "rationale", "decided_by", "decided_at",
-                              "resolution_note", "resolved_by", "resolved_at"):
-                        issue.pop(k, None)
-                    issue["status"] = OPEN
-                    issue["reopened_by"], issue["reopened_at"] = by, _now()
-                    self._write_open_issues(issues, f"raia(open_issues): {issue_id} reopened by {by}")
-                    return True
-                if status == DECIDED:
-                    _apply_decision(issue, {"choice": decision, "rationale": note, "by": by, "at": _now()})
-                    self._write_open_issues(issues, f"raia(open_issues): {issue_id} decided by {by}")
-                    return True
+
+        def build():
+            issues = self.open_issues()
+            issue = next((i for i in issues if i.get("id") == issue_id), None)
+            if issue is None:
+                return {}, "", False
+            if status == OPEN:
+                for k in ("decision", "rationale", "decided_by", "decided_at",
+                          "resolution_note", "resolved_by", "resolved_at"):
+                    issue.pop(k, None)
+                issue["status"] = OPEN
+                issue["reopened_by"], issue["reopened_at"] = by, _now()
+                message = f"raia(open_issues): {issue_id} reopened by {by}"
+            elif status == DECIDED:
+                _apply_decision(issue, {"choice": decision, "rationale": note, "by": by, "at": _now()})
+                message = f"raia(open_issues): {issue_id} decided by {by}"
+            else:
                 issue["status"] = status
                 issue["resolution_note"] = note
                 issue["resolved_by"] = by
                 issue["resolved_at"] = _now()
-                self._write_open_issues(
-                    issues, f"raia(open_issues): {issue_id} marked {status} by {by}"
-                )
-                return True
-        return False
+                message = f"raia(open_issues): {issue_id} marked {status} by {by}"
+            return self._issue_files(issues), message, True
 
-    def _write_open_issues(self, issues: List[Dict[str, Any]], message: str) -> None:
+        ok, _ = self.atomic(build)
+        return ok
+
+    def _issue_files(self, issues: List[Dict[str, Any]]) -> Dict[str, str]:
+        """The register's two files (Markdown and sidecar) for one commit."""
         filename = ARTIFACT_FILES["open_issues"]
         lines = [
             "<!--  RAIA artifact: open_issues | maintained automatically from agent runs  -->",
@@ -440,16 +509,13 @@ class BaseRepository:
                 )
             lines.append("")
 
-        self._commit_files(
-            {
-                filename: "\n".join(lines),
-                _sidecar(filename): json.dumps(
-                    {"artifact": "open_issues", "structured": {"issues": issues}},
-                    indent=2, ensure_ascii=False,
-                ),
-            },
-            message,
-        )
+        return {
+            filename: "\n".join(lines),
+            _sidecar(filename): json.dumps(
+                {"artifact": "open_issues", "structured": {"issues": issues}},
+                indent=2, ensure_ascii=False,
+            ),
+        }
 
     # -- Pending drafts (restart resilience) -----------------------------------
 
@@ -489,6 +555,12 @@ class BaseRepository:
         self._pending_delete(agent_key)
 
 
+#: One lock per project folder, so two sessions in this process never interleave
+#: a check-and-commit on the same Git repository.
+_PATH_LOCKS: Dict[str, threading.RLock] = {}
+_PATH_LOCKS_GUARD = threading.Lock()
+
+
 class ArtifactRepository(BaseRepository):
     """Git-versioned blackboard for a single project, on local disk."""
 
@@ -525,21 +597,36 @@ class ArtifactRepository(BaseRepository):
         f = self.artifacts_dir / name
         return f.read_text(encoding="utf-8") if f.exists() else None
 
-    def _commit_files(self, files: Dict[str, str], message: str) -> str:
-        for name, content in files.items():
-            (self.artifacts_dir / name).write_text(content, encoding="utf-8")
-        stamp = _now()
-        if not self._use_git:
-            log = self.path / "history.json"
-            entries = json.loads(log.read_text()) if log.exists() else []
-            entries.append({"files": list(files), "message": message, "at": stamp})
-            log.write_text(json.dumps(entries, indent=2))
-            return stamp
-        for name in files:
-            self._run_git("add", str(Path("artifacts") / name))
-        self._run_git("commit", "-q", "-m", message)
-        rev = self._run_git("rev-parse", "--short", "HEAD")
-        return rev.stdout.strip() or stamp
+    def _lock(self) -> threading.RLock:
+        with _PATH_LOCKS_GUARD:
+            return _PATH_LOCKS.setdefault(str(self.path.resolve()), threading.RLock())
+
+    def head(self) -> str:
+        if self._use_git:
+            rev = self._run_git("rev-parse", "HEAD")
+            return rev.stdout.strip() if rev.returncode == 0 else "0"
+        log = self.path / "history.json"
+        return str(len(json.loads(log.read_text())) if log.exists() else 0)
+
+    def _commit_files(self, files: Dict[str, str], message: str,
+                      expected_head: Optional[str] = None) -> str:
+        with self._lock():
+            if expected_head is not None and self.head() != str(expected_head):
+                raise ConcurrentEdit(self.project)
+            for name, content in files.items():
+                (self.artifacts_dir / name).write_text(content, encoding="utf-8")
+            stamp = _now()
+            if not self._use_git:
+                log = self.path / "history.json"
+                entries = json.loads(log.read_text()) if log.exists() else []
+                entries.append({"files": list(files), "message": message, "at": stamp})
+                log.write_text(json.dumps(entries, indent=2))
+                return stamp
+            for name in files:
+                self._run_git("add", str(Path("artifacts") / name))
+            self._run_git("commit", "-q", "-m", message)
+            rev = self._run_git("rev-parse", "--short", "HEAD")
+            return rev.stdout.strip() or stamp
 
     def current_files(self) -> Dict[str, str]:
         if not self.artifacts_dir.exists():
@@ -550,11 +637,18 @@ class ArtifactRepository(BaseRepository):
         }
 
     def verify_history(self) -> Dict[str, Any]:
+        from .storage import verify_events
+
+        with self._lock():
+            events = verify_events(self._event_rows(chain_legacy=True))
+        if not events["ok"]:
+            return events
         if not self._use_git:
-            return {"ok": True, "detail": "plain history log (git not installed)"}
+            return {"ok": True, "detail": f"plain history log (git not installed); {events['detail']}"}
         res = self._run_git("fsck", "--no-dangling")
-        return {"ok": res.returncode == 0, "detail": "git object store verified"
-                if res.returncode == 0 else (res.stderr.strip() or "git fsck failed")}
+        if res.returncode != 0:
+            return {"ok": False, "detail": res.stderr.strip() or "git fsck failed"}
+        return {"ok": True, "detail": f"git object store verified; {events['detail']}"}
 
     # -- Working state ---------------------------------------------------------
 
@@ -603,22 +697,61 @@ class ArtifactRepository(BaseRepository):
         artifact tree: it is research data about the work, not part of the
         project's audit trail.
         """
-        self.path.mkdir(parents=True, exist_ok=True)
-        log = self.path / "evaluation_events.jsonl"
-        entry = {"at": _now(), "kind": kind, **payload}
-        with log.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+        from .storage import GENESIS, event_digest
 
-    def events(self) -> List[Dict[str, Any]]:
+        self.path.mkdir(parents=True, exist_ok=True)
+        with self._lock():
+            rows = self._event_rows(chain_legacy=True)
+            seq = len(rows) + 1
+            parent = rows[-1]["digest"] if rows else GENESIS
+            at = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="microseconds")
+            body = json.dumps(payload, ensure_ascii=False, default=str)
+            line = {"seq": seq, "at": at, "kind": kind, "payload": body, "parent_digest": parent,
+                    "digest": event_digest(parent, seq, at, kind, body)}
+            with (self.path / "evaluation_events.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(line, ensure_ascii=False) + "\n")
+
+    def _event_rows(self, chain_legacy: bool = False) -> List[Dict[str, Any]]:
+        """The stored event lines. Lines written before events were chained are
+        chained once, in order, the first time a new event is recorded."""
+        from .storage import GENESIS, event_digest
+
         log = self.path / "evaluation_events.jsonl"
         if not log.exists():
             return []
-        out = []
+        rows = []
         for line in log.read_text(encoding="utf-8").splitlines():
             try:
-                out.append(json.loads(line))
+                rows.append(json.loads(line))
             except ValueError:
                 continue
+        if chain_legacy and any("digest" not in r for r in rows):
+            parent, chained = GENESIS, []
+            for i, r in enumerate(rows, 1):
+                if "digest" in r:
+                    body, at, kind = r["payload"], r["at"], r["kind"]
+                else:
+                    at, kind = r.pop("at", ""), r.pop("kind", "")
+                    body = json.dumps(r, ensure_ascii=False, default=str)
+                digest = event_digest(parent, i, at, kind, body)
+                chained.append({"seq": i, "at": at, "kind": kind, "payload": body,
+                                "parent_digest": parent, "digest": digest})
+                parent = digest
+            log.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in chained), encoding="utf-8")
+            rows = chained
+        return rows
+
+    def events(self) -> List[Dict[str, Any]]:
+        out = []
+        for r in self._event_rows():
+            if "digest" not in r:          # a line from before events were chained
+                out.append(r)
+                continue
+            try:
+                body = json.loads(r["payload"])
+            except ValueError:
+                body = {}
+            out.append({"at": r["at"], "kind": r["kind"], **body})
         return out
 
     # -- Audit trail -----------------------------------------------------------
@@ -657,6 +790,13 @@ class ArtifactRepository(BaseRepository):
         if not config.WORKSPACE_DIR.exists():
             return []
         return sorted(p.name for p in config.WORKSPACE_DIR.iterdir() if p.is_dir())
+
+
+def _next_issue_id(issues: List[Dict[str, Any]]) -> str:
+    """One more than the highest ISSUE-n in the register (never reused)."""
+    numbers = [int(m.group(1)) for i in issues
+               for m in [re.fullmatch(r"ISSUE-(\d+)", str(i.get("id") or ""))] if m]
+    return f"ISSUE-{max(numbers, default=0) + 1}"
 
 
 def _fingerprint(text: str) -> str:

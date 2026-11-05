@@ -37,7 +37,8 @@ if agent_key not in RUNNABLE:
 agent = RUNNABLE[agent_key]
 spec = agent.spec
 ident = identity_key(agent_key)          # a mode wears its parent agent's identity
-repo = svc.repository(user, proj.id, "view")
+# A read-only view that names people; the record itself names them by reference.
+repo = svc.reader(user, proj.id)
 summary = svc.stage_summary(user, proj.id)
 stages = summary["stages"]
 state = next(s for s in stages if s["agent"] == ident)
@@ -360,7 +361,7 @@ def body() -> None:
                      "then confirm above that they reflect this project.", icon=I.WARN)
             return
         if ORIGIN_KEY in inputs:
-            inputs[ORIGIN_KEY] = {**inputs[ORIGIN_KEY], "reviewed_by": user.label}
+            inputs[ORIGIN_KEY] = {**inputs[ORIGIN_KEY], "reviewed_by": user.ref}
         # The run happens on the next redraw, on a page that shows only that the
         # agent is working (working_screen). The token makes a double click one run.
         st.session_state[WORK] = {"kind": "run", "inputs": inputs, "token": uuid.uuid4().hex}

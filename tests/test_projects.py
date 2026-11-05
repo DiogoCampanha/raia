@@ -58,6 +58,7 @@ from raia.projects import (                                      # noqa: E402
     EDITOR, OWNER, REVIEWER, AccessDenied, ProjectService, StaleDraft, UsageLimitReached, pseudonym,
 )
 from raia.rag import ingest_corpus                               # noqa: E402
+from raia.repository import ConcurrentEdit                       # noqa: E402
 from raia.storage import open_repository                         # noqa: E402
 
 FAILURES = []
@@ -173,8 +174,21 @@ def main() -> None:
     print("== 5. Approvals carry the signed-in identity ==")
     data = repo2.read_data("risk_classification")
     approval = data["provenance"]["approval"]
-    check(approval["approved_by"] == ana.label and approval["approver_id"] == ana.id,
+    check(approval["approved_by"] == ana.ref and approval["approver_id"] == ana.id,
           "the approver is the authenticated person, not the name passed by the caller")
+    recorded = "\n".join(repo2.current_files().values()) + "\n".join(h["message"] for h in repo2.history())
+    check("ana@example.org" not in recorded and "Ana Souza" not in recorded and ana.ref in recorded,
+          "the record names the approver by reference only: no name or email enters the chain")
+    shown = svc.reader(ana, p2.id).read_data("risk_classification")["provenance"]["approval"]["approved_by"]
+    check(shown == ana.label, "…and a page shows the person's name")
+    check(svc.people_map(ana, p2.id) == {ana.ref: ana.label}, "…and an export says who each reference is")
+    check(svc.humanize("approved by user:" + "0" * 32) == "approved by a former member",
+          "a person whose account is gone is shown as a former member, and named nowhere")
+    try:
+        svc.reader(ana, p2.id).commit_files({"x.md": "x"}, "through a display view")
+        check(False, "a display view of the blackboard cannot write")
+    except AttributeError:
+        check(True, "a display view of the blackboard cannot write")
     check("Mallory" not in (repo2.read_artifact("risk_classification") or ""),
           "a forged approver name never reaches the artifact")
     brief = repo2.read_data("product_brief")
@@ -301,6 +315,76 @@ def main() -> None:
         d.execute("UPDATE project_commits SET message = ? WHERE project_id = ? AND seq = ?",
                   (last["message"], p1.id, last["seq"]))
         check(repo1.verify_history()["ok"], "restoring the original content restores integrity")
+        ev = d.one("SELECT id, payload FROM project_events WHERE project_id = ? AND kind = 'stage_reconfirmed' "
+                   "OR (project_id = ? AND kind = 'approval') ORDER BY seq LIMIT 1", (p1.id, p1.id))
+        d.execute("UPDATE project_events SET payload = ? WHERE id = ?", ('{"agent": "auditor"}', ev["id"]))
+        check(not repo1.verify_history()["ok"], "an edited decision in the event log is detected")
+        d.execute("UPDATE project_events SET payload = ? WHERE id = ?", (ev["payload"], ev["id"]))
+    else:
+        log = repo1.path / "evaluation_events.jsonl"
+        original_log = log.read_text(encoding="utf-8")
+        lines = original_log.splitlines()
+        first = json.loads(lines[0])
+        first["kind"] = "something_else"
+        log.write_text("\n".join([json.dumps(first)] + lines[1:]) + "\n", encoding="utf-8")
+        check(not repo1.verify_history()["ok"], "an edited decision in the event log is detected")
+        log.write_text(original_log, encoding="utf-8")
+    check(repo1.verify_history()["ok"] and "event chain intact" in repo1.verify_history()["detail"],
+          "the event log is part of the verified history")
+
+    print("== 9b. Concurrent writes keep everyone's change ==")
+    from raia import backlog as B
+    from raia.repository import _next_issue_id
+
+    race = f"race-{p1.id}"
+    seed_repo = open_repository(race)
+    bl, sp = B.load(seed_repo)
+    B.add_story(bl, origin=B.PRODUCT, title="Story one", by="setup")
+    B.add_story(bl, origin=B.PRODUCT, title="Story two", by="setup")
+    seed_repo.commit_files(B.register_files(seed_repo, bl, sp), "seed")
+    repo_a, repo_b, interleaved = open_repository(race), open_repository(race), []
+
+    def bruno_edits():
+        b, s2 = B.load(repo_b)
+        B.update_story(b, "US-2", {"title": "Edited by Bruno"}, "bruno")
+        return B.register_files(repo_b, b, s2), "bruno", None
+
+    def ana_edits():
+        a, s1 = B.load(repo_a)
+        if not interleaved:            # Bruno saves between Ana's read and Ana's write
+            interleaved.append(True)
+            repo_b.atomic(bruno_edits)
+        B.update_story(a, "US-1", {"title": "Edited by Ana"}, "ana")
+        return B.register_files(repo_a, a, s1), "ana", None
+
+    repo_a.atomic(ana_edits)
+    titles = {s["id"]: s["title"] for s in B.load(open_repository(race))[0]["stories"]}
+    check(titles == {"US-1": "Edited by Ana", "US-2": "Edited by Bruno"},
+          f"two people editing the board at the same moment both keep their edit ({titles})")
+    stale_head = repo_a.head()
+    repo_b.commit_files({"x.md": "x"}, "someone else")
+    try:
+        repo_a.commit_files({"y.md": "y"}, "computed from an old read", expected_head=stale_head)
+        check(False, "a write computed from an old read is refused")
+    except ConcurrentEdit:
+        check(True, "a write computed from an old read is refused")
+
+    raised = []
+    original_issues = repo_a.open_issues
+
+    def issues_with_a_race():
+        if not raised:
+            raised.append(True)
+            repo_b.append_open_issues(["Raised by another approval"], raised_by="B")
+        return original_issues()
+
+    repo_a.open_issues = issues_with_a_race
+    repo_a.append_open_issues(["Raised by this approval"], raised_by="A")
+    repo_a.open_issues = original_issues
+    ids = [i["id"] for i in open_repository(race).open_issues()]
+    check(sorted(ids) == ["ISSUE-1", "ISSUE-2"], f"issues raised at the same moment get distinct ids ({ids})")
+    check(_next_issue_id([{"id": "ISSUE-1"}, {"id": "ISSUE-3"}]) == "ISSUE-4", "an issue id is never reused")
+    open_repository(race).reset()
 
     print("== 10. Usage allowance ==")
     original = config.MAX_RUNS_PER_DAY
@@ -444,6 +528,34 @@ def main() -> None:
     svc.delete_account(carla)
     check(svc.get_user(carla.id) is None and denied(svc.get_project, carla, carla_p.id),
           "deleting an account removes the person and the projects only they owned")
+
+    print("== 12b. An existing database is upgraded in place ==")
+    import sqlite3 as _sqlite3
+    legacy = Path(tempfile.mkdtemp()) / "legacy.db"
+    con = _sqlite3.connect(legacy)
+    for stmt in db.SCHEMA:
+        con.execute(stmt)
+    for i, kind in enumerate(("approval", "stage_reconfirmed", "rejection")):
+        con.execute("INSERT INTO project_events (id, project_id, at, kind, payload) VALUES (?, ?, ?, ?, ?)",
+                    (f"e{i}", "old-project", f"2026-09-0{i + 1}T10:00:00+00:00", kind, '{"agent": "auditor"}'))
+    con.execute("INSERT INTO experience_ratings (id, user_id, submitted_at, payload) VALUES (?, ?, ?, ?)",
+                ("r1", "u1", "2026-10-01T10:00:00+00:00", '{"status": "draft", "instrument": "raia-panel-v1"}'))
+    con.commit()
+    con.close()
+    upgraded = db.Database(f"sqlite:///{legacy}")
+    rows = upgraded.query("SELECT seq, at, kind, payload, parent_digest, digest FROM project_events "
+                          "WHERE project_id = 'old-project' ORDER BY seq")
+    from raia.storage import verify_events
+    check([r["seq"] for r in rows] == [1, 2, 3] and verify_events(rows)["ok"],
+          "events recorded before the upgrade are chained, in order, and verify")
+    rating = upgraded.one("SELECT status, instrument FROM experience_ratings WHERE id = 'r1'")
+    check(rating == {"status": "draft", "instrument": "raia-panel-v1"},
+          "assessments recorded before the upgrade get their status and instrument as columns")
+    applied = {r["id"] for r in upgraded.query("SELECT id FROM schema_migrations")}
+    check({m for m, _ in db.MIGRATIONS} <= applied, "every migration is recorded as applied")
+    upgraded.migrate()
+    check(len(upgraded.query("SELECT id FROM schema_migrations")) == len(applied), "…and runs only once")
+    upgraded.close()
 
     print("== 13. Sign-in configuration fails closed ==")
     saved_url, saved_mode = config.DATABASE_URL, config.AUTH_MODE

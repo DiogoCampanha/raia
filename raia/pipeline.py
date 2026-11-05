@@ -203,17 +203,30 @@ def _persist(state: StageState) -> StageState:
     if run.get("run_by"):
         prov["approval"]["run_by"] = run["run_by"]
 
-    extra_files, sprint_id, effect = _board_effects(agent, repo, record, rationale, structured, approver)
+    # The approval and the register changes it causes are one version. The
+    # registers are read, changed and written in that version; if anyone else
+    # recorded a version in between, the changes are recomputed on top of it.
+    from .repository import ATOMIC_ATTEMPTS, ConcurrentEdit
 
-    commit = repo.save_artifact(
-        agent.spec.output_key,
-        content,
-        approved_by=approver,
-        structured=structured,
-        run_provenance=prov,
-        extra_files=extra_files,
-        sprint_id=sprint_id,
-    )
+    for attempt in range(ATOMIC_ATTEMPTS):
+        repo.refresh()
+        base = repo.head()
+        extra_files, sprint_id, effect = _board_effects(agent, repo, record, rationale, structured, approver)
+        try:
+            commit = repo.save_artifact(
+                agent.spec.output_key,
+                content,
+                approved_by=approver,
+                structured=structured,
+                run_provenance=prov,
+                extra_files=extra_files,
+                sprint_id=sprint_id,
+                expected_head=base,
+            )
+            break
+        except ConcurrentEdit:
+            if attempt == ATOMIC_ATTEMPTS - 1:
+                raise
     if effect:
         repo.record_event("backlog_updated", {"agent": agent.spec.key, "user": decision.get("approver_id", ""),
                                               "commit": commit, **effect})

@@ -53,7 +53,7 @@ from typing import Any, Dict, Iterator, List, Optional
 
 from . import config
 from .db import Database, get_database, utcnow
-from . import lineage
+from . import lineage, people
 from .storage import open_repository
 
 OWNER = "owner"
@@ -104,6 +104,11 @@ class User:
     def is_admin(self) -> bool:
         return self.email.lower() in config.ADMIN_EMAILS
 
+    @property
+    def ref(self) -> str:
+        """How this person is named in anything recorded (see :mod:`raia.people`)."""
+        return people.ref(self.id)
+
 
 @dataclass(frozen=True)
 class Project:
@@ -152,6 +157,14 @@ def pseudonym(user_id: str) -> str:
 #: memo at all (every call queries).
 _ACCESS_MEMO: "contextvars.ContextVar[Optional[Dict[Any, Any]]]" = contextvars.ContextVar(
     "raia_access_memo", default=None
+)
+
+
+#: Names already looked up during the current page run (id -> name, or None for
+#: an account that no longer exists). A page shows many recorded items naming
+#: the same few people; each person is looked up once per run.
+_NAMES_MEMO: "contextvars.ContextVar[Optional[Dict[str, Optional[str]]]]" = contextvars.ContextVar(
+    "raia_names_memo", default=None
 )
 
 
@@ -206,10 +219,12 @@ class ProjectService:
         memberships made during the run drops the memo.
         """
         token = _ACCESS_MEMO.set({})
+        names = _NAMES_MEMO.set({})
         try:
             yield
         finally:
             _ACCESS_MEMO.reset(token)
+            _NAMES_MEMO.reset(names)
 
     # -- People -------------------------------------------------------------------
 
@@ -327,6 +342,34 @@ class ProjectService:
     def repository(self, user: User, project_id: str, action: str = "view"):
         self.authorize(user, project_id, action)
         return open_repository(project_id)
+
+    def reader(self, user: User, project_id: str) -> "DisplayRepository":
+        """A read-only view of a project's blackboard for pages to show.
+
+        What is recorded names people by reference (:mod:`raia.people`); what
+        this returns names them. Never pass it to anything that writes.
+        """
+        return DisplayRepository(self.repository(user, project_id, "view"), self)
+
+    def people_map(self, user: User, project_id: str) -> Dict[str, str]:
+        """``user:<id>`` -> name, for every person the project's files reference (exports)."""
+        repo = self.repository(user, project_id, "view")
+        names = people.display_names(self.db, people.ids_in(repo.current_files()))
+        return {people.ref(i): n for i, n in names.items()}
+
+    def humanize(self, obj: Any) -> Any:
+        """``obj`` with every person reference replaced by that person's name (display only)."""
+        ids = people.ids_in(obj)
+        if not ids:
+            return obj
+        memo = _NAMES_MEMO.get()
+        if memo is None:
+            return people.humanize(obj, people.display_names(self.db, ids))
+        missing = ids - set(memo)
+        if missing:
+            found = people.display_names(self.db, missing)
+            memo.update({i: found.get(i) for i in missing})
+        return people.humanize(obj, {i: memo[i] for i in ids if memo.get(i)})
 
     def touch(self, project_id: str) -> None:
         self.db.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (utcnow(), project_id))
@@ -684,7 +727,9 @@ class ProjectService:
             )
         clean = dict(decision)
         # Identity comes from the session, never from the caller's payload.
-        clean["approver"] = user.label
+        # Recorded as a reference, resolved to a name only when displayed: the
+        # chained history never holds a name or an email that cannot be erased.
+        clean["approver"] = user.ref
         clean["approver_id"] = user.id
         if action == "reject":
             self._count_model_call(user)
@@ -711,7 +756,7 @@ class ProjectService:
     def set_issue_status(self, user: User, project_id: str, issue_id: str, status: str,
                          note: str = "") -> bool:
         repo = self.repository(user, project_id, "review")
-        ok = repo.set_issue_status(issue_id, status, note, user.label)
+        ok = repo.set_issue_status(issue_id, status, note, user.ref)
         if ok:
             repo.record_event("issue_arbitrated", {"user": user.id, "issue": issue_id, "status": status})
         return ok
@@ -724,7 +769,7 @@ class ProjectService:
         if not rationale:
             raise ValueError("Say why: one line is enough.")
         repo = self.repository(user, project_id, "review")
-        ok = repo.set_issue_status(issue_id, "decided", rationale, user.label, decision=choice)
+        ok = repo.set_issue_status(issue_id, "decided", rationale, user.ref, decision=choice)
         if ok:
             repo.record_event("issue_decided", {"user": user.id, "issue": issue_id, "where": "output"})
         return ok
@@ -732,7 +777,7 @@ class ProjectService:
     def reopen_issue(self, user: User, project_id: str, issue_id: str) -> bool:
         """Undo a decision (owners only): the issue is open again."""
         repo = self.repository(user, project_id, "manage")
-        ok = repo.set_issue_status(issue_id, "open", "", user.label)
+        ok = repo.set_issue_status(issue_id, "open", "", user.ref)
         if ok:
             repo.record_event("issue_reopened", {"user": user.id, "issue": issue_id})
         return ok
@@ -743,7 +788,7 @@ class ProjectService:
                 computed: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         from . import handoff as H
 
-        return H.inherited(self.repository(user, project_id, "view"), agent_key, draft, computed)
+        return self.humanize(H.inherited(self.repository(user, project_id, "view"), agent_key, draft, computed))
 
     def handoff_delta(self, user: User, project_id: str, agent_key: str, draft: Dict[str, Any],
                       computed: Dict[str, Any]) -> Dict[str, Any]:
@@ -754,7 +799,7 @@ class ProjectService:
         repo = self.repository(user, project_id, "view")
         key = RUNNABLE[agent_key].spec.output_key
         prev = (repo.read_data(key) or {}).get("structured") or {}
-        return H.delta(agent_key, prev.get("record") or {}, prev, draft, computed) if prev else {}
+        return self.humanize(H.delta(agent_key, prev.get("record") or {}, prev, draft, computed)) if prev else {}
 
     def hands_on(self, user: User, project_id: str, agent_key: str) -> str:
         from . import handoff as H
@@ -767,12 +812,12 @@ class ProjectService:
 
         repo = self.repository(user, project_id, "view")
         if board and board.get("ready"):
-            return H.thread(repo, backlog=list((board.get("backlog") or {}).get("stories") or []),
-                            review=board.get("review") or {})
-        return H.thread(repo)
+            return self.humanize(H.thread(repo, backlog=list((board.get("backlog") or {}).get("stories") or []),
+                                          review=board.get("review") or {}))
+        return self.humanize(H.thread(repo))
 
     def open_issues(self, user: User, project_id: str) -> List[Dict[str, Any]]:
-        return self.repository(user, project_id, "view").open_issues()
+        return self.humanize(self.repository(user, project_id, "view").open_issues())
 
     def save_review(self, user: User, project_id: str, agent_key: str, review: Dict[str, Any]) -> None:
         """Keep a reviewer's card verdicts and decisions with the draft waiting for review.
@@ -805,13 +850,13 @@ class ProjectService:
         repo = self.repository(user, project_id, "view")
         bl, sp = B.load(repo)
         review = self._review_data(repo)
-        return {
+        return self.humanize({
             "ready": repo.read_artifact("requirements_review") is not None,
             "backlog": bl, "sprints": sp, "open_sprint": B.open_sprint(sp),
             "roadmap": R.roadmap(bl, sp, review) if review else {},
             "uncovered": R.uncovered_requirements(review, bl) if review else [],
             "review": review,
-        }
+        })
 
     def _board_write(self, user: User, project_id: str, action: str, fn, message: str,
                      event: str, payload: Optional[Dict[str, Any]] = None):
@@ -820,9 +865,16 @@ class ProjectService:
         repo = self.repository(user, project_id, action)
         if repo.read_artifact("requirements_review") is None:
             raise ValueError("The board opens once the ethical requirements are approved.")
-        bl, sp = B.load(repo)
-        result = fn(bl, sp)
-        repo.commit_files(B.register_files(repo, bl, sp), f"raia(board): {message} by {user.label}")
+
+        # Read, change and write the registers as one step: if anyone else
+        # recorded a version in between, the change is recomputed on top of
+        # theirs instead of overwriting it.
+        def build():
+            bl, sp = B.load(repo)
+            result = fn(bl, sp)
+            return B.register_files(repo, bl, sp), f"raia(board): {message} by {user.ref}", result
+
+        result, _ = repo.atomic(build)
         repo.record_event(event, {"user": user.id, **(payload or {})})
         self.touch(project_id)
         return result
@@ -836,7 +888,7 @@ class ProjectService:
                 bl, origin=B.PRODUCT, title=fields.get("title", ""), description=fields.get("description", ""),
                 existing_criteria=[l for l in str(fields.get("acceptance_criteria") or "").splitlines()],
                 touches=fields.get("touches") or [], estimate=fields.get("estimate"),
-                depends_on=fields.get("depends_on") or [], by=user.label, source="added on the board")
+                depends_on=fields.get("depends_on") or [], by=user.ref, source="added on the board")
         s = self._board_write(user, project_id, "run", fn, "product story added", "story_added")
         return s
 
@@ -844,14 +896,14 @@ class ProjectService:
         from . import backlog as B
 
         return self._board_write(user, project_id, "run",
-                                 lambda bl, sp: B.update_story(bl, story_id, changes, user.label),
+                                 lambda bl, sp: B.update_story(bl, story_id, changes, user.ref),
                                  f"{story_id} edited", "story_edited", {"story": story_id})
 
     def create_sprint(self, user: User, project_id: str, **fields: Any) -> Dict[str, Any]:
         from . import backlog as B
 
         return self._board_write(user, project_id, "run",
-                                 lambda bl, sp: B.create_sprint(sp, by=user.label, **fields),
+                                 lambda bl, sp: B.create_sprint(sp, by=user.ref, **fields),
                                  "sprint planned", "sprint_planned")
 
     def update_sprint(self, user: User, project_id: str, sprint_id: str, changes: Dict[str, Any]) -> Dict[str, Any]:
@@ -866,7 +918,7 @@ class ProjectService:
 
         def fn(bl, sp):
             for sid in story_ids:
-                (B.schedule if add else B.unschedule)(bl, sp, sid, user.label)
+                (B.schedule if add else B.unschedule)(bl, sp, sid, user.ref)
             return list(story_ids)
         return self._board_write(user, project_id, "run", fn,
                                  ("scheduled " if add else "unscheduled ") + ", ".join(story_ids),
@@ -875,19 +927,19 @@ class ProjectService:
     def start_sprint(self, user: User, project_id: str) -> Dict[str, Any]:
         from . import backlog as B
 
-        return self._board_write(user, project_id, "run", lambda bl, sp: B.start_sprint(sp, bl, user.label),
+        return self._board_write(user, project_id, "run", lambda bl, sp: B.start_sprint(sp, bl, user.ref),
                                  "sprint started", "sprint_started")
 
     def end_sprint(self, user: User, project_id: str) -> Dict[str, Any]:
         from . import backlog as B
 
-        return self._board_write(user, project_id, "run", lambda bl, sp: B.end_sprint(sp, user.label),
+        return self._board_write(user, project_id, "run", lambda bl, sp: B.end_sprint(sp, user.ref),
                                  "sprint ended", "sprint_ended")
 
     def reopen_sprint(self, user: User, project_id: str) -> Dict[str, Any]:
         from . import backlog as B
 
-        return self._board_write(user, project_id, "run", lambda bl, sp: B.reopen_sprint(sp, user.label),
+        return self._board_write(user, project_id, "run", lambda bl, sp: B.reopen_sprint(sp, user.ref),
                                  "sprint reopened", "sprint_reopened")
 
     def tick(self, user: User, project_id: str, story_id: str, done: bool) -> Dict[str, Any]:
@@ -895,7 +947,7 @@ class ProjectService:
         from . import backlog as B
 
         return self._board_write(user, project_id, "review",
-                                 lambda bl, sp: B.tick(bl, sp, story_id, done, user.label, "manual"),
+                                 lambda bl, sp: B.tick(bl, sp, story_id, done, user.ref, "manual"),
                                  f"{story_id} marked {'done' if done else 'not done'}",
                                  "story_ticked", {"story": story_id, "done": bool(done), "source": "manual"})
 
@@ -903,7 +955,7 @@ class ProjectService:
         from . import backlog as B
 
         return self._board_write(user, project_id, "run",
-                                 lambda bl, sp: B.resolve_review(bl, story_id, decision, user.label),
+                                 lambda bl, sp: B.resolve_review(bl, story_id, decision, user.ref),
                                  f"{story_id} review settled ({decision})", "story_review_settled",
                                  {"story": story_id, "decision": decision})
 
@@ -1054,11 +1106,18 @@ class ProjectService:
                             sprint_id=x["id"], jira_sprint=jira_sprint, project_name=project.name)
         finally:
             client.close()
-        J.record_push(bl, result, user.label)
-        sp.setdefault("settings", {})["jira"] = {"project_key": J.check_project_key(project_key),
-                                                 "issue_type": issue_type or "Story"}
-        repo.commit_files(B.register_files(repo, bl, sp),
-                          f"raia(board): {len(result['created'])} story(ies) sent to Jira by {user.label}")
+
+        # The push happened once; recording its keys is a read-modify-write of
+        # the registers, recomputed if someone else changed the board meanwhile.
+        def build():
+            fresh_bl, fresh_sp = B.load(repo)
+            J.record_push(fresh_bl, result, user.ref)
+            fresh_sp.setdefault("settings", {})["jira"] = {"project_key": J.check_project_key(project_key),
+                                                           "issue_type": issue_type or "Story"}
+            return (B.register_files(repo, fresh_bl, fresh_sp),
+                    f"raia(board): {len(result['created'])} story(ies) sent to Jira by {user.ref}", None)
+
+        repo.atomic(build)
         repo.record_event("jira_pushed", {"user": user.id, "sprint": x["id"], "created": len(result["created"]),
                                           "updated": len(result["updated"]), "errors": len(result["errors"])})
         self.touch(project_id)
@@ -1080,8 +1139,13 @@ class ProjectService:
             statuses = J.fetch_status(client, B.in_sprint(bl, x["id"]))
         finally:
             client.close()
-        result = J.apply_sync(bl, sp, statuses, user.label)
-        repo.commit_files(B.register_files(repo, bl, sp), f"raia(board): synced from Jira by {user.label}")
+
+        def build():
+            fresh_bl, fresh_sp = B.load(repo)
+            synced = J.apply_sync(fresh_bl, fresh_sp, statuses, user.ref)
+            return B.register_files(repo, fresh_bl, fresh_sp), f"raia(board): synced from Jira by {user.ref}", synced
+
+        result, _ = repo.atomic(build)
         repo.record_event("jira_synced", {"user": user.id, "sprint": x["id"], "done": result["done"],
                                           "disagreements": result["disagreements"],
                                           "not_found": result["not_found"]})
@@ -1092,7 +1156,7 @@ class ProjectService:
         from . import jira as J
 
         return self._board_write(user, project_id, "review",
-                                 lambda bl, sp: J.resolve(bl, sp, story_id, keep, user.label),
+                                 lambda bl, sp: J.resolve(bl, sp, story_id, keep, user.ref),
                                  f"{story_id} Jira disagreement settled", "jira_disagreement_settled",
                                  {"story": story_id, "kept": keep})
 
@@ -1212,6 +1276,34 @@ class ProjectService:
             z.writestr("README.txt", RESEARCH_README.format(created=utcnow()))
         buffer.seek(0)
         return buffer.read()
+
+
+class DisplayRepository:
+    """A blackboard as shown to a person: every read names people, nothing writes.
+
+    Reads that return recorded content are passed through
+    :meth:`ProjectService.humanize`; anything else is delegated unchanged.
+    Pending drafts are deliberately *not* humanized: the gate approves from
+    them, and a name must never travel from a display back into the record.
+    """
+
+    _SHOWN = frozenset({"read_artifact", "read_data", "read_sprint_artifact", "read_sprint_data",
+                        "read_register", "open_issues", "history", "upstream_bundle"})
+    _WRITES = frozenset({"save_artifact", "commit_files", "atomic", "append_open_issues",
+                         "set_issue_status", "save_pending", "save_intake", "record_event", "reset",
+                         "clear_pending", "clear_pending_for", "_commit_files"})
+
+    def __init__(self, repo: Any, svc: "ProjectService") -> None:
+        self._repo = repo
+        self._svc = svc
+
+    def __getattr__(self, name: str) -> Any:
+        if name in self._WRITES:
+            raise AttributeError(f"{name}: a display view of the blackboard cannot write")
+        attr = getattr(self._repo, name)
+        if name in self._SHOWN and callable(attr):
+            return lambda *a, **k: self._svc.humanize(attr(*a, **k))
+        return attr
 
 
 _IDENTITY_FIELDS = {"user", "by", "approver", "approver_id", "run_by", "run_by_name", "resolved_by"}

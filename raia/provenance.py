@@ -26,7 +26,7 @@ SCHEMA_VERSION = "raia-artifact/1"
 
 
 def _now() -> str:
-    return _dt.datetime.now().isoformat(timespec="seconds")
+    return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
 
 
 def prompt_hash(system: str, user: str) -> str:
