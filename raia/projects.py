@@ -53,7 +53,7 @@ from typing import Any, Dict, Iterator, List, Optional
 
 from . import config
 from .db import Database, get_database, utcnow
-from . import lineage, people
+from . import lineage, logs, people
 from .storage import open_repository
 
 OWNER = "owner"
@@ -75,6 +75,9 @@ PERMISSIONS: Dict[str, frozenset] = {
 }
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+log = logs.get("projects")
 
 
 class AccessDenied(PermissionError):
@@ -230,6 +233,27 @@ class ProjectService:
             _ACCESS_MEMO.reset(token)
             _NAMES_MEMO.reset(names)
 
+    # -- Audit log ----------------------------------------------------------------
+
+    def audit(self, user: Optional[User], action: str, target: str = "", detail: Optional[Dict[str, Any]] = None) -> None:
+        """Record an action with account-wide or administrative reach.
+
+        Written to the ``audit_log`` table (kept across log rotation) and to the
+        structured log. Never carries content, names or emails.
+        """
+        actor = user.id if user else ""
+        body = json.dumps(detail or {}, ensure_ascii=False, default=str)
+        self.db.execute("INSERT INTO audit_log (id, at, actor_id, action, target, detail) VALUES (?, ?, ?, ?, ?, ?)",
+                        (uuid.uuid4().hex, utcnow(), actor, action, target, body))
+        logs.event(log, action, actor=actor, target=target, **(detail or {}))
+
+    def audit_entries(self, user: User, limit: int = 200) -> List[Dict[str, Any]]:
+        """The latest audit-log entries (coordinators only)."""
+        if not user.is_admin:
+            raise AccessDenied("Only the study coordinators can read the audit log.")
+        return self.db.query("SELECT at, actor_id, action, target, detail FROM audit_log "
+                             "ORDER BY at DESC LIMIT ?", (int(limit),))
+
     # -- People -------------------------------------------------------------------
 
     def sign_in(self, email: str, name: str = "") -> User:
@@ -240,6 +264,7 @@ class ProjectService:
         now = utcnow()
         with self.db.tx() as t:
             row = t.one("SELECT * FROM users WHERE email = ?", (email,))
+            created = row is None
             if row is None:
                 t.execute(
                     "INSERT INTO users (id, email, name, created_at, last_login_at) VALUES (?, ?, ?, ?, ?)",
@@ -251,7 +276,9 @@ class ProjectService:
                     (now, name or row.get("name") or "", row["id"]),
                 )
             row = t.one("SELECT * FROM users WHERE email = ?", (email,))
-        return _user(row)
+        signed = _user(row)
+        self.audit(signed, "account_created" if created else "signed_in", signed.id)
+        return signed
 
     def get_user(self, user_id: str) -> Optional[User]:
         row = self.db.one("SELECT * FROM users WHERE id = ?", (user_id,))
@@ -270,13 +297,18 @@ class ProjectService:
         stay attributed — that is what an audit trail is for), but the person's
         membership, invitations, ratings and account are removed.
         """
+        deleted = []
         for p in self.list_projects(user, include_archived=True):
             owners = [m for m in self.members(user, p.id) if m["role"] == OWNER]
             if p.role == OWNER and len(owners) == 1:
                 self._delete_project_data(p.id)
+                deleted.append(p.id)
+        self.audit(user, "account_deleted", user.id, {"projects_deleted": deleted})
         with self.db.tx() as t:
             t.execute("DELETE FROM project_members WHERE user_id = ?", (user.id,))
             t.execute("DELETE FROM invitations WHERE email = ? OR invited_by = ?", (user.email, user.id))
+            t.execute("DELETE FROM assessment_items WHERE rating_id IN "
+                      "(SELECT id FROM experience_ratings WHERE user_id = ?)", (user.id,))
             t.execute("DELETE FROM experience_ratings WHERE user_id = ?", (user.id,))
             t.execute("DELETE FROM usage_counters WHERE user_id = ?", (user.id,))
             t.execute("DELETE FROM jira_connections WHERE user_id = ?", (user.id,))
@@ -330,6 +362,7 @@ class ProjectService:
         if row is None:
             # Same answer whether the project does not exist or is someone
             # else's: an id must not be usable to probe for projects.
+            logs.event(log, "access refused", 30, user=user.id, project=project_id, reason="not a member")
             raise AccessDenied("Project not found, or you are not a member of it.")
         return _project(row)
 
@@ -338,6 +371,8 @@ class ProjectService:
             raise ValueError(f"Unknown action '{action}'.")
         project = self.get_project(user, project_id)
         if not project.can(action):
+            logs.event(log, "access refused", 30, user=user.id, project=project_id, action=action,
+                       role=project.role)
             raise AccessDenied(
                 f"Your role on this project ({project.role}) does not allow this ({action})."
             )
@@ -407,6 +442,7 @@ class ProjectService:
     def delete_project(self, user: User, project_id: str) -> None:
         self.authorize(user, project_id, "manage")
         self._delete_project_data(project_id)
+        self.audit(user, "project_deleted", project_id)
 
     @_changes_access
     def _delete_project_data(self, project_id: str) -> None:
@@ -414,6 +450,11 @@ class ProjectService:
         # The graph checkpointer keeps every run's answers, drafts and feedback.
         self.runner.forget(project_id)
         with self.db.tx() as t:
+            # An assessment belongs to the person who wrote it; it only stops
+            # pointing at a project that no longer exists.
+            t.execute("UPDATE experience_ratings SET project_id = NULL WHERE project_id = ?", (project_id,))
+            t.execute("UPDATE assessment_items SET project_id = NULL, commit_ref = NULL WHERE project_id = ?",
+                      (project_id,))
             t.execute("DELETE FROM invitations WHERE project_id = ?", (project_id,))
             t.execute("DELETE FROM project_members WHERE project_id = ?", (project_id,))
             t.execute("DELETE FROM projects WHERE id = ?", (project_id,))
@@ -522,6 +563,7 @@ class ProjectService:
             self._guard_last_owner(t, project_id, member_id, new_role=role)
             t.execute("UPDATE project_members SET role = ? WHERE project_id = ? AND user_id = ?",
                       (role, project_id, member_id))
+        self.audit(user, "role_changed", project_id, {"member": member_id, "role": role})
 
     @_changes_access
     def remove_member(self, user: User, project_id: str, member_id: str) -> None:
@@ -533,6 +575,8 @@ class ProjectService:
             self._guard_last_owner(t, project_id, member_id, new_role=None)
             t.execute("DELETE FROM project_members WHERE project_id = ? AND user_id = ?",
                       (project_id, member_id))
+        self.audit(user, "member_removed" if member_id != user.id else "member_left", project_id,
+                   {"member": member_id})
 
     @staticmethod
     def _guard_last_owner(t, project_id: str, member_id: str, new_role: Optional[str]) -> None:
@@ -1191,45 +1235,77 @@ class ProjectService:
     # -- Tester assessment -------------------------------------------------------------------
 
     def submit_rating(self, user: User, payload: Dict[str, Any]) -> None:
-        """Store one tester assessment (final submission). A pending draft is discarded."""
-        body = dict(payload)
-        body["status"] = "submitted"
-        body["build"] = config.build_id()
-        with self.db.tx() as t:
-            self._delete_drafts(t, user)
-            t.execute(
-                "INSERT INTO experience_ratings (id, user_id, submitted_at, payload) VALUES (?, ?, ?, ?)",
-                (uuid.uuid4().hex, user.id, utcnow(), json.dumps(body, ensure_ascii=False, default=str)),
-            )
+        """Store one tester assessment (final submission). A pending draft is discarded.
 
-    @staticmethod
-    def _delete_drafts(t, user: User) -> None:
-        for r in t.query("SELECT id, payload FROM experience_ratings WHERE user_id = ?", (user.id,)):
-            if json.loads(r["payload"]).get("status") == "draft":
-                t.execute("DELETE FROM experience_ratings WHERE id = ?", (r["id"],))
+        The assessment may name the project it is about (``project_id``, one
+        the person is a member of). Each stage rating is then linked to the
+        version of that stage the person was looking at, so a rating can be
+        found by project, by stage and by the exact approved version.
+        """
+        self._store_assessment(user, payload, "submitted")
 
     def save_assessment_draft(self, user: User, payload: Dict[str, Any]) -> None:
         """Keep a half-finished assessment. Drafts never reach research exports."""
+        self._store_assessment(user, payload, "draft")
+
+    def _store_assessment(self, user: User, payload: Dict[str, Any], status: str) -> None:
         body = dict(payload)
-        body["status"] = "draft"
+        body["status"] = status
+        body["build"] = config.build_id()
+        project_id = str(body.get("project_id") or "") or None
+        versions: Dict[str, str] = {}
+        if project_id:
+            versions = approved_versions(self.repository(user, project_id, "view"))
+            body["stage_versions"] = versions
+        rid, now = uuid.uuid4().hex, utcnow()
         with self.db.tx() as t:
             self._delete_drafts(t, user)
             t.execute(
-                "INSERT INTO experience_ratings (id, user_id, submitted_at, payload) VALUES (?, ?, ?, ?)",
-                (uuid.uuid4().hex, user.id, utcnow(), json.dumps(body, ensure_ascii=False, default=str)),
+                "INSERT INTO experience_ratings (id, user_id, submitted_at, payload, status, project_id, "
+                "instrument, build, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (rid, user.id, now, json.dumps(body, ensure_ascii=False, default=str), status, project_id,
+                 str(body.get("instrument") or ""), body["build"], now),
             )
+            for kind, key, score, value, comment in assessment_items(body):
+                t.execute(
+                    "INSERT INTO assessment_items (rating_id, kind, item_key, score, value, comment, project_id, "
+                    "commit_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (rid, kind, key, score, value, comment, project_id,
+                     versions.get(key) if kind == "stage" else None),
+                )
+
+    @staticmethod
+    def _delete_drafts(t, user: User) -> None:
+        for r in t.query("SELECT id FROM experience_ratings WHERE user_id = ? AND status = 'draft'", (user.id,)):
+            t.execute("DELETE FROM assessment_items WHERE rating_id = ?", (r["id"],))
+            t.execute("DELETE FROM experience_ratings WHERE id = ?", (r["id"],))
 
     def _ratings(self, user: User) -> List[Dict[str, Any]]:
         rows = self.db.query(
-            "SELECT submitted_at, payload FROM experience_ratings WHERE user_id = ? "
+            "SELECT submitted_at, payload, status, project_id FROM experience_ratings WHERE user_id = ? "
             "ORDER BY submitted_at DESC",
             (user.id,),
         )
-        return [{"submitted_at": r["submitted_at"], **json.loads(r["payload"])} for r in rows]
+        return [{"submitted_at": r["submitted_at"], **json.loads(r["payload"]),
+                 "status": r["status"] or "submitted", "project_id": r["project_id"]} for r in rows]
+
+    def project_assessments(self, user: User, project_id: str) -> List[Dict[str, Any]]:
+        """Every submitted rating item about one project (coordinators only), pseudonymized."""
+        if not user.is_admin:
+            raise AccessDenied("Only the study coordinators can read assessments.")
+        rows = self.db.query(
+            "SELECT r.user_id, r.submitted_at, r.instrument, r.build, i.kind, i.item_key, i.score, i.value, "
+            "i.comment, i.commit_ref FROM assessment_items i JOIN experience_ratings r ON r.id = i.rating_id "
+            "WHERE i.project_id = ? AND r.status = 'submitted' ORDER BY r.submitted_at, i.kind, i.item_key",
+            (project_id,),
+        )
+        self.audit(user, "assessments_read", project_id)
+        return [{**{k: v for k, v in r.items() if k != "user_id"}, "participant": pseudonym(r["user_id"])}
+                for r in rows]
 
     def my_latest_rating(self, user: User) -> Optional[Dict[str, Any]]:
         """The latest *submitted* assessment, or ``None``."""
-        return next((r for r in self._ratings(user) if r.get("status", "submitted") != "draft"), None)
+        return next((r for r in self._ratings(user) if r.get("status") != "draft"), None)
 
     def my_assessment_draft(self, user: User) -> Optional[Dict[str, Any]]:
         """The saved draft, if any. Submitting discards it, so a draft is always the newest."""
@@ -1237,6 +1313,7 @@ class ProjectService:
 
     def my_data_export(self, user: User) -> bytes:
         """Everything RAIA holds that is about this person, as JSON (right of access)."""
+        self.audit(user, "personal_data_export", user.id)
         account = self.db.one(
             "SELECT email, name, created_at, consented_at, last_login_at FROM users WHERE id = ?",
             (user.id,),
@@ -1275,7 +1352,9 @@ class ProjectService:
         read before publishing.
         """
         if not user.is_admin:
+            logs.event(log, "access refused", 30, user=user.id, action="research_export")
             raise AccessDenied("Only the study coordinators can export research data.")
+        self.audit(user, "research_export")
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
             projects = self.db.query("SELECT id, created_at, archived_at FROM projects ORDER BY created_at")
@@ -1285,15 +1364,29 @@ class ProjectService:
                 for e in open_repository(p["id"]).events():
                     events.append(json.dumps(pseudonymize_event(e, codes[p["id"]]), ensure_ascii=False))
             z.writestr("evaluation_events.jsonl", "\n".join(events))
-            ratings = self.db.query(
-                "SELECT user_id, submitted_at, payload FROM experience_ratings ORDER BY submitted_at"
+            submitted = self.db.query(
+                "SELECT id, user_id, submitted_at, payload, project_id FROM experience_ratings "
+                "WHERE status = 'submitted' ORDER BY submitted_at"
             )
-            submitted = [r for r in ratings
-                         if json.loads(r["payload"]).get("status", "submitted") != "draft"]
+            rating_code = {r["id"]: f"R-{i + 1:04d}" for i, r in enumerate(submitted)}
             z.writestr("experience_ratings.jsonl", "\n".join(
-                json.dumps({"participant": pseudonym(r["user_id"]), "submitted_at": r["submitted_at"],
-                            **json.loads(r["payload"])}, ensure_ascii=False)
+                json.dumps({"rating": rating_code[r["id"]], "participant": pseudonym(r["user_id"]),
+                            "submitted_at": r["submitted_at"],
+                            **{k: v for k, v in json.loads(r["payload"]).items() if k != "project_id"},
+                            "project": codes.get(r["project_id"] or "", "")}, ensure_ascii=False)
                 for r in submitted
+            ))
+            items = self.db.query(
+                "SELECT i.rating_id, i.kind, i.item_key, i.score, i.value, i.comment, i.project_id, i.commit_ref "
+                "FROM assessment_items i JOIN experience_ratings r ON r.id = i.rating_id "
+                "WHERE r.status = 'submitted' ORDER BY r.submitted_at, i.kind, i.item_key"
+            )
+            z.writestr("assessment_items.jsonl", "\n".join(
+                json.dumps({"rating": rating_code.get(i["rating_id"], ""), "kind": i["kind"], "item": i["item_key"],
+                            "score": i["score"], "value": i["value"], "comment": i["comment"],
+                            "project": codes.get(i["project_id"] or "", ""), "version": i["commit_ref"] or ""},
+                           ensure_ascii=False)
+                for i in items
             ))
             members = self.db.query("SELECT project_id, user_id, role FROM project_members")
             z.writestr("memberships.jsonl", "\n".join(
@@ -1334,6 +1427,39 @@ class DisplayRepository:
         return attr
 
 
+def approved_versions(repo: Any) -> Dict[str, str]:
+    """For each agent, the version (commit) its approved artifact was recorded in."""
+    from .agents import AGENTS
+
+    keys = {a.spec.output_key: k for k, a in AGENTS.items()}
+    found: Dict[str, str] = {}
+    for h in repo.history(limit=1000):          # newest first
+        m = re.match(r"raia\((\w+)\): human-approved update", h.get("message", ""))
+        if m and m.group(1) in keys and keys[m.group(1)] not in found:
+            found[keys[m.group(1)]] = h["commit"]
+    return found
+
+
+def assessment_items(body: Dict[str, Any]) -> List[tuple]:
+    """An assessment as rows: (kind, item_key, score, value, comment)."""
+    rows: List[tuple] = []
+    for key, value in (body.get("profile") or {}).items():
+        if value not in (None, ""):
+            rows.append(("profile", key, None, str(value), None))
+    for kind, group in (("dimension", "dimensions"), ("stage", "stages"), ("extra", "extras")):
+        for key, ans in (body.get(group) or {}).items():
+            ans = ans if isinstance(ans, dict) else {"score": ans}
+            score = ans.get("score")
+            if score is None and not ans.get("comment"):
+                continue
+            rows.append((kind, key, int(score) if isinstance(score, (int, float)) else None, None,
+                         ans.get("comment") or None))
+    for key, text in (body.get("open") or {}).items():
+        if text:
+            rows.append(("open", key, None, str(text), None))
+    return rows
+
+
 _IDENTITY_FIELDS = {"user", "by", "approver", "approver_id", "run_by", "run_by_name", "resolved_by"}
 
 
@@ -1366,6 +1492,10 @@ experience_ratings.jsonl  Each submitted tester assessment (instrument id in
                           Drafts are excluded. A participant may submit more
                           than once; keep the latest per participant unless the
                           analysis says otherwise.
+assessment_items.jsonl    The same assessments, one row per answer (kind: profile,
+                          dimension, stage, extra, open), with the project the
+                          tester named (PRJ-nnn) and, for a stage, the version
+                          of that stage they were looking at.
 memberships.jsonl         Which participant held which role on which project.
 
 Participants appear as P-xxxxxxxxxx codes (keyed HMAC of an internal id) and

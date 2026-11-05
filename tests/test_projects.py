@@ -479,6 +479,8 @@ def main() -> None:
                           "Hiring assistant", ana.id, bruno.id) if s in blob]
     check(not leaked, f"no email, name, project name or internal id leaks ({leaked or 'none'})")
     check(pseudonym(bruno.id) in blob and "PRJ-001" in blob, "participants and projects appear as codes")
+    check(any(e["action"] == "research_export" for e in svc.audit_entries(ana)),
+          "a research export is recorded in the audit log, with who made it")
     events = [json.loads(l) for l in zipfile.ZipFile(io.BytesIO(raw)).read("evaluation_events.jsonl")
               .decode().splitlines() if l]
     check(any(e["kind"] == "rejection" and e.get("reason_code") == "too_vague" for e in events),
@@ -489,6 +491,35 @@ def main() -> None:
         ev = z.read("evaluation_events.jsonl").decode()
     check("History integrity at export: OK" in manifest, "the project export states its integrity")
     check("bruno@example.org" not in ev and bruno.id not in ev, "the project export's events are pseudonymized")
+
+    print("== 11a. Assessments can be found by project, stage and version ==")
+    svc.submit_rating(bruno, {"instrument": "raia-panel-v2", "project_id": p1.id,
+                              "dimensions": {"usefulness": {"score": 4, "comment": "clear"}},
+                              "stages": {"risk_classifier": {"score": 5, "comment": ""},
+                                         "auditor": {"score": None, "comment": ""}},
+                              "profile": {"region": "Brazil"}, "open": {"improve": "More examples"}})
+    row = db.get_database().one("SELECT status, project_id, instrument, build FROM experience_ratings "
+                                "WHERE user_id = ? AND project_id = ?", (bruno.id, p1.id))
+    check(row["status"] == "submitted" and row["project_id"] == p1.id and row["instrument"] == "raia-panel-v2"
+          and row["build"], "status, project, instrument and build are columns, not buried in JSON")
+    found = svc.project_assessments(ana, p1.id)
+    stage = [i for i in found if i["kind"] == "stage" and i["item_key"] == "risk_classifier"]
+    from raia.projects import approved_versions
+    check(stage and stage[0]["score"] == 5
+          and stage[0]["commit_ref"] == approved_versions(open_repository(p1.id))["risk_classifier"],
+          "a stage rating is found by project and names the approved version it was about")
+    check({i["kind"] for i in found} >= {"dimension", "stage", "profile", "open"}
+          and all("participant" in i and "user_id" not in i for i in found),
+          "…every answer is a row, pseudonymized for the coordinators")
+    check(denied(svc.project_assessments, bruno, p1.id), "only coordinators read assessments by project")
+    try:
+        svc.submit_rating(carla, {"project_id": p1.id, "dimensions": {}})
+        check(False, "an assessment cannot name a project its author is not a member of")
+    except AccessDenied:
+        check(True, "an assessment cannot name a project its author is not a member of")
+    audit = svc.audit_entries(ana)
+    check(any(e["action"] == "assessments_read" and e["target"] == p1.id for e in audit),
+          "reading assessments is recorded in the audit log")
 
     print("== 11b. Revising a stage flags what depends on it, and re-runs nothing ==")
     from raia import lineage

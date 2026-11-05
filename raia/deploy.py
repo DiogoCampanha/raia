@@ -315,4 +315,10 @@ def friendly_llm_error(exc: BaseException) -> str:
             "The model provider is temporarily overloaded. Run the stage again "
             "in a moment."
         )
-    return f"The model call failed. Please report this to the coordinator.\n\n`{text}`"
+    # Anything else: the detail goes to the log, never to the screen (it may
+    # carry internals such as a database host); the person gets a reference.
+    from . import logs
+
+    ref = logs.error_reference(logs.get("errors"), exc)
+    return (f"Something went wrong and the step was not completed. Nothing was saved. If it "
+            f"happens again, report reference **{ref}** to the coordinator.")
