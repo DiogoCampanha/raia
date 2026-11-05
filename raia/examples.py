@@ -69,6 +69,7 @@ RESUME_SCREENING: Dict[str, Dict[str, Any]] = {
         "human_oversight": "none_designed",
         "data_categories": ["protected_attributes", "proxies"],
         "deployment_stage": "development",
+        "profiling": "yes",
         "art63_claim": "no",
     },
     "requirements_reviewer": {
@@ -181,6 +182,7 @@ SUPPORT_ASSISTANT: Dict[str, Dict[str, Any]] = {
         "human_oversight": "override_possible",
         "data_categories": ["communications", "financial"],
         "deployment_stage": "pilot",
+        "profiling": "no",
         "art63_claim": "no",
     },
     "requirements_reviewer": {

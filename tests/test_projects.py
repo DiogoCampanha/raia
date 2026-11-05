@@ -55,9 +55,10 @@ from raia.examples import EXAMPLES                               # noqa: E402
 from raia.export import session_bundle                           # noqa: E402
 from raia.pipeline import StageRunner                            # noqa: E402
 from raia.projects import (                                      # noqa: E402
-    EDITOR, OWNER, REVIEWER, AccessDenied, ProjectService, UsageLimitReached, pseudonym,
+    EDITOR, OWNER, REVIEWER, AccessDenied, ProjectService, StaleDraft, UsageLimitReached, pseudonym,
 )
 from raia.rag import ingest_corpus                               # noqa: E402
+from raia.repository import ConcurrentEdit                       # noqa: E402
 from raia.storage import open_repository                         # noqa: E402
 
 FAILURES = []
@@ -161,7 +162,8 @@ def main() -> None:
     check(repo1.read_artifact("risk_classification") is None,
           "INVARIANT: nothing is persisted while a draft is under review")
     svc.resume(ana, p2.id, "risk_classifier",
-               {"action": "approve", "content": out2["payload"]["draft"], "approver": "Mallory"})
+               {"action": "approve", "draft_id": out2["payload"]["draft_id"], "content": out2["payload"]["draft"],
+                "approver": "Mallory"})
     check(repo2.read_artifact("risk_classification") is not None, "approving in one project persists there")
     check(repo1.read_artifact("risk_classification") is None and svc.has_thread(ana, p1.id, "risk_classifier"),
           "…and leaves the other project's review untouched")
@@ -172,8 +174,21 @@ def main() -> None:
     print("== 5. Approvals carry the signed-in identity ==")
     data = repo2.read_data("risk_classification")
     approval = data["provenance"]["approval"]
-    check(approval["approved_by"] == ana.label and approval["approver_id"] == ana.id,
+    check(approval["approved_by"] == ana.ref and approval["approver_id"] == ana.id,
           "the approver is the authenticated person, not the name passed by the caller")
+    recorded = "\n".join(repo2.current_files().values()) + "\n".join(h["message"] for h in repo2.history())
+    check("ana@example.org" not in recorded and "Ana Souza" not in recorded and ana.ref in recorded,
+          "the record names the approver by reference only: no name or email enters the chain")
+    shown = svc.reader(ana, p2.id).read_data("risk_classification")["provenance"]["approval"]["approved_by"]
+    check(shown == ana.label, "…and a page shows the person's name")
+    check(svc.people_map(ana, p2.id) == {ana.ref: ana.label}, "…and an export says who each reference is")
+    check(svc.humanize("approved by user:" + "0" * 32) == "approved by a former member",
+          "a person whose account is gone is shown as a former member, and named nowhere")
+    try:
+        svc.reader(ana, p2.id).commit_files({"x.md": "x"}, "through a display view")
+        check(False, "a display view of the blackboard cannot write")
+    except AttributeError:
+        check(True, "a display view of the blackboard cannot write")
     check("Mallory" not in (repo2.read_artifact("risk_classification") or ""),
           "a forged approver name never reaches the artifact")
     brief = repo2.read_data("product_brief")
@@ -207,17 +222,108 @@ def main() -> None:
     svc.update_project(ana, p1.id, require_second_approver=True)
     pending = open_repository(p1.id).load_pending("risk_classifier")
     check(pending["run_by"] == ana.id, "the draft records who ran the stage")
-    check(denied(svc.resume, ana, p1.id, "risk_classifier", {"action": "approve", "content": pending["draft"]}),
+    check(denied(svc.resume, ana, p1.id, "risk_classifier", {"action": "approve", "draft_id": pending["draft_id"],
+                                                                   "content": pending["draft"]}),
           "with a second approver required, the runner cannot approve their own stage")
     check(repo1.read_artifact("risk_classification") is None, "INVARIANT: the refused approval persisted nothing")
     out = svc.resume(bruno, p1.id, "risk_classifier",
-                     {"action": "reject", "feedback": "Name the oversight measures.", "reason": "too_vague"})
+                     {"action": "reject", "draft_id": pending["draft_id"],
+                      "feedback": "Name the oversight measures.", "reason": "too_vague"})
     check(out["payload"]["run_by"] == ana.id, "a regeneration keeps the original runner")
-    done = svc.resume(bruno, p1.id, "risk_classifier", {"action": "approve", "content": out["payload"]["draft"]})
+    done = svc.resume(bruno, p1.id, "risk_classifier", {"action": "approve", "draft_id": out["payload"]["draft_id"],
+                                                         "content": out["payload"]["draft"]})
     check(bool(done["commit"]), "a different member approves")
     prov = repo1.read_data("risk_classification")["provenance"]["approval"]
     check(prov["approver_id"] == bruno.id and prov["run_by"] == ana.id,
           "the record shows both the runner and the approver")
+
+    print("== 7b. A decision is bound to the draft it was taken on ==")
+    seen = svc.start_run(ana, p1.id, "risk_classifier", EXAMPLES["risk_classifier"])["payload"]
+    newer = svc.start_run(ana, p1.id, "risk_classifier", EXAMPLES["risk_classifier"])["payload"]
+    check(seen["draft_id"] != newer["draft_id"], "every draft has its own id")
+
+    def stale(decision) -> bool:
+        try:
+            svc.resume(bruno, p1.id, "risk_classifier", decision)
+        except StaleDraft:
+            return True
+        return False
+
+    approved_before = repo1.read_data("risk_classification")["provenance"]["approval"]
+    check(stale({"action": "approve", "draft_id": seen["draft_id"], "content": seen["draft"]}),
+          "approving a draft another run has replaced is refused")
+    check(stale({"action": "approve", "content": newer["draft"]}), "a decision that names no draft is refused")
+    check(stale({"action": "reject", "draft_id": seen["draft_id"], "feedback": "x"}),
+          "…and so is rejecting a replaced draft")
+    check(repo1.read_data("risk_classification")["provenance"]["approval"] == approved_before,
+          "INVARIANT: a refused decision persisted nothing")
+    svc.resume(bruno, p1.id, "risk_classifier",
+               {"action": "approve", "draft_id": newer["draft_id"], "content": newer["draft"]})
+    check(repo1.read_data("risk_classification")["provenance"]["approval"]["approver_id"] == bruno.id,
+          "the current draft is approved normally")
+
+    print("== 7c. Approving over failed checks needs a recorded reason ==")
+    from raia.contract import mock as contract_mock
+    from raia.projects import OverrideRequired
+
+    real_reply = contract_mock.reply
+    contract_mock.reply = lambda prompt: "Sorry, I cannot produce that record."
+    try:
+        broken = svc.start_run(ana, p1.id, "risk_classifier", EXAMPLES["risk_classifier"])["payload"]
+    finally:
+        contract_mock.reply = real_reply
+    check(broken["record"].get("schema_errors") and svc.override_needed(broken),
+          "an unreadable reply yields the fallback record, and approving it is an override")
+    try:
+        svc.resume(bruno, p1.id, "risk_classifier", {"action": "approve", "draft_id": broken["draft_id"]})
+        check(False, "approving over failed checks without a reason is refused")
+    except OverrideRequired:
+        check(True, "approving over failed checks without a reason is refused")
+    svc.resume(bruno, p1.id, "risk_classifier", {"action": "approve", "draft_id": broken["draft_id"],
+                                                 "override_reason": "Kept on purpose for the walkthrough."})
+    override = repo1.read_data("risk_classification")["provenance"]["approval"].get("override") or {}
+    check(override.get("reason") == "Kept on purpose for the walkthrough." and override.get("checks"),
+          "…and with a reason it is approved, the reason and the failed checks recorded with it")
+    fixed = svc.start_run(ana, p1.id, "risk_classifier", EXAMPLES["risk_classifier"])["payload"]
+    svc.resume(bruno, p1.id, "risk_classifier", {"action": "approve", "draft_id": fixed["draft_id"]})
+    check("override" not in repo1.read_data("risk_classification")["provenance"]["approval"],
+          "a draft whose checks pass needs no reason")
+
+    print("== 7d. Every run keeps its exact prompt, sealed, and its token use ==")
+    from raia import provenance as _prov
+    from raia.contract.prompt import HINTS_MARKER, contract_text
+    from raia.rationale.types import empty_rationale
+
+    saved_key = config.TRANSCRIPT_KEY
+    config.TRANSCRIPT_KEY = "a-test-transcript-key"
+    try:
+        sealed_run = svc.start_run(ana, p1.id, "risk_classifier", EXAMPLES["risk_classifier"])["payload"]
+        kept = {r["draft_id"]: r for r in open_repository(p1.id).transcripts(unseal=True)}
+        mine = kept.get(sealed_run["draft_id"]) or {}
+        tr = mine.get("transcript") or {}
+        check(bool(tr) and _prov.prompt_hash(tr["system"], tr["user"]) == sealed_run["provenance"]["prompt_sha256_16"],
+              "the sealed transcript is the exact prompt the provenance hash was computed from")
+        check(tr.get("replies") and mine.get("calls") == sealed_run["provenance"]["usage"]["calls"] >= 1,
+              "…with the raw replies and the number of model calls")
+        if repo1.backend == "database":
+            raw = db.get_database().one("SELECT sealed FROM run_transcripts WHERE draft_id = ?",
+                                        (sealed_run["draft_id"],))["sealed"]
+            check("Computed by code" not in raw, "…stored encrypted, never as plain text")
+    finally:
+        config.TRANSCRIPT_KEY = saved_key
+    plain = svc.start_run(ana, p1.id, "risk_classifier", EXAMPLES["risk_classifier"])["payload"]
+    meta = {r["draft_id"]: r for r in open_repository(p1.id).transcripts(unseal=True)}[plain["draft_id"]]
+    check(not meta["stored"] and "transcript" not in meta and meta["prompt_sha256_16"],
+          "without a key no text is stored: only the prompt hash and token use")
+    saved_provider = config.LLM_PROVIDER
+    config.LLM_PROVIDER = "anthropic"
+    try:
+        check(HINTS_MARKER not in contract_text("risk_classifier", [], empty_rationale("x"), []),
+              "a real model's prompt carries no test-double hints")
+    finally:
+        config.LLM_PROVIDER = saved_provider
+    check(HINTS_MARKER in contract_text("risk_classifier", [], empty_rationale("x"), []),
+          "…the offline mock still gets them")
 
     print("== 8. Durability across a restart ==")
     svc.save_intake(ana, p1.id, "requirements_reviewer", EXAMPLES["requirements_reviewer"])
@@ -236,7 +342,8 @@ def main() -> None:
     if svc.has_thread(bruno, p1.id, "requirements_reviewer"):
         check(True, "the paused graph thread itself survived (durable checkpointer)")
         resumed = svc.resume(bruno, p1.id, "requirements_reviewer",
-                             {"action": "approve", "content": repo1.load_pending("requirements_reviewer")["draft"]})
+                             {"action": "approve", "draft_id": svc.runner.draft_at_gate(p1.id, "requirements_reviewer")["draft_id"],
+                              "content": repo1.load_pending("requirements_reviewer")["draft"]})
     else:
         restored = svc.restore(bruno, p1.id, "requirements_reviewer")
         check(restored["status"] == "awaiting_review",
@@ -244,10 +351,12 @@ def main() -> None:
         check(repo1.read_artifact("requirements_review") is None, "INVARIANT: recovery persists nothing on its own")
         check(restored["payload"]["run_by"] == ana.id, "the restored draft still knows who ran it")
         check(denied(svc.resume, ana, p1.id, "requirements_reviewer",
-                     {"action": "approve", "content": restored["payload"]["draft"]}),
+                     {"action": "approve", "draft_id": restored["payload"]["draft_id"],
+                      "content": restored["payload"]["draft"]}),
               "separation of duties still applies after a restore")
         resumed = svc.resume(bruno, p1.id, "requirements_reviewer",
-                             {"action": "approve", "content": restored["payload"]["draft"]})
+                             {"action": "approve", "draft_id": restored["payload"]["draft_id"],
+                      "content": restored["payload"]["draft"]})
     check(bool(resumed["commit"]) and repo1.read_artifact("requirements_review") is not None,
           "the review completes after the restart")
 
@@ -269,15 +378,86 @@ def main() -> None:
         d.execute("UPDATE project_commits SET message = ? WHERE project_id = ? AND seq = ?",
                   (last["message"], p1.id, last["seq"]))
         check(repo1.verify_history()["ok"], "restoring the original content restores integrity")
+        ev = d.one("SELECT id, payload FROM project_events WHERE project_id = ? AND kind = 'stage_reconfirmed' "
+                   "OR (project_id = ? AND kind = 'approval') ORDER BY seq LIMIT 1", (p1.id, p1.id))
+        d.execute("UPDATE project_events SET payload = ? WHERE id = ?", ('{"agent": "auditor"}', ev["id"]))
+        check(not repo1.verify_history()["ok"], "an edited decision in the event log is detected")
+        d.execute("UPDATE project_events SET payload = ? WHERE id = ?", (ev["payload"], ev["id"]))
+    else:
+        log = repo1.path / "evaluation_events.jsonl"
+        original_log = log.read_text(encoding="utf-8")
+        lines = original_log.splitlines()
+        first = json.loads(lines[0])
+        first["kind"] = "something_else"
+        log.write_text("\n".join([json.dumps(first)] + lines[1:]) + "\n", encoding="utf-8")
+        check(not repo1.verify_history()["ok"], "an edited decision in the event log is detected")
+        log.write_text(original_log, encoding="utf-8")
+    check(repo1.verify_history()["ok"] and "event chain intact" in repo1.verify_history()["detail"],
+          "the event log is part of the verified history")
+
+    print("== 9b. Concurrent writes keep everyone's change ==")
+    from raia import backlog as B
+    from raia.repository import _next_issue_id
+
+    race = f"race-{p1.id}"
+    seed_repo = open_repository(race)
+    bl, sp = B.load(seed_repo)
+    B.add_story(bl, origin=B.PRODUCT, title="Story one", by="setup")
+    B.add_story(bl, origin=B.PRODUCT, title="Story two", by="setup")
+    seed_repo.commit_files(B.register_files(seed_repo, bl, sp), "seed")
+    repo_a, repo_b, interleaved = open_repository(race), open_repository(race), []
+
+    def bruno_edits():
+        b, s2 = B.load(repo_b)
+        B.update_story(b, "US-2", {"title": "Edited by Bruno"}, "bruno")
+        return B.register_files(repo_b, b, s2), "bruno", None
+
+    def ana_edits():
+        a, s1 = B.load(repo_a)
+        if not interleaved:            # Bruno saves between Ana's read and Ana's write
+            interleaved.append(True)
+            repo_b.atomic(bruno_edits)
+        B.update_story(a, "US-1", {"title": "Edited by Ana"}, "ana")
+        return B.register_files(repo_a, a, s1), "ana", None
+
+    repo_a.atomic(ana_edits)
+    titles = {s["id"]: s["title"] for s in B.load(open_repository(race))[0]["stories"]}
+    check(titles == {"US-1": "Edited by Ana", "US-2": "Edited by Bruno"},
+          f"two people editing the board at the same moment both keep their edit ({titles})")
+    stale_head = repo_a.head()
+    repo_b.commit_files({"x.md": "x"}, "someone else")
+    try:
+        repo_a.commit_files({"y.md": "y"}, "computed from an old read", expected_head=stale_head)
+        check(False, "a write computed from an old read is refused")
+    except ConcurrentEdit:
+        check(True, "a write computed from an old read is refused")
+
+    raised = []
+    original_issues = repo_a.open_issues
+
+    def issues_with_a_race():
+        if not raised:
+            raised.append(True)
+            repo_b.append_open_issues(["Raised by another approval"], raised_by="B")
+        return original_issues()
+
+    repo_a.open_issues = issues_with_a_race
+    repo_a.append_open_issues(["Raised by this approval"], raised_by="A")
+    repo_a.open_issues = original_issues
+    ids = [i["id"] for i in open_repository(race).open_issues()]
+    check(sorted(ids) == ["ISSUE-1", "ISSUE-2"], f"issues raised at the same moment get distinct ids ({ids})")
+    check(_next_issue_id([{"id": "ISSUE-1"}, {"id": "ISSUE-3"}]) == "ISSUE-4", "an issue id is never reused")
+    open_repository(race).reset()
 
     print("== 10. Usage allowance ==")
     original = config.MAX_RUNS_PER_DAY
     config.MAX_RUNS_PER_DAY = 1
     try:
         carla_p = svc.create_project(carla, "Allowance")
-        svc.start_run(carla, carla_p.id, "risk_classifier", EXAMPLES["risk_classifier"])
+        first = svc.start_run(carla, carla_p.id, "risk_classifier", EXAMPLES["risk_classifier"])
         try:
-            svc.resume(carla, carla_p.id, "risk_classifier", {"action": "reject", "feedback": "again"})
+            svc.resume(carla, carla_p.id, "risk_classifier",
+                       {"action": "reject", "draft_id": first["payload"]["draft_id"], "feedback": "again"})
             check(False, "a regeneration beyond the daily allowance is refused")
         except UsageLimitReached:
             check(True, "a regeneration beyond the daily allowance is refused")
@@ -299,6 +479,8 @@ def main() -> None:
                           "Hiring assistant", ana.id, bruno.id) if s in blob]
     check(not leaked, f"no email, name, project name or internal id leaks ({leaked or 'none'})")
     check(pseudonym(bruno.id) in blob and "PRJ-001" in blob, "participants and projects appear as codes")
+    check(any(e["action"] == "research_export" for e in svc.audit_entries(ana)),
+          "a research export is recorded in the audit log, with who made it")
     events = [json.loads(l) for l in zipfile.ZipFile(io.BytesIO(raw)).read("evaluation_events.jsonl")
               .decode().splitlines() if l]
     check(any(e["kind"] == "rejection" and e.get("reason_code") == "too_vague" for e in events),
@@ -310,6 +492,35 @@ def main() -> None:
     check("History integrity at export: OK" in manifest, "the project export states its integrity")
     check("bruno@example.org" not in ev and bruno.id not in ev, "the project export's events are pseudonymized")
 
+    print("== 11a. Assessments can be found by project, stage and version ==")
+    svc.submit_rating(bruno, {"instrument": "raia-panel-v2", "project_id": p1.id,
+                              "dimensions": {"usefulness": {"score": 4, "comment": "clear"}},
+                              "stages": {"risk_classifier": {"score": 5, "comment": ""},
+                                         "auditor": {"score": None, "comment": ""}},
+                              "profile": {"region": "Brazil"}, "open": {"improve": "More examples"}})
+    row = db.get_database().one("SELECT status, project_id, instrument, build FROM experience_ratings "
+                                "WHERE user_id = ? AND project_id = ?", (bruno.id, p1.id))
+    check(row["status"] == "submitted" and row["project_id"] == p1.id and row["instrument"] == "raia-panel-v2"
+          and row["build"], "status, project, instrument and build are columns, not buried in JSON")
+    found = svc.project_assessments(ana, p1.id)
+    stage = [i for i in found if i["kind"] == "stage" and i["item_key"] == "risk_classifier"]
+    from raia.projects import approved_versions
+    check(stage and stage[0]["score"] == 5
+          and stage[0]["commit_ref"] == approved_versions(open_repository(p1.id))["risk_classifier"],
+          "a stage rating is found by project and names the approved version it was about")
+    check({i["kind"] for i in found} >= {"dimension", "stage", "profile", "open"}
+          and all("participant" in i and "user_id" not in i for i in found),
+          "…every answer is a row, pseudonymized for the coordinators")
+    check(denied(svc.project_assessments, bruno, p1.id), "only coordinators read assessments by project")
+    try:
+        svc.submit_rating(carla, {"project_id": p1.id, "dimensions": {}})
+        check(False, "an assessment cannot name a project its author is not a member of")
+    except AccessDenied:
+        check(True, "an assessment cannot name a project its author is not a member of")
+    audit = svc.audit_entries(ana)
+    check(any(e["action"] == "assessments_read" and e["target"] == p1.id for e in audit),
+          "reading assessments is recorded in the audit log")
+
     print("== 11b. Revising a stage flags what depends on it, and re-runs nothing ==")
     from raia import lineage
     check(lineage.ancestors("auditor") == ["risk_classifier", "requirements_reviewer", "story_refiner"],
@@ -318,7 +529,8 @@ def main() -> None:
           "…and so are dependents")
     svc.update_project(ana, p1.id, require_second_approver=False)
     run = svc.start_run(ana, p1.id, "requirements_reviewer", EXAMPLES["requirements_reviewer"])
-    svc.resume(ana, p1.id, "requirements_reviewer", {"action": "approve", "content": run["payload"]["draft"]})
+    svc.resume(ana, p1.id, "requirements_reviewer", {"action": "approve", "draft_id": run["payload"]["draft_id"],
+                                                        "content": run["payload"]["draft"]})
     states = {x["agent"]: x for x in svc.stage_summary(ana, p1.id)["stages"]}
     check(states["requirements_reviewer"]["status"] == "approved", "a normal approval is not flagged")
     check(svc.revision_impact(ana, p1.id, "risk_classifier") == ["Requirements Reviewer"],
@@ -333,7 +545,8 @@ def main() -> None:
     check(states["risk_classifier"]["status"] == "in_review" and
           states["requirements_reviewer"]["status"] == "approved",
           "a revision waiting at its gate flags nothing: the approved version is still in force")
-    svc.resume(ana, p1.id, "risk_classifier", {"action": "approve", "content": run["payload"]["draft"]})
+    svc.resume(ana, p1.id, "risk_classifier", {"action": "approve", "draft_id": run["payload"]["draft_id"],
+                                                        "content": run["payload"]["draft"]})
     summary = svc.stage_summary(ana, p1.id)
     states = {x["agent"]: x for x in summary["stages"]}
     check(states["requirements_reviewer"]["status"] == "stale" and
@@ -398,18 +611,57 @@ def main() -> None:
     print("== 12. Leaving, deleting ==")
     svc.remove_member(bruno, p1.id, bruno.id)
     check(denied(svc.get_project, bruno, p1.id), "a member who leaves loses access immediately")
+    svc.start_run(ana, p2.id, "risk_classifier", EXAMPLES["risk_classifier"])
+    thread = {"configurable": {"thread_id": f"{p2.id}::risk_classifier"}}
+    check(svc.runner._checkpointer.get_tuple(thread) is not None, "a project's runs are kept as graph threads")
     svc.delete_project(ana, p2.id)
+    check(svc.runner._checkpointer.get_tuple(thread) is None,
+          "deleting a project deletes its graph threads (answers, drafts, feedback, names)")
+    check(open_repository(p2.id).transcripts() == [], "…and its run transcripts")
     check(denied(svc.get_project, ana, p2.id) and open_repository(p2.id).read_artifact("risk_classification") is None,
           "deleting a project removes it and its blackboard")
     svc.delete_account(carla)
     check(svc.get_user(carla.id) is None and denied(svc.get_project, carla, carla_p.id),
           "deleting an account removes the person and the projects only they owned")
 
+    print("== 12b. An existing database is upgraded in place ==")
+    import sqlite3 as _sqlite3
+    legacy = Path(tempfile.mkdtemp()) / "legacy.db"
+    con = _sqlite3.connect(legacy)
+    for stmt in db.SCHEMA:
+        con.execute(stmt)
+    for i, kind in enumerate(("approval", "stage_reconfirmed", "rejection")):
+        con.execute("INSERT INTO project_events (id, project_id, at, kind, payload) VALUES (?, ?, ?, ?, ?)",
+                    (f"e{i}", "old-project", f"2026-09-0{i + 1}T10:00:00+00:00", kind, '{"agent": "auditor"}'))
+    con.execute("INSERT INTO experience_ratings (id, user_id, submitted_at, payload) VALUES (?, ?, ?, ?)",
+                ("r1", "u1", "2026-10-01T10:00:00+00:00", '{"status": "draft", "instrument": "raia-panel-v1"}'))
+    con.commit()
+    con.close()
+    upgraded = db.Database(f"sqlite:///{legacy}")
+    rows = upgraded.query("SELECT seq, at, kind, payload, parent_digest, digest FROM project_events "
+                          "WHERE project_id = 'old-project' ORDER BY seq")
+    from raia.storage import verify_events
+    check([r["seq"] for r in rows] == [1, 2, 3] and verify_events(rows)["ok"],
+          "events recorded before the upgrade are chained, in order, and verify")
+    rating = upgraded.one("SELECT status, instrument FROM experience_ratings WHERE id = 'r1'")
+    check(rating == {"status": "draft", "instrument": "raia-panel-v1"},
+          "assessments recorded before the upgrade get their status and instrument as columns")
+    applied = {r["id"] for r in upgraded.query("SELECT id FROM schema_migrations")}
+    check({m for m, _ in db.MIGRATIONS} <= applied, "every migration is recorded as applied")
+    upgraded.migrate()
+    check(len(upgraded.query("SELECT id FROM schema_migrations")) == len(applied), "…and runs only once")
+    upgraded.close()
+
     print("== 13. Sign-in configuration fails closed ==")
     saved_url, saved_mode = config.DATABASE_URL, config.AUTH_MODE
     config.DATABASE_URL, config.AUTH_MODE = "postgresql://u:p@host/db", ""
     check(auth.mode() == "dev" and auth.configuration_problem() is not None,
           "a database-backed deployment without sign-in refuses to open")
+    config.DATABASE_URL = "sqlite:///somewhere.db"
+    check(auth.mode() == "dev" and auth.configuration_problem() is not None,
+          "a SQLite deployment without sign-in refuses to open too: dev mode is never a fallback")
+    config.AUTH_MODE = "dev"
+    check(auth.configuration_problem() is None, "…and opens when dev mode is chosen explicitly")
     config.AUTH_MODE = "google"
     check(auth.configuration_problem() is not None, "Google sign-in without an [auth] block refuses to open")
     config.DATABASE_URL, config.AUTH_MODE = saved_url, saved_mode

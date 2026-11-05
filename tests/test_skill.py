@@ -68,7 +68,8 @@ PAPER = re.compile(r"\b(paper|qualifica|ISE'?2\d|LAAI|Section \d|§\s*\d|Figure 
 
 def approve(svc, user, pid, key, inputs):
     out = svc.start_run(user, pid, key, inputs)
-    svc.resume(user, pid, key, {"action": "approve", "record": out["payload"]["record"]})
+    svc.resume(user, pid, key, {"action": "approve", "draft_id": out["payload"]["draft_id"],
+                                 "record": out["payload"]["record"]})
 
 
 def test_static_files() -> None:

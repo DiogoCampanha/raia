@@ -33,14 +33,14 @@ Persistence happens in the pipeline, only after approval — never here.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from .. import config, provenance, validators
 from ..contract import assemble, checks as contract_checks, prompt as contract_prompt, render
 from ..fields import STORY_TEXT_KEYS, InputField, Option, ShowIf, missing_required, options  # noqa: F401
-from ..llm import invoke_chat
+from ..llm import add_usage, invoke_chat
 from ..rag import NormChunk, NormativeRetriever
 from ..rationale.types import RationaleResult, empty_rationale
 from ..repository import ArtifactRepository
@@ -109,6 +109,8 @@ class AgentRun:
     validation: Optional[validators.ValidationReport] = None
     provenance: Dict[str, Any] = field(default_factory=dict)
     sanitization: List[str] = field(default_factory=list)
+    #: The exact messages sent and the raw replies, for the sealed transcript.
+    transcript: Dict[str, Any] = field(default_factory=dict)
 
     def evidence(self) -> List[Dict[str, Any]]:
         """Retrieved excerpts, shaped for display at the approval gate."""
@@ -144,6 +146,19 @@ class AgentRun:
             "provenance": self.provenance,
             "sanitization": list(self.sanitization),
         }
+
+
+@dataclass
+class Turn:
+    """What one model pass produced (see :meth:`BaseAgent.converse`)."""
+
+    parsed: Any
+    errors: List[str]
+    repairs: int
+    response: Any
+    budget: int
+    usage: Dict[str, Any]
+    transcript: Dict[str, Any]
 
 
 @dataclass
@@ -343,6 +358,45 @@ class BaseAgent:
         data["record"] = record
         return data
 
+    # -- Model pass ---------------------------------------------------------------
+
+    def converse(self, system: str, user: str,
+                 parse: Callable[[str], Tuple[Optional[Any], List[str]]],
+                 repair: Optional[Callable[[Sequence[str]], str]] = None) -> "Turn":
+        """One model pass: call, read the reply, send it back if it cannot be read.
+
+        Every model call an agent makes goes through here — the full turn and
+        the Requirements Reviewer's recommendations alike — so each gets the
+        same bounded repair (with the reader's errors, or with more room and
+        an instruction to be compact when the reply was cut off), the same
+        token accounting and the same transcript.
+        """
+        messages = [SystemMessage(content=system), HumanMessage(content=user)]
+        budget = config.LLM_MAX_TOKENS
+        response = invoke_chat(messages)
+        usage = add_usage({}, response)
+        transcript: Dict[str, Any] = {"system": system, "user": user,
+                                      "replies": [{"text": response.text, "finish_reason": response.finish_reason}]}
+        parsed, errors = parse(response.text)
+        repairs = 0
+        while parsed is None and repairs < max(0, config.CONTRACT_REPAIRS):
+            repairs += 1
+            if assemble.was_truncated(response.finish_reason):
+                follow_up = assemble.compact_prompt(budget)
+                budget = max(budget, min(budget * 2, config.LLM_MAX_TOKENS_CEILING))
+                previous = "(the reply was cut off at the token limit)"
+            else:
+                follow_up = (repair or assemble.repair_prompt)(errors)
+                previous = response.text
+            messages = messages + [AIMessage(content=previous), HumanMessage(content=follow_up)]
+            response = invoke_chat(messages, max_tokens=budget)
+            add_usage(usage, response)
+            transcript["replies"].append({"follow_up": follow_up, "text": response.text,
+                                          "finish_reason": response.finish_reason})
+            parsed, errors = parse(response.text)
+        return Turn(parsed=parsed, errors=list(errors), repairs=repairs, response=response,
+                    budget=budget, usage=usage, transcript=transcript)
+
     # -- Core run ---------------------------------------------------------------
 
     def run(
@@ -412,26 +466,10 @@ class BaseAgent:
         #    when the reply was cut off at the token limit, with more room and
         #    an instruction to be compact. A record that will not fit is a
         #    record nobody can review at the gate either.
-        messages = [SystemMessage(content=system), HumanMessage(content=user)]
-        budget = config.LLM_MAX_TOKENS
         progress.step("Drafting the record")
-        response = invoke_chat(messages)
-        record, errors = assemble.parse_record(self.spec.key, response.text)
-        repairs = 0
-        while record is None and repairs < max(0, config.CONTRACT_REPAIRS):
-            repairs += 1
-            truncated = assemble.was_truncated(response.finish_reason)
-            if truncated:
-                follow_up = assemble.compact_prompt(budget)
-                budget = max(budget, min(budget * 2, config.LLM_MAX_TOKENS_CEILING))
-                previous = "(the reply was cut off at the token limit)"
-            else:
-                follow_up = assemble.repair_prompt(errors)
-                previous = response.text
-            messages = messages + [AIMessage(content=previous),
-                                   HumanMessage(content=follow_up)]
-            response = invoke_chat(messages, max_tokens=budget)
-            record, errors = assemble.parse_record(self.spec.key, response.text)
+        turn = self.converse(system, user, lambda text: assemble.parse_record(self.spec.key, text))
+        record, errors, repairs = turn.parsed, turn.errors, turn.repairs
+        response, budget, usage, transcript = turn.response, turn.budget, turn.usage, turn.transcript
         if record is None:
             truncated = assemble.was_truncated(response.finish_reason)
             if truncated:
@@ -463,6 +501,7 @@ class BaseAgent:
             finish_reason=response.finish_reason,
         )
 
+        prov["usage"] = usage
         prov["contract"] = {
             "schema_version": (record.get("meta") or {}).get("schema_version"),
             "repairs": repairs,
@@ -482,4 +521,5 @@ class BaseAgent:
             validation=report,
             provenance=prov,
             sanitization=sanitization,
+            transcript=transcript,
         )

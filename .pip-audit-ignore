@@ -1,0 +1,57 @@
+# Known vulnerabilities accepted after review, one ID per line, with the reason.
+# CI runs pip-audit against requirements.txt and fails on anything not listed.
+# Remove an entry as soon as a fixed version can be installed.
+#
+# chromadb (no fixed version published). Every advisory concerns the Chroma
+# HTTP server, its authentication or its RBAC provider. RAIA uses Chroma
+# in-process (PersistentClient) over a corpus it ships; no Chroma server runs.
+PYSEC-2026-311
+PYSEC-2026-3813
+PYSEC-2026-3814
+PYSEC-2026-3815
+#
+# pillow 12.3.0 (fixed in 13.0.0). Streamlit 1.63 requires pillow<13, and the
+# first Streamlit that accepts 13 (1.67) changes behaviour the UI tests check,
+# so the upgrade is its own piece of work (see docs/PROJECT_LOG.md). RAIA never
+# opens an untrusted image: uploads are read as text and st.image shows only the
+# bundled guide screenshots, so the parsers these advisories concern are not
+# reachable from user input.
+CVE-2026-112390
+CVE-2026-112391
+CVE-2026-112393
+CVE-2026-112395
+CVE-2026-112399
+CVE-2026-112400
+CVE-2026-112401
+CVE-2026-112404
+CVE-2026-112406
+CVE-2026-112891
+CVE-2026-112892
+CVE-2026-112893
+CVE-2026-112894
+CVE-2026-112895
+CVE-2026-112897
+CVE-2026-112899
+CVE-2026-112900
+CVE-2026-96638
+CVE-2026-96640
+CVE-2026-96778
+GHSA-78g4-xqwv-q3g8
+PYSEC-2026-4326
+PYSEC-2026-4327
+PYSEC-2026-4328
+PYSEC-2026-4329
+PYSEC-2026-4330
+PYSEC-2026-4331
+PYSEC-2026-4332
+PYSEC-2026-4333
+PYSEC-2026-4334
+PYSEC-2026-4335
+PYSEC-2026-4336
+PYSEC-2026-4337
+PYSEC-2026-4338
+PYSEC-2026-4339
+PYSEC-2026-4340
+PYSEC-2026-4341
+PYSEC-2026-4342
+PYSEC-2026-4343

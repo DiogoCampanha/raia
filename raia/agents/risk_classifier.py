@@ -148,6 +148,16 @@ class RiskClassifierAgent(BaseAgent):
                 help="Select every area that applies. These lists are what determine high-risk status.",
             ),
             InputField(
+                key="profiling",
+                label="Does the system profile people?",
+                kind="boolean", group=G_PURPOSE, options=YES_NO, default="no",
+                help="Profiling means using a person's data to evaluate or predict aspects of them: "
+                     "work performance, economic situation, health, preferences, interests, reliability, "
+                     "behaviour, location or movements. Scoring or ranking applicants, borrowers or users "
+                     "is profiling. A high-risk system that profiles people cannot claim the narrow-task "
+                     "exemption.",
+            ),
+            InputField(
                 key="annex_i_product",
                 label="Is the AI a safety component of a product already regulated for safety?",
                 kind="boolean", group=G_PURPOSE, options=YES_NO, default="no",

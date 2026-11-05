@@ -52,6 +52,8 @@ class ChatResponse:
     finish_reason: Optional[str] = None
     retries: int = 0
     raw: Optional[AIMessage] = None
+    #: Tokens the provider reports for this reply: ``input_tokens``, ``output_tokens``.
+    usage: Optional[Dict[str, int]] = None
 
 
 class MockChatModel(BaseChatModel):
@@ -174,7 +176,7 @@ def invoke_chat(messages: Sequence[BaseMessage], model: Optional[BaseChatModel] 
     for i in range(attempts):
         try:
             message = llm.invoke(list(messages))
-        except BaseException as exc:  # noqa: BLE001 - re-raised below
+        except Exception as exc:  # noqa: BLE001 - re-raised below
             last = exc
             if (model is None and not dropped_temperature and config.LLM_TEMPERATURE is not None
                     and rejects_temperature(exc)):
@@ -186,7 +188,7 @@ def invoke_chat(messages: Sequence[BaseMessage], model: Optional[BaseChatModel] 
                 llm = get_chat_model(max_tokens)
                 try:
                     message = llm.invoke(list(messages))
-                except BaseException as retry_exc:  # noqa: BLE001
+                except Exception as retry_exc:  # noqa: BLE001
                     last = retry_exc
                     if not is_transient(retry_exc) or i == attempts - 1:
                         raise
@@ -210,9 +212,22 @@ def _response(message: Any, retries: int) -> ChatResponse:
         content = "".join(
             part.get("text", "") if isinstance(part, dict) else str(part) for part in content
         )
+    meta = getattr(message, "usage_metadata", None) or {}
+    usage = {k: int(meta.get(k) or 0) for k in ("input_tokens", "output_tokens")} if meta else None
     return ChatResponse(
         text=str(content),
         finish_reason=finish_reason_of(message),
         retries=retries,
         raw=message if isinstance(message, AIMessage) else None,
+        usage=usage,
     )
+
+
+def add_usage(total: Dict[str, int], response: ChatResponse) -> Dict[str, int]:
+    """Accumulate one reply's token use into a per-run total."""
+    total["calls"] = total.get("calls", 0) + 1
+    for k, v in (response.usage or {}).items():
+        total[k] = total.get(k, 0) + v
+    total.setdefault("reported", False)
+    total["reported"] = total["reported"] or bool(response.usage)
+    return total

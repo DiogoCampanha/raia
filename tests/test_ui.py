@@ -170,7 +170,10 @@ def agent_identity() -> None:
 
 
     from raia.ui.theme import CHROME, NAV_TEXT
-    import tomllib
+    try:
+        import tomllib                      # Python 3.11+
+    except ModuleNotFoundError:             # Python 3.10: the same parser, as a package
+        import tomli as tomllib
 
     css = theme._css()
     check(all(f"light-dark({a}, {b})" in css for a, b in CHROME.values()),

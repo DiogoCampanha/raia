@@ -133,6 +133,115 @@ SCHEMA: List[str] = [
 ]
 
 
+#: Changes to the baseline schema above, applied once each and recorded in
+#: ``schema_migrations``. The baseline stays exactly as first released, so an
+#: existing database and a new one end in the same shape. Append only: never
+#: edit or reorder an entry that has shipped.
+def _add_columns(t: "Tx", table: str, columns: Sequence[str]) -> None:
+    have = t.columns(table)
+    for col in columns:
+        name = col.split()[0]
+        if name not in have:
+            t.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
+
+
+def _m001_chain_events(t: "Tx") -> None:
+    """Hash-chain the project event log (decisions live there, not only metrics)."""
+    _add_columns(t, "project_events", ["seq INTEGER", "parent_digest TEXT", "digest TEXT"])
+    from .storage import GENESIS, event_digest
+
+    rows = t.query("SELECT id, project_id, at, kind, payload FROM project_events "
+                   "WHERE seq IS NULL ORDER BY project_id, at, id")
+    state: Dict[str, Any] = {}
+    for r in rows:
+        if r["project_id"] not in state:
+            last = t.one("SELECT seq, digest FROM project_events WHERE project_id = ? AND seq IS NOT NULL "
+                         "ORDER BY seq DESC LIMIT 1", (r["project_id"],))
+            state[r["project_id"]] = (last["seq"], last["digest"]) if last else (0, GENESIS)
+        seq, parent = state[r["project_id"]]
+        seq += 1
+        digest = event_digest(parent, seq, r["at"], r["kind"], r["payload"])
+        t.execute("UPDATE project_events SET seq = ?, parent_digest = ?, digest = ? WHERE id = ?",
+                  (seq, parent, digest, r["id"]))
+        state[r["project_id"]] = (seq, digest)
+    t.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_events_seq ON project_events (project_id, seq)")
+
+
+def _m002_assessments(t: "Tx") -> None:
+    """Assessments become findable: status, project, instrument and build as columns, items as rows."""
+    _add_columns(t, "experience_ratings", ["status TEXT", "project_id TEXT", "instrument TEXT",
+                                           "build TEXT", "updated_at TEXT"])
+    import json as _json
+
+    for r in t.query("SELECT id, submitted_at, payload FROM experience_ratings WHERE status IS NULL"):
+        try:
+            body = _json.loads(r["payload"])
+        except ValueError:
+            body = {}
+        t.execute("UPDATE experience_ratings SET status = ?, instrument = ?, build = ?, updated_at = ? "
+                  "WHERE id = ?",
+                  (body.get("status") or "submitted", body.get("instrument") or "", body.get("build") or "",
+                   r["submitted_at"], r["id"]))
+    t.execute("""CREATE TABLE IF NOT EXISTS assessment_items (
+        rating_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        item_key TEXT NOT NULL,
+        score INTEGER,
+        value TEXT,
+        comment TEXT,
+        project_id TEXT,
+        commit_ref TEXT,
+        PRIMARY KEY (rating_id, kind, item_key)
+    )""")
+    t.execute("CREATE INDEX IF NOT EXISTS ix_ratings_user ON experience_ratings (user_id, status)")
+    t.execute("CREATE INDEX IF NOT EXISTS ix_ratings_project ON experience_ratings (project_id)")
+    t.execute("CREATE INDEX IF NOT EXISTS ix_items_project ON assessment_items (project_id, kind, item_key)")
+
+
+def _m003_admin_audit(t: "Tx") -> None:
+    """Who did what with administrative or account-wide reach (exports, deletions, sign-ins)."""
+    t.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id TEXT PRIMARY KEY,
+        at TEXT NOT NULL,
+        actor_id TEXT,
+        action TEXT NOT NULL,
+        target TEXT,
+        detail TEXT
+    )""")
+    t.execute("CREATE INDEX IF NOT EXISTS ix_audit_at ON audit_log (at)")
+
+
+def _m004_transcripts(t: "Tx") -> None:
+    """The exact prompt and raw reply of each run, sealed, plus its token use."""
+    t.execute("""CREATE TABLE IF NOT EXISTS run_transcripts (
+        project_id TEXT NOT NULL,
+        draft_id TEXT NOT NULL,
+        agent_key TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        prompt_sha256_16 TEXT,
+        model TEXT,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        calls INTEGER,
+        sealed TEXT,
+        PRIMARY KEY (project_id, draft_id)
+    )""")
+
+
+MIGRATIONS = [
+    ("001_chain_events", _m001_chain_events),
+    ("002_assessments", _m002_assessments),
+    ("003_admin_audit", _m003_admin_audit),
+    ("004_transcripts", _m004_transcripts),
+]
+
+
+def is_unique_violation(exc: BaseException) -> bool:
+    """A primary-key or unique-index conflict, on either engine."""
+    names = {c.__name__ for c in type(exc).__mro__}
+    return "IntegrityError" in names or "UniqueViolation" in names
+
+
 def utcnow() -> str:
     return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
 
@@ -224,6 +333,15 @@ class Tx:
     def one(self, sql: str, params: Sequence[Any] = ()) -> Optional[Dict[str, Any]]:
         rows = self.query(sql, params)
         return rows[0] if rows else None
+
+    def columns(self, table: str) -> set:
+        """The column names a table has now."""
+        if self._pg:
+            rows = self.query("SELECT column_name AS name FROM information_schema.columns "
+                              "WHERE table_name = ? AND table_schema = current_schema()", (table,))
+        else:
+            rows = self.query(f"PRAGMA table_info({table})")
+        return {r["name"] for r in rows}
 
 
 class Database:
@@ -320,6 +438,15 @@ class Database:
         with self.tx() as t:
             for stmt in SCHEMA:
                 t.execute(stmt)
+            t.execute("CREATE TABLE IF NOT EXISTS schema_migrations "
+                      "(id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
+        applied = {r["id"] for r in self.query("SELECT id FROM schema_migrations")}
+        for mid, step in MIGRATIONS:
+            if mid in applied:
+                continue
+            with self.tx() as t:
+                step(t)
+                t.execute("INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)", (mid, utcnow()))
         self.stats.reset()
 
     # Convenience wrappers for single statements.

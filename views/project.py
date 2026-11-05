@@ -22,7 +22,8 @@ from raia.ui.theme import I, look, look_key
 user = current_user()
 svc = get_service()
 proj = open_project("id")
-repo = svc.repository(user, proj.id, "view")
+# A read-only view that names people; the record itself names them by reference.
+repo = svc.reader(user, proj.id)
 summary = svc.stage_summary(user, proj.id)
 
 
@@ -33,7 +34,8 @@ def _bundle() -> bytes:
     doing that on each click anywhere on the page made every click slow. It
     re-opens the repository, so membership is checked again at download time.
     """
-    return session_bundle(svc.repository(user, proj.id, "view"), proj.name)
+    return session_bundle(svc.repository(user, proj.id, "view"), proj.name,
+                          people=svc.people_map(user, proj.id))
 
 
 def _skill() -> bytes:

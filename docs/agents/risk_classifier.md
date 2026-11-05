@@ -43,6 +43,7 @@ Classifies the AI system into a legal risk tier and lists the obligations that f
 | Legal footprint | Is it deployed by a public body, or to provide a public service? | boolean | no |
 | Legal footprint | Are you the provider of a general-purpose AI model? | boolean | no |
 | Purpose and practices | Which of these describes what the system is used for? | multiselect | yes |
+| Purpose and practices | Does the system profile people? | boolean | no |
 | Purpose and practices | Is the AI a safety component of a product already regulated for safety? | boolean | no |
 | Purpose and practices | Does the system do any of these? | multiselect | yes |
 | Purpose and practices | Does any of these apply? | multiselect | yes |

@@ -25,6 +25,10 @@ from raia.deploy import apply_secrets  # noqa: E402
 
 apply_secrets()
 
+from raia import logs  # noqa: E402
+
+logs.setup()
+
 from raia import auth, config                          # noqa: E402
 from raia.projects import ProjectService, normalize_email  # noqa: E402
 from raia.deploy import runtime_status                 # noqa: E402

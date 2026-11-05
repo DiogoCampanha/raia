@@ -53,7 +53,7 @@ from typing import Any, Dict, Iterator, List, Optional
 
 from . import config
 from .db import Database, get_database, utcnow
-from . import lineage
+from . import lineage, logs, people
 from .storage import open_repository
 
 OWNER = "owner"
@@ -77,12 +77,23 @@ PERMISSIONS: Dict[str, frozenset] = {
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+log = logs.get("projects")
+
+
 class AccessDenied(PermissionError):
     """The person is not allowed to do this on this project."""
 
 
 class UsageLimitReached(RuntimeError):
     """The person reached the daily model-call allowance."""
+
+
+class StaleDraft(RuntimeError):
+    """The decision was taken on a draft that is no longer the one at the gate."""
+
+
+class OverrideRequired(ValueError):
+    """Approving this draft needs a recorded reason: critical checks failed."""
 
 
 @dataclass(frozen=True)
@@ -99,6 +110,11 @@ class User:
     @property
     def is_admin(self) -> bool:
         return self.email.lower() in config.ADMIN_EMAILS
+
+    @property
+    def ref(self) -> str:
+        """How this person is named in anything recorded (see :mod:`raia.people`)."""
+        return people.ref(self.id)
 
 
 @dataclass(frozen=True)
@@ -148,6 +164,14 @@ def pseudonym(user_id: str) -> str:
 #: memo at all (every call queries).
 _ACCESS_MEMO: "contextvars.ContextVar[Optional[Dict[Any, Any]]]" = contextvars.ContextVar(
     "raia_access_memo", default=None
+)
+
+
+#: Names already looked up during the current page run (id -> name, or None for
+#: an account that no longer exists). A page shows many recorded items naming
+#: the same few people; each person is looked up once per run.
+_NAMES_MEMO: "contextvars.ContextVar[Optional[Dict[str, Optional[str]]]]" = contextvars.ContextVar(
+    "raia_names_memo", default=None
 )
 
 
@@ -202,10 +226,33 @@ class ProjectService:
         memberships made during the run drops the memo.
         """
         token = _ACCESS_MEMO.set({})
+        names = _NAMES_MEMO.set({})
         try:
             yield
         finally:
             _ACCESS_MEMO.reset(token)
+            _NAMES_MEMO.reset(names)
+
+    # -- Audit log ----------------------------------------------------------------
+
+    def audit(self, user: Optional[User], action: str, target: str = "", detail: Optional[Dict[str, Any]] = None) -> None:
+        """Record an action with account-wide or administrative reach.
+
+        Written to the ``audit_log`` table (kept across log rotation) and to the
+        structured log. Never carries content, names or emails.
+        """
+        actor = user.id if user else ""
+        body = json.dumps(detail or {}, ensure_ascii=False, default=str)
+        self.db.execute("INSERT INTO audit_log (id, at, actor_id, action, target, detail) VALUES (?, ?, ?, ?, ?, ?)",
+                        (uuid.uuid4().hex, utcnow(), actor, action, target, body))
+        logs.event(log, action, actor=actor, target=target, **(detail or {}))
+
+    def audit_entries(self, user: User, limit: int = 200) -> List[Dict[str, Any]]:
+        """The latest audit-log entries (coordinators only)."""
+        if not user.is_admin:
+            raise AccessDenied("Only the study coordinators can read the audit log.")
+        return self.db.query("SELECT at, actor_id, action, target, detail FROM audit_log "
+                             "ORDER BY at DESC LIMIT ?", (int(limit),))
 
     # -- People -------------------------------------------------------------------
 
@@ -217,6 +264,7 @@ class ProjectService:
         now = utcnow()
         with self.db.tx() as t:
             row = t.one("SELECT * FROM users WHERE email = ?", (email,))
+            created = row is None
             if row is None:
                 t.execute(
                     "INSERT INTO users (id, email, name, created_at, last_login_at) VALUES (?, ?, ?, ?, ?)",
@@ -228,7 +276,9 @@ class ProjectService:
                     (now, name or row.get("name") or "", row["id"]),
                 )
             row = t.one("SELECT * FROM users WHERE email = ?", (email,))
-        return _user(row)
+        signed = _user(row)
+        self.audit(signed, "account_created" if created else "signed_in", signed.id)
+        return signed
 
     def get_user(self, user_id: str) -> Optional[User]:
         row = self.db.one("SELECT * FROM users WHERE id = ?", (user_id,))
@@ -247,13 +297,18 @@ class ProjectService:
         stay attributed — that is what an audit trail is for), but the person's
         membership, invitations, ratings and account are removed.
         """
+        deleted = []
         for p in self.list_projects(user, include_archived=True):
             owners = [m for m in self.members(user, p.id) if m["role"] == OWNER]
             if p.role == OWNER and len(owners) == 1:
                 self._delete_project_data(p.id)
+                deleted.append(p.id)
+        self.audit(user, "account_deleted", user.id, {"projects_deleted": deleted})
         with self.db.tx() as t:
             t.execute("DELETE FROM project_members WHERE user_id = ?", (user.id,))
             t.execute("DELETE FROM invitations WHERE email = ? OR invited_by = ?", (user.email, user.id))
+            t.execute("DELETE FROM assessment_items WHERE rating_id IN "
+                      "(SELECT id FROM experience_ratings WHERE user_id = ?)", (user.id,))
             t.execute("DELETE FROM experience_ratings WHERE user_id = ?", (user.id,))
             t.execute("DELETE FROM usage_counters WHERE user_id = ?", (user.id,))
             t.execute("DELETE FROM jira_connections WHERE user_id = ?", (user.id,))
@@ -307,6 +362,7 @@ class ProjectService:
         if row is None:
             # Same answer whether the project does not exist or is someone
             # else's: an id must not be usable to probe for projects.
+            logs.event(log, "access refused", 30, user=user.id, project=project_id, reason="not a member")
             raise AccessDenied("Project not found, or you are not a member of it.")
         return _project(row)
 
@@ -315,6 +371,8 @@ class ProjectService:
             raise ValueError(f"Unknown action '{action}'.")
         project = self.get_project(user, project_id)
         if not project.can(action):
+            logs.event(log, "access refused", 30, user=user.id, project=project_id, action=action,
+                       role=project.role)
             raise AccessDenied(
                 f"Your role on this project ({project.role}) does not allow this ({action})."
             )
@@ -323,6 +381,34 @@ class ProjectService:
     def repository(self, user: User, project_id: str, action: str = "view"):
         self.authorize(user, project_id, action)
         return open_repository(project_id)
+
+    def reader(self, user: User, project_id: str) -> "DisplayRepository":
+        """A read-only view of a project's blackboard for pages to show.
+
+        What is recorded names people by reference (:mod:`raia.people`); what
+        this returns names them. Never pass it to anything that writes.
+        """
+        return DisplayRepository(self.repository(user, project_id, "view"), self)
+
+    def people_map(self, user: User, project_id: str) -> Dict[str, str]:
+        """``user:<id>`` -> name, for every person the project's files reference (exports)."""
+        repo = self.repository(user, project_id, "view")
+        names = people.display_names(self.db, people.ids_in(repo.current_files()))
+        return {people.ref(i): n for i, n in names.items()}
+
+    def humanize(self, obj: Any) -> Any:
+        """``obj`` with every person reference replaced by that person's name (display only)."""
+        ids = people.ids_in(obj)
+        if not ids:
+            return obj
+        memo = _NAMES_MEMO.get()
+        if memo is None:
+            return people.humanize(obj, people.display_names(self.db, ids))
+        missing = ids - set(memo)
+        if missing:
+            found = people.display_names(self.db, missing)
+            memo.update({i: found.get(i) for i in missing})
+        return people.humanize(obj, {i: memo[i] for i in ids if memo.get(i)})
 
     def touch(self, project_id: str) -> None:
         self.db.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (utcnow(), project_id))
@@ -356,11 +442,19 @@ class ProjectService:
     def delete_project(self, user: User, project_id: str) -> None:
         self.authorize(user, project_id, "manage")
         self._delete_project_data(project_id)
+        self.audit(user, "project_deleted", project_id)
 
     @_changes_access
     def _delete_project_data(self, project_id: str) -> None:
         open_repository(project_id).reset()
+        # The graph checkpointer keeps every run's answers, drafts and feedback.
+        self.runner.forget(project_id)
         with self.db.tx() as t:
+            # An assessment belongs to the person who wrote it; it only stops
+            # pointing at a project that no longer exists.
+            t.execute("UPDATE experience_ratings SET project_id = NULL WHERE project_id = ?", (project_id,))
+            t.execute("UPDATE assessment_items SET project_id = NULL, commit_ref = NULL WHERE project_id = ?",
+                      (project_id,))
             t.execute("DELETE FROM invitations WHERE project_id = ?", (project_id,))
             t.execute("DELETE FROM project_members WHERE project_id = ?", (project_id,))
             t.execute("DELETE FROM projects WHERE id = ?", (project_id,))
@@ -469,6 +563,7 @@ class ProjectService:
             self._guard_last_owner(t, project_id, member_id, new_role=role)
             t.execute("UPDATE project_members SET role = ? WHERE project_id = ? AND user_id = ?",
                       (role, project_id, member_id))
+        self.audit(user, "role_changed", project_id, {"member": member_id, "role": role})
 
     @_changes_access
     def remove_member(self, user: User, project_id: str, member_id: str) -> None:
@@ -480,6 +575,8 @@ class ProjectService:
             self._guard_last_owner(t, project_id, member_id, new_role=None)
             t.execute("DELETE FROM project_members WHERE project_id = ? AND user_id = ?",
                       (project_id, member_id))
+        self.audit(user, "member_removed" if member_id != user.id else "member_left", project_id,
+                   {"member": member_id})
 
     @staticmethod
     def _guard_last_owner(t, project_id: str, member_id: str, new_role: Optional[str]) -> None:
@@ -648,6 +745,19 @@ class ProjectService:
         self.touch(project_id)
         return result
 
+    @staticmethod
+    def override_needed(payload: Dict[str, Any]) -> List[str]:
+        """Failed checks that make approving this draft an override (empty: none).
+
+        The fallback record — a reply that could not be read — always counts.
+        """
+        from .validators import critical_failures
+
+        needed = critical_failures(payload.get("validation") or {})
+        if (payload.get("record") or {}).get("schema_errors") and not needed:
+            needed = ["The reply could not be read"]
+        return needed
+
     def second_approver_blocks(self, user: User, project_id: str, payload: Dict[str, Any]) -> bool:
         project = self.get_project(user, project_id)
         return bool(project.require_second_approver and payload.get("run_by") == user.id)
@@ -660,14 +770,38 @@ class ProjectService:
             raise ValueError("A decision is either approve or reject.")
         repo = open_repository(project_id)
         pending = repo.load_pending(agent_key) or {}
-        if action == "approve" and self.second_approver_blocks(user, project_id, pending):
+        # The decision is bound to the draft the person saw. Another member may
+        # have regenerated the stage since the page was drawn; acting on the
+        # newer draft would record an approval of something nobody reviewed.
+        at_gate = self.runner.draft_at_gate(project_id, agent_key) or pending
+        current = str(at_gate.get("draft_id") or "")
+        sent = str(decision.get("draft_id") or "")
+        if not sent or (current and sent != current):
+            raise StaleDraft(
+                "This draft is no longer the one waiting for review: the stage was run again "
+                "after this page was opened. Reload the stage to review the current draft."
+            )
+        if action == "approve" and self.second_approver_blocks(user, project_id, at_gate):
             raise AccessDenied(
                 "This project requires a second approver: the person who ran a stage cannot "
                 "approve its draft. Ask another editor, reviewer or owner to review it."
             )
         clean = dict(decision)
+        clean.pop("override", None)
+        if action == "approve":
+            needed = self.override_needed(at_gate)
+            reason = " ".join(str(decision.get("override_reason") or "").split())
+            if needed and not reason:
+                raise OverrideRequired(
+                    "Checks a reviewer must act on failed (" + "; ".join(needed) + "). Reject the "
+                    "draft to regenerate it, or say why it should be approved as it is."
+                )
+            if needed:
+                clean["override"] = {"reason": reason[:1000], "checks": needed}
         # Identity comes from the session, never from the caller's payload.
-        clean["approver"] = user.label
+        # Recorded as a reference, resolved to a name only when displayed: the
+        # chained history never holds a name or an email that cannot be erased.
+        clean["approver"] = user.ref
         clean["approver_id"] = user.id
         if action == "reject":
             self._count_model_call(user)
@@ -694,7 +828,7 @@ class ProjectService:
     def set_issue_status(self, user: User, project_id: str, issue_id: str, status: str,
                          note: str = "") -> bool:
         repo = self.repository(user, project_id, "review")
-        ok = repo.set_issue_status(issue_id, status, note, user.label)
+        ok = repo.set_issue_status(issue_id, status, note, user.ref)
         if ok:
             repo.record_event("issue_arbitrated", {"user": user.id, "issue": issue_id, "status": status})
         return ok
@@ -707,7 +841,7 @@ class ProjectService:
         if not rationale:
             raise ValueError("Say why: one line is enough.")
         repo = self.repository(user, project_id, "review")
-        ok = repo.set_issue_status(issue_id, "decided", rationale, user.label, decision=choice)
+        ok = repo.set_issue_status(issue_id, "decided", rationale, user.ref, decision=choice)
         if ok:
             repo.record_event("issue_decided", {"user": user.id, "issue": issue_id, "where": "output"})
         return ok
@@ -715,7 +849,7 @@ class ProjectService:
     def reopen_issue(self, user: User, project_id: str, issue_id: str) -> bool:
         """Undo a decision (owners only): the issue is open again."""
         repo = self.repository(user, project_id, "manage")
-        ok = repo.set_issue_status(issue_id, "open", "", user.label)
+        ok = repo.set_issue_status(issue_id, "open", "", user.ref)
         if ok:
             repo.record_event("issue_reopened", {"user": user.id, "issue": issue_id})
         return ok
@@ -726,7 +860,7 @@ class ProjectService:
                 computed: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         from . import handoff as H
 
-        return H.inherited(self.repository(user, project_id, "view"), agent_key, draft, computed)
+        return self.humanize(H.inherited(self.repository(user, project_id, "view"), agent_key, draft, computed))
 
     def handoff_delta(self, user: User, project_id: str, agent_key: str, draft: Dict[str, Any],
                       computed: Dict[str, Any]) -> Dict[str, Any]:
@@ -737,7 +871,7 @@ class ProjectService:
         repo = self.repository(user, project_id, "view")
         key = RUNNABLE[agent_key].spec.output_key
         prev = (repo.read_data(key) or {}).get("structured") or {}
-        return H.delta(agent_key, prev.get("record") or {}, prev, draft, computed) if prev else {}
+        return self.humanize(H.delta(agent_key, prev.get("record") or {}, prev, draft, computed)) if prev else {}
 
     def hands_on(self, user: User, project_id: str, agent_key: str) -> str:
         from . import handoff as H
@@ -750,12 +884,12 @@ class ProjectService:
 
         repo = self.repository(user, project_id, "view")
         if board and board.get("ready"):
-            return H.thread(repo, backlog=list((board.get("backlog") or {}).get("stories") or []),
-                            review=board.get("review") or {})
-        return H.thread(repo)
+            return self.humanize(H.thread(repo, backlog=list((board.get("backlog") or {}).get("stories") or []),
+                                          review=board.get("review") or {}))
+        return self.humanize(H.thread(repo))
 
     def open_issues(self, user: User, project_id: str) -> List[Dict[str, Any]]:
-        return self.repository(user, project_id, "view").open_issues()
+        return self.humanize(self.repository(user, project_id, "view").open_issues())
 
     def save_review(self, user: User, project_id: str, agent_key: str, review: Dict[str, Any]) -> None:
         """Keep a reviewer's card verdicts and decisions with the draft waiting for review.
@@ -788,13 +922,13 @@ class ProjectService:
         repo = self.repository(user, project_id, "view")
         bl, sp = B.load(repo)
         review = self._review_data(repo)
-        return {
+        return self.humanize({
             "ready": repo.read_artifact("requirements_review") is not None,
             "backlog": bl, "sprints": sp, "open_sprint": B.open_sprint(sp),
             "roadmap": R.roadmap(bl, sp, review) if review else {},
             "uncovered": R.uncovered_requirements(review, bl) if review else [],
             "review": review,
-        }
+        })
 
     def _board_write(self, user: User, project_id: str, action: str, fn, message: str,
                      event: str, payload: Optional[Dict[str, Any]] = None):
@@ -803,9 +937,16 @@ class ProjectService:
         repo = self.repository(user, project_id, action)
         if repo.read_artifact("requirements_review") is None:
             raise ValueError("The board opens once the ethical requirements are approved.")
-        bl, sp = B.load(repo)
-        result = fn(bl, sp)
-        repo.commit_files(B.register_files(repo, bl, sp), f"raia(board): {message} by {user.label}")
+
+        # Read, change and write the registers as one step: if anyone else
+        # recorded a version in between, the change is recomputed on top of
+        # theirs instead of overwriting it.
+        def build():
+            bl, sp = B.load(repo)
+            result = fn(bl, sp)
+            return B.register_files(repo, bl, sp), f"raia(board): {message} by {user.ref}", result
+
+        result, _ = repo.atomic(build)
         repo.record_event(event, {"user": user.id, **(payload or {})})
         self.touch(project_id)
         return result
@@ -819,7 +960,7 @@ class ProjectService:
                 bl, origin=B.PRODUCT, title=fields.get("title", ""), description=fields.get("description", ""),
                 existing_criteria=[l for l in str(fields.get("acceptance_criteria") or "").splitlines()],
                 touches=fields.get("touches") or [], estimate=fields.get("estimate"),
-                depends_on=fields.get("depends_on") or [], by=user.label, source="added on the board")
+                depends_on=fields.get("depends_on") or [], by=user.ref, source="added on the board")
         s = self._board_write(user, project_id, "run", fn, "product story added", "story_added")
         return s
 
@@ -827,14 +968,14 @@ class ProjectService:
         from . import backlog as B
 
         return self._board_write(user, project_id, "run",
-                                 lambda bl, sp: B.update_story(bl, story_id, changes, user.label),
+                                 lambda bl, sp: B.update_story(bl, story_id, changes, user.ref),
                                  f"{story_id} edited", "story_edited", {"story": story_id})
 
     def create_sprint(self, user: User, project_id: str, **fields: Any) -> Dict[str, Any]:
         from . import backlog as B
 
         return self._board_write(user, project_id, "run",
-                                 lambda bl, sp: B.create_sprint(sp, by=user.label, **fields),
+                                 lambda bl, sp: B.create_sprint(sp, by=user.ref, **fields),
                                  "sprint planned", "sprint_planned")
 
     def update_sprint(self, user: User, project_id: str, sprint_id: str, changes: Dict[str, Any]) -> Dict[str, Any]:
@@ -849,7 +990,7 @@ class ProjectService:
 
         def fn(bl, sp):
             for sid in story_ids:
-                (B.schedule if add else B.unschedule)(bl, sp, sid, user.label)
+                (B.schedule if add else B.unschedule)(bl, sp, sid, user.ref)
             return list(story_ids)
         return self._board_write(user, project_id, "run", fn,
                                  ("scheduled " if add else "unscheduled ") + ", ".join(story_ids),
@@ -858,19 +999,19 @@ class ProjectService:
     def start_sprint(self, user: User, project_id: str) -> Dict[str, Any]:
         from . import backlog as B
 
-        return self._board_write(user, project_id, "run", lambda bl, sp: B.start_sprint(sp, bl, user.label),
+        return self._board_write(user, project_id, "run", lambda bl, sp: B.start_sprint(sp, bl, user.ref),
                                  "sprint started", "sprint_started")
 
     def end_sprint(self, user: User, project_id: str) -> Dict[str, Any]:
         from . import backlog as B
 
-        return self._board_write(user, project_id, "run", lambda bl, sp: B.end_sprint(sp, user.label),
+        return self._board_write(user, project_id, "run", lambda bl, sp: B.end_sprint(sp, user.ref),
                                  "sprint ended", "sprint_ended")
 
     def reopen_sprint(self, user: User, project_id: str) -> Dict[str, Any]:
         from . import backlog as B
 
-        return self._board_write(user, project_id, "run", lambda bl, sp: B.reopen_sprint(sp, user.label),
+        return self._board_write(user, project_id, "run", lambda bl, sp: B.reopen_sprint(sp, user.ref),
                                  "sprint reopened", "sprint_reopened")
 
     def tick(self, user: User, project_id: str, story_id: str, done: bool) -> Dict[str, Any]:
@@ -878,7 +1019,7 @@ class ProjectService:
         from . import backlog as B
 
         return self._board_write(user, project_id, "review",
-                                 lambda bl, sp: B.tick(bl, sp, story_id, done, user.label, "manual"),
+                                 lambda bl, sp: B.tick(bl, sp, story_id, done, user.ref, "manual"),
                                  f"{story_id} marked {'done' if done else 'not done'}",
                                  "story_ticked", {"story": story_id, "done": bool(done), "source": "manual"})
 
@@ -886,7 +1027,7 @@ class ProjectService:
         from . import backlog as B
 
         return self._board_write(user, project_id, "run",
-                                 lambda bl, sp: B.resolve_review(bl, story_id, decision, user.label),
+                                 lambda bl, sp: B.resolve_review(bl, story_id, decision, user.ref),
                                  f"{story_id} review settled ({decision})", "story_review_settled",
                                  {"story": story_id, "decision": decision})
 
@@ -1037,11 +1178,18 @@ class ProjectService:
                             sprint_id=x["id"], jira_sprint=jira_sprint, project_name=project.name)
         finally:
             client.close()
-        J.record_push(bl, result, user.label)
-        sp.setdefault("settings", {})["jira"] = {"project_key": J.check_project_key(project_key),
-                                                 "issue_type": issue_type or "Story"}
-        repo.commit_files(B.register_files(repo, bl, sp),
-                          f"raia(board): {len(result['created'])} story(ies) sent to Jira by {user.label}")
+
+        # The push happened once; recording its keys is a read-modify-write of
+        # the registers, recomputed if someone else changed the board meanwhile.
+        def build():
+            fresh_bl, fresh_sp = B.load(repo)
+            J.record_push(fresh_bl, result, user.ref)
+            fresh_sp.setdefault("settings", {})["jira"] = {"project_key": J.check_project_key(project_key),
+                                                           "issue_type": issue_type or "Story"}
+            return (B.register_files(repo, fresh_bl, fresh_sp),
+                    f"raia(board): {len(result['created'])} story(ies) sent to Jira by {user.ref}", None)
+
+        repo.atomic(build)
         repo.record_event("jira_pushed", {"user": user.id, "sprint": x["id"], "created": len(result["created"]),
                                           "updated": len(result["updated"]), "errors": len(result["errors"])})
         self.touch(project_id)
@@ -1063,8 +1211,13 @@ class ProjectService:
             statuses = J.fetch_status(client, B.in_sprint(bl, x["id"]))
         finally:
             client.close()
-        result = J.apply_sync(bl, sp, statuses, user.label)
-        repo.commit_files(B.register_files(repo, bl, sp), f"raia(board): synced from Jira by {user.label}")
+
+        def build():
+            fresh_bl, fresh_sp = B.load(repo)
+            synced = J.apply_sync(fresh_bl, fresh_sp, statuses, user.ref)
+            return B.register_files(repo, fresh_bl, fresh_sp), f"raia(board): synced from Jira by {user.ref}", synced
+
+        result, _ = repo.atomic(build)
         repo.record_event("jira_synced", {"user": user.id, "sprint": x["id"], "done": result["done"],
                                           "disagreements": result["disagreements"],
                                           "not_found": result["not_found"]})
@@ -1075,52 +1228,84 @@ class ProjectService:
         from . import jira as J
 
         return self._board_write(user, project_id, "review",
-                                 lambda bl, sp: J.resolve(bl, sp, story_id, keep, user.label),
+                                 lambda bl, sp: J.resolve(bl, sp, story_id, keep, user.ref),
                                  f"{story_id} Jira disagreement settled", "jira_disagreement_settled",
                                  {"story": story_id, "kept": keep})
 
     # -- Tester assessment -------------------------------------------------------------------
 
     def submit_rating(self, user: User, payload: Dict[str, Any]) -> None:
-        """Store one tester assessment (final submission). A pending draft is discarded."""
-        body = dict(payload)
-        body["status"] = "submitted"
-        body["build"] = config.build_id()
-        with self.db.tx() as t:
-            self._delete_drafts(t, user)
-            t.execute(
-                "INSERT INTO experience_ratings (id, user_id, submitted_at, payload) VALUES (?, ?, ?, ?)",
-                (uuid.uuid4().hex, user.id, utcnow(), json.dumps(body, ensure_ascii=False, default=str)),
-            )
+        """Store one tester assessment (final submission). A pending draft is discarded.
 
-    @staticmethod
-    def _delete_drafts(t, user: User) -> None:
-        for r in t.query("SELECT id, payload FROM experience_ratings WHERE user_id = ?", (user.id,)):
-            if json.loads(r["payload"]).get("status") == "draft":
-                t.execute("DELETE FROM experience_ratings WHERE id = ?", (r["id"],))
+        The assessment may name the project it is about (``project_id``, one
+        the person is a member of). Each stage rating is then linked to the
+        version of that stage the person was looking at, so a rating can be
+        found by project, by stage and by the exact approved version.
+        """
+        self._store_assessment(user, payload, "submitted")
 
     def save_assessment_draft(self, user: User, payload: Dict[str, Any]) -> None:
         """Keep a half-finished assessment. Drafts never reach research exports."""
+        self._store_assessment(user, payload, "draft")
+
+    def _store_assessment(self, user: User, payload: Dict[str, Any], status: str) -> None:
         body = dict(payload)
-        body["status"] = "draft"
+        body["status"] = status
+        body["build"] = config.build_id()
+        project_id = str(body.get("project_id") or "") or None
+        versions: Dict[str, str] = {}
+        if project_id:
+            versions = approved_versions(self.repository(user, project_id, "view"))
+            body["stage_versions"] = versions
+        rid, now = uuid.uuid4().hex, utcnow()
         with self.db.tx() as t:
             self._delete_drafts(t, user)
             t.execute(
-                "INSERT INTO experience_ratings (id, user_id, submitted_at, payload) VALUES (?, ?, ?, ?)",
-                (uuid.uuid4().hex, user.id, utcnow(), json.dumps(body, ensure_ascii=False, default=str)),
+                "INSERT INTO experience_ratings (id, user_id, submitted_at, payload, status, project_id, "
+                "instrument, build, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (rid, user.id, now, json.dumps(body, ensure_ascii=False, default=str), status, project_id,
+                 str(body.get("instrument") or ""), body["build"], now),
             )
+            for kind, key, score, value, comment in assessment_items(body):
+                t.execute(
+                    "INSERT INTO assessment_items (rating_id, kind, item_key, score, value, comment, project_id, "
+                    "commit_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (rid, kind, key, score, value, comment, project_id,
+                     versions.get(key) if kind == "stage" else None),
+                )
+
+    @staticmethod
+    def _delete_drafts(t, user: User) -> None:
+        for r in t.query("SELECT id FROM experience_ratings WHERE user_id = ? AND status = 'draft'", (user.id,)):
+            t.execute("DELETE FROM assessment_items WHERE rating_id = ?", (r["id"],))
+            t.execute("DELETE FROM experience_ratings WHERE id = ?", (r["id"],))
 
     def _ratings(self, user: User) -> List[Dict[str, Any]]:
         rows = self.db.query(
-            "SELECT submitted_at, payload FROM experience_ratings WHERE user_id = ? "
+            "SELECT submitted_at, payload, status, project_id FROM experience_ratings WHERE user_id = ? "
             "ORDER BY submitted_at DESC",
             (user.id,),
         )
-        return [{"submitted_at": r["submitted_at"], **json.loads(r["payload"])} for r in rows]
+        return [{"submitted_at": r["submitted_at"], **json.loads(r["payload"]),
+                 "status": r["status"] or "submitted", "project_id": r["project_id"]} for r in rows]
+
+    def project_assessments(self, user: User, project_id: str) -> List[Dict[str, Any]]:
+        """Every submitted rating item about one project (coordinators only), pseudonymized."""
+        if not user.is_admin:
+            raise AccessDenied("Only the study coordinators can read assessments.")
+        rows = self.db.query(
+            "SELECT r.user_id, r.submitted_at, r.instrument, r.build, i.kind, i.item_key, i.score, i.value, "
+            "i.comment, i.commit_ref FROM assessment_items i JOIN experience_ratings r ON r.id = i.rating_id "
+            "WHERE i.project_id = ? AND r.status = 'submitted' ORDER BY r.submitted_at, i.kind, i.item_key",
+            (project_id,),
+        )
+        self.audit(user, "assessments_read", project_id)
+        return [{**{k: v for k, v in r.items() if k != "user_id"}, "participant": pseudonym(r["user_id"])}
+                for r in rows]
 
     def my_latest_rating(self, user: User) -> Optional[Dict[str, Any]]:
         """The latest *submitted* assessment, or ``None``."""
-        return next((r for r in self._ratings(user) if r.get("status", "submitted") != "draft"), None)
+        return next((r for r in self._ratings(user) if r.get("status") != "draft"), None)
 
     def my_assessment_draft(self, user: User) -> Optional[Dict[str, Any]]:
         """The saved draft, if any. Submitting discards it, so a draft is always the newest."""
@@ -1128,6 +1313,7 @@ class ProjectService:
 
     def my_data_export(self, user: User) -> bytes:
         """Everything RAIA holds that is about this person, as JSON (right of access)."""
+        self.audit(user, "personal_data_export", user.id)
         account = self.db.one(
             "SELECT email, name, created_at, consented_at, last_login_at FROM users WHERE id = ?",
             (user.id,),
@@ -1166,7 +1352,9 @@ class ProjectService:
         read before publishing.
         """
         if not user.is_admin:
+            logs.event(log, "access refused", 30, user=user.id, action="research_export")
             raise AccessDenied("Only the study coordinators can export research data.")
+        self.audit(user, "research_export")
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
             projects = self.db.query("SELECT id, created_at, archived_at FROM projects ORDER BY created_at")
@@ -1176,15 +1364,29 @@ class ProjectService:
                 for e in open_repository(p["id"]).events():
                     events.append(json.dumps(pseudonymize_event(e, codes[p["id"]]), ensure_ascii=False))
             z.writestr("evaluation_events.jsonl", "\n".join(events))
-            ratings = self.db.query(
-                "SELECT user_id, submitted_at, payload FROM experience_ratings ORDER BY submitted_at"
+            submitted = self.db.query(
+                "SELECT id, user_id, submitted_at, payload, project_id FROM experience_ratings "
+                "WHERE status = 'submitted' ORDER BY submitted_at"
             )
-            submitted = [r for r in ratings
-                         if json.loads(r["payload"]).get("status", "submitted") != "draft"]
+            rating_code = {r["id"]: f"R-{i + 1:04d}" for i, r in enumerate(submitted)}
             z.writestr("experience_ratings.jsonl", "\n".join(
-                json.dumps({"participant": pseudonym(r["user_id"]), "submitted_at": r["submitted_at"],
-                            **json.loads(r["payload"])}, ensure_ascii=False)
+                json.dumps({"rating": rating_code[r["id"]], "participant": pseudonym(r["user_id"]),
+                            "submitted_at": r["submitted_at"],
+                            **{k: v for k, v in json.loads(r["payload"]).items() if k != "project_id"},
+                            "project": codes.get(r["project_id"] or "", "")}, ensure_ascii=False)
                 for r in submitted
+            ))
+            items = self.db.query(
+                "SELECT i.rating_id, i.kind, i.item_key, i.score, i.value, i.comment, i.project_id, i.commit_ref "
+                "FROM assessment_items i JOIN experience_ratings r ON r.id = i.rating_id "
+                "WHERE r.status = 'submitted' ORDER BY r.submitted_at, i.kind, i.item_key"
+            )
+            z.writestr("assessment_items.jsonl", "\n".join(
+                json.dumps({"rating": rating_code.get(i["rating_id"], ""), "kind": i["kind"], "item": i["item_key"],
+                            "score": i["score"], "value": i["value"], "comment": i["comment"],
+                            "project": codes.get(i["project_id"] or "", ""), "version": i["commit_ref"] or ""},
+                           ensure_ascii=False)
+                for i in items
             ))
             members = self.db.query("SELECT project_id, user_id, role FROM project_members")
             z.writestr("memberships.jsonl", "\n".join(
@@ -1195,6 +1397,67 @@ class ProjectService:
             z.writestr("README.txt", RESEARCH_README.format(created=utcnow()))
         buffer.seek(0)
         return buffer.read()
+
+
+class DisplayRepository:
+    """A blackboard as shown to a person: every read names people, nothing writes.
+
+    Reads that return recorded content are passed through
+    :meth:`ProjectService.humanize`; anything else is delegated unchanged.
+    Pending drafts are deliberately *not* humanized: the gate approves from
+    them, and a name must never travel from a display back into the record.
+    """
+
+    _SHOWN = frozenset({"read_artifact", "read_data", "read_sprint_artifact", "read_sprint_data",
+                        "read_register", "open_issues", "history", "upstream_bundle"})
+    _WRITES = frozenset({"save_artifact", "commit_files", "atomic", "append_open_issues",
+                         "set_issue_status", "save_pending", "save_intake", "record_event", "reset",
+                         "clear_pending", "clear_pending_for", "_commit_files"})
+
+    def __init__(self, repo: Any, svc: "ProjectService") -> None:
+        self._repo = repo
+        self._svc = svc
+
+    def __getattr__(self, name: str) -> Any:
+        if name in self._WRITES:
+            raise AttributeError(f"{name}: a display view of the blackboard cannot write")
+        attr = getattr(self._repo, name)
+        if name in self._SHOWN and callable(attr):
+            return lambda *a, **k: self._svc.humanize(attr(*a, **k))
+        return attr
+
+
+def approved_versions(repo: Any) -> Dict[str, str]:
+    """For each agent, the version (commit) its approved artifact was recorded in."""
+    from .agents import AGENTS
+
+    keys = {a.spec.output_key: k for k, a in AGENTS.items()}
+    found: Dict[str, str] = {}
+    for h in repo.history(limit=1000):          # newest first
+        m = re.match(r"raia\((\w+)\): human-approved update", h.get("message", ""))
+        if m and m.group(1) in keys and keys[m.group(1)] not in found:
+            found[keys[m.group(1)]] = h["commit"]
+    return found
+
+
+def assessment_items(body: Dict[str, Any]) -> List[tuple]:
+    """An assessment as rows: (kind, item_key, score, value, comment)."""
+    rows: List[tuple] = []
+    for key, value in (body.get("profile") or {}).items():
+        if value not in (None, ""):
+            rows.append(("profile", key, None, str(value), None))
+    for kind, group in (("dimension", "dimensions"), ("stage", "stages"), ("extra", "extras")):
+        for key, ans in (body.get(group) or {}).items():
+            ans = ans if isinstance(ans, dict) else {"score": ans}
+            score = ans.get("score")
+            if score is None and not ans.get("comment"):
+                continue
+            rows.append((kind, key, int(score) if isinstance(score, (int, float)) else None, None,
+                         ans.get("comment") or None))
+    for key, text in (body.get("open") or {}).items():
+        if text:
+            rows.append(("open", key, None, str(text), None))
+    return rows
 
 
 _IDENTITY_FIELDS = {"user", "by", "approver", "approver_id", "run_by", "run_by_name", "resolved_by"}
@@ -1229,6 +1492,10 @@ experience_ratings.jsonl  Each submitted tester assessment (instrument id in
                           Drafts are excluded. A participant may submit more
                           than once; keep the latest per participant unless the
                           analysis says otherwise.
+assessment_items.jsonl    The same assessments, one row per answer (kind: profile,
+                          dimension, stage, extra, open), with the project the
+                          tester named (PRJ-nnn) and, for a stage, the version
+                          of that stage they were looking at.
 memberships.jsonl         Which participant held which role on which project.
 
 Participants appear as P-xxxxxxxxxx codes (keyed HMAC of an internal id) and

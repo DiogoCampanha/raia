@@ -40,7 +40,7 @@ from raia.deploy import friendly_llm_error
 from raia.examples import CASES, DEFAULT_CASE, EXAMPLE_KEY, example_for
 from raia.fields import InputField
 from raia.rationale.coverage import ORIGIN_KEY, next_requirement
-from raia.projects import AccessDenied, Project, UsageLimitReached
+from raia.projects import AccessDenied, OverrideRequired, Project, StaleDraft, UsageLimitReached
 
 from raia.contract import review as RV
 
@@ -1075,7 +1075,7 @@ def _card_review(project: Project, agent_key: str, payload: Dict[str, Any]) -> C
     user = current_user()
     return CardReview(state=review["cards"], key=pkey("cr", agent_key, str(payload.get("attempt", 1))),
                       on_change=lambda: _persist_review(project.id, agent_key, payload),
-                      by=user.label, enabled=project.can("review"))
+                      by=user.ref, enabled=project.can("review"))
 
 
 def _draft_decisions(project: Project, agent_key: str, payload: Dict[str, Any]) -> Decisions:
@@ -1083,7 +1083,7 @@ def _draft_decisions(project: Project, agent_key: str, payload: Dict[str, Any]) 
     user = current_user()
 
     def take(d: Dict[str, Any], choice: str, why: str) -> Optional[str]:
-        review["decisions"][d["key"]] = {"choice": choice, "rationale": why, "by": user.label,
+        review["decisions"][d["key"]] = {"choice": choice, "rationale": why, "by": user.ref,
                                          "at": RV._now(), "issue": d["id"]}
         _persist_review(project.id, agent_key, payload)
         return None
@@ -1211,7 +1211,7 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
     base = edited_record if changed else original
     # What will be approved: the record with the reviewer's edits, and the
     # cards they rejected taken out (or, if computed, marked overridden).
-    to_approve = RV.apply(agent_key, base, payload.get("review"), by=user.label) if base else base
+    to_approve = RV.apply(agent_key, base, payload.get("review"), by=user.ref) if base else base
     reviewed = bool(base) and _core_differs(base, to_approve)
     with tab_read:
         tally = _review_bar(agent_key, original, cards) if original else {}
@@ -1226,16 +1226,19 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
                 shown = _preview(agent_key, payload, edited_record)
             except Exception as exc:  # noqa: BLE001 - shown to the reviewer
                 edit_note.error(f"The edited record could not be rendered: {exc}")
+        # What is shown names people; what is approved keeps references.
+        shown_payload = svc.humanize(payload)
         if st.toggle("Preview the version you will approve", key=pkey("pv", agent_key), disabled=not reviewed,
                      help="With the cards you rejected taken out and everything re-computed."
                           + ("" if reviewed else " Available once your review changes the record.")) and reviewed:
             try:
-                draft_view(agent_key, payload, _preview(agent_key, payload, to_approve), decide=decisions)
+                draft_view(agent_key, shown_payload, svc.humanize(_preview(agent_key, payload, to_approve)),
+                           decide=decisions)
             except Exception as exc:  # noqa: BLE001 - shown to the reviewer
                 st.error(f"The reviewed record could not be rendered: {exc}")
         else:
-            draft_view(agent_key, payload, shown, review=cards if original else None, decide=decisions,
-                       before=strip)
+            draft_view(agent_key, shown_payload, svc.humanize(shown), review=cards if original else None,
+                       decide=decisions, before=strip)
     with tab_evidence:
         evidence_panel(payload.get("evidence") or [])
     with tab_reason:
@@ -1267,6 +1270,16 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
         if missing:
             st.warning("Say why you rejected **" + "**, **".join(missing) + "** before approving: a rejection "
                        "needs a reason.", icon=I.WARN)
+        # Checks a reviewer must act on that still fail make approval an
+        # override: allowed, but only with a reason that is recorded with it.
+        needed = svc.override_needed(payload)
+        override_reason = ""
+        if needed:
+            st.warning("**Approving overrides failed checks:** " + "; ".join(needed) + ". Rejecting "
+                       "regenerates the draft. To approve it as it is, say why; the reason is recorded "
+                       "with the approval.", icon=I.WARN)
+            override_reason = st.text_area("Why approve despite these checks?", height=70,
+                                           key=pkey("override", agent_key))
         counts = ""
         if tally and tally.get("total"):
             counts = (f": {tally['accepted'] + tally['unmarked']} accepted, {tally['rejected']} rejected"
@@ -1275,12 +1288,16 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
                      disabled=blocked_by_four_eyes or bool(edit_errors) or bool(missing), icon=I.APPROVE):
             with st.spinner("Committing to the audit trail"):
                 try:
-                    decision = {"action": "approve", "review": payload.get("review") or RV.empty()}
+                    decision = {"action": "approve", "draft_id": payload.get("draft_id", ""),
+                                "review": payload.get("review") or RV.empty(),
+                                "override_reason": override_reason}
                     if changed or reviewed:
                         decision["record"] = to_approve
                     result = svc.resume(user, project.id, agent_key, decision)
-                except AccessDenied as exc:
+                except (AccessDenied, StaleDraft, OverrideRequired) as exc:
                     st.error(str(exc))
+                    if isinstance(exc, StaleDraft):
+                        st.session_state.pop(pkey("pending", agent_key), None)
                     return
                 except Exception as exc:  # noqa: BLE001 - surfaced to the person
                     st.error(friendly_llm_error(exc))
@@ -1315,6 +1332,7 @@ def review_gate(project: Project, agent_key: str, payload: Dict[str, Any]) -> No
             # screen, and the new draft opens at its top.
             st.session_state[pkey("work", agent_key)] = {
                 "kind": "reject",
-                "decision": {"action": "reject", "feedback": feedback or dict(REJECTION_REASONS)[reason],
+                "decision": {"action": "reject", "draft_id": payload.get("draft_id", ""),
+                             "feedback": feedback or dict(REJECTION_REASONS)[reason],
                              "reason": reason}}
             st.rerun()

@@ -1,0 +1,62 @@
+# Continuous integration: every push and pull request runs the whole offline
+# test-suite (mock model, hash embeddings: no API key, no network beyond PyPI)
+# on both storage backends and on PostgreSQL, measures coverage, and audits the
+# locked dependencies for known vulnerabilities.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: raia
+          POSTGRES_PASSWORD: raia
+          POSTGRES_DB: raia_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U raia -d raia_test" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      RAIA_AUTH: dev
+      RAIA_COVERAGE: "1"
+      RAIA_TEST_DATABASE_URL: postgresql://raia:raia@localhost:5432/raia_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Install
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Test suites (Git store, database store, PostgreSQL)
+        run: pytest -v
+      - name: Coverage
+        if: always()
+        run: |
+          coverage combine
+          coverage report --sort=cover
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Audit locked dependencies
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt $(grep -v '^#' .pip-audit-ignore | grep -v '^$' | sed 's/^/--ignore-vuln /')

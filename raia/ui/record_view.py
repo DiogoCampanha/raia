@@ -113,6 +113,16 @@ def _dc() -> Optional[Decisions]:
     return getattr(_CTX, "decide", None)
 
 
+def _who(value: Any) -> str:
+    """A recorded person reference, as the person's name (display only)."""
+    text = str(value or "")
+    if "user:" not in text:
+        return text
+    from raia.ui.state import get_service
+
+    return str(get_service().humanize(text))
+
+
 def esc(value: Any) -> str:
     return html.escape(str(value if value is not None else ""), quote=True)
 
@@ -282,7 +292,7 @@ def obligation_card(o: Dict[str, Any], where: str) -> str:
 def evr_card(e: Dict[str, Any]) -> str:
     over = (e.get("review") or {}).get("status") == "overridden"
     tone = D.tone_of_priority(e.get("priority")) if e.get("priority") and not over else "neutral"
-    chips = ((chip("Overridden by " + str((e.get("review") or {}).get("by") or "a reviewer"), "neutral") if over else "")
+    chips = ((chip("Overridden by " + _who((e.get("review") or {}).get("by") or "a reviewer"), "neutral") if over else "")
              + (chip(V.PRIORITY_LABELS.get(e["priority"], D.label(e["priority"])), tone) if e.get("priority") and not over else "")
              + chip(D.principle_name(e.get("value")), "neutral", quiet=True)
              + "".join(chip(t, "neutral", quiet=True) for t in (e.get("traces_to") or [])[:3]))
@@ -465,7 +475,7 @@ def _decision_card(d: Dict[str, Any], interactive: bool = False) -> str:
             f'<div class="rv-card-text">{esc(d["text"])}</div>'
             f'<div class="rv-decision"><b>{esc(taken.get("choice", ""))}</b>'
             + (f' — {esc(taken.get("rationale", ""))}' if taken.get("rationale") else "")
-            + f'<span class="rv-muted"> · {esc(taken.get("by", ""))}'
+            + f'<span class="rv-muted"> · {esc(_who(taken.get("by", "")))}'
             + (f', {esc(str(taken.get("at", ""))[:10])}' if taken.get("at") else "") + "</span></div></div>")
     return (
         f'<div class="rv-card tone-{d["tone"]}" id="card-{esc(d["id"])}">'

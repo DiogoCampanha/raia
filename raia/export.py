@@ -25,7 +25,7 @@ import datetime as _dt
 import io
 import json
 import zipfile
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
     from .repository import BaseRepository
@@ -60,6 +60,17 @@ git_history.txt       One line per recorded version. Every approval is one.
 history_chain.json    (database-backed projects) the full hash chain, so the
                       history can be re-verified offline.
 
+runs.json             Every model run: stage, draft id, model, prompt hash and the
+                      tokens it used. transcripts/ holds the exact prompt and raw
+                      replies of each run, when this deployment keeps them
+                      (RAIA_TRANSCRIPT_KEY); the prompt hash in an artifact's
+                      provenance is computed from that prompt.
+
+people.json           Who each user:<id> reference in the files is, at export
+                      time. The record names people only by reference, so a
+                      person who deletes their account is no longer named
+                      anywhere, and the history still verifies.
+
 evaluation_events.jsonl
                       What happened during the session: every rejection with
                       its reason code, every approval, every rating. This is
@@ -72,12 +83,18 @@ downloaded by you.
 """
 
 
-def session_bundle(repo: "BaseRepository", project_label: str = "") -> bytes:
-    """Zip one project: artifacts, sidecars, history and pseudonymized events."""
+def session_bundle(repo: "BaseRepository", project_label: str = "",
+                   people: Optional[Dict[str, str]] = None) -> bytes:
+    """Zip one project: artifacts, sidecars, history and pseudonymized events.
+
+    ``people`` maps each ``user:<id>`` reference found in the files to the
+    person's name at export time. It is written beside the files, not into
+    them, so the files still verify against the hash chain.
+    """
     from .projects import pseudonymize_event
 
     buffer = io.BytesIO()
-    created = _dt.datetime.now().isoformat(timespec="seconds")
+    created = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
     integrity = repo.verify_history()
 
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
@@ -96,6 +113,16 @@ def session_bundle(repo: "BaseRepository", project_label: str = "") -> bytes:
         )
         if hasattr(repo, "chain"):
             z.writestr("history_chain.json", json.dumps(repo.chain(), indent=2, default=str))
+        if people:
+            z.writestr("people.json", json.dumps(people, indent=2, ensure_ascii=False, sort_keys=True))
+        if hasattr(repo, "transcripts"):
+            runs = repo.transcripts(unseal=True)
+            z.writestr("runs.json", json.dumps([{k: v for k, v in r.items() if k != "transcript"} for r in runs],
+                                               indent=2, ensure_ascii=False))
+            for r in runs:
+                if r.get("transcript"):
+                    z.writestr(f"transcripts/{r['draft_id']}.json",
+                               json.dumps(r["transcript"], indent=2, ensure_ascii=False))
 
         events = [pseudonymize_event(e, "this-project") for e in repo.events()]
         z.writestr(
@@ -157,7 +184,7 @@ def _slug(project: str) -> str:
 
 
 def bundle_name(project: str) -> str:
-    stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M")
+    stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M")
     return f"raia-{_slug(project)}-{stamp}.zip"
 
 
@@ -212,7 +239,7 @@ def skill_bundle(repo: "BaseRepository", project_label: str = "") -> bytes:
     from .skill.context import project_context
 
     label = project_label or repo.project
-    created = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    created = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
         for path, text in static_files(project=label, created=created).items():
@@ -226,5 +253,5 @@ def skill_bundle(repo: "BaseRepository", project_label: str = "") -> bytes:
 
 
 def skill_bundle_name(project: str) -> str:
-    stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M")
+    stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M")
     return f"raia-{_slug(project)}-ai-skill-{stamp}.zip"

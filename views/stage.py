@@ -14,7 +14,7 @@ from raia import backlog as B
 from raia import progress
 from raia.agents import AGENTS, RUNNABLE, identity_key
 from raia.deploy import friendly_llm_error
-from raia.projects import AccessDenied, UsageLimitReached
+from raia.projects import AccessDenied, StaleDraft, UsageLimitReached
 from raia.ui import routes
 from raia.ui.components import (agent_header, artifact_body, handoff_strip, next_step_card, receives_card,
                                 stage_footer, stage_rail)
@@ -37,7 +37,8 @@ if agent_key not in RUNNABLE:
 agent = RUNNABLE[agent_key]
 spec = agent.spec
 ident = identity_key(agent_key)          # a mode wears its parent agent's identity
-repo = svc.repository(user, proj.id, "view")
+# A read-only view that names people; the record itself names them by reference.
+repo = svc.reader(user, proj.id)
 summary = svc.stage_summary(user, proj.id)
 stages = summary["stages"]
 state = next(s for s in stages if s["agent"] == ident)
@@ -159,8 +160,10 @@ def working_screen() -> bool:
                     result = svc.resume(user, proj.id, agent_key, req["decision"])
                 else:
                     result = svc.start_run(user, proj.id, agent_key, req["inputs"])
-        except (AccessDenied, UsageLimitReached) as exc:
+        except (AccessDenied, UsageLimitReached, StaleDraft) as exc:
             st.error(str(exc))
+            if isinstance(exc, StaleDraft):
+                st.session_state.pop(pkey("pending", agent_key), None)
             st.button("Back to the form", icon=I.BACK, key=pkey("work_back", agent_key))
             return True
         except Exception as exc:  # noqa: BLE001 - surfaced to the person
@@ -358,7 +361,7 @@ def body() -> None:
                      "then confirm above that they reflect this project.", icon=I.WARN)
             return
         if ORIGIN_KEY in inputs:
-            inputs[ORIGIN_KEY] = {**inputs[ORIGIN_KEY], "reviewed_by": user.label}
+            inputs[ORIGIN_KEY] = {**inputs[ORIGIN_KEY], "reviewed_by": user.ref}
         # The run happens on the next redraw, on a page that shows only that the
         # agent is working (working_screen). The token makes a double click one run.
         st.session_state[WORK] = {"kind": "run", "inputs": inputs, "token": uuid.uuid4().hex}

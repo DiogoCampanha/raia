@@ -1,0 +1,6 @@
+# Tools for the test-suite and CI (not needed to run RAIA).
+pytest>=8.0
+coverage>=7.4
+pip-audit>=2.7
+# tests/test_ui.py reads .streamlit/config.toml; tomllib is standard only from 3.11.
+tomli>=2.0; python_version < "3.11"

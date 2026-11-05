@@ -195,9 +195,17 @@ erDiagram
     PROJECT_COMMITS ||--|{ PROJECT_FILES : writes
     PROJECTS ||--o{ PENDING_REVIEWS : "drafts at the gate"
     PROJECTS ||--o{ INTAKE_DRAFTS : "form answers"
-    PROJECTS ||--o{ PROJECT_EVENTS : "evaluation events"
+    PROJECTS ||--o{ PROJECT_EVENTS : "decisions and events (hash chain)"
+    PROJECTS ||--o{ RUN_TRANSCRIPTS : "sealed prompt and replies per run"
     USERS ||--o{ EXPERIENCE_RATINGS : submits
+    PROJECTS |o--o{ EXPERIENCE_RATINGS : "is about (optional)"
+    EXPERIENCE_RATINGS ||--|{ ASSESSMENT_ITEMS : "one row per answer"
+    USERS ||--o{ AUDIT_LOG : "account-wide actions"
 ```
+
+Schema changes after the first release are applied once each by the migration
+runner in `raia/db.py` and recorded in `schema_migrations`; an existing
+database is upgraded in place on start.
 
 | Role | View | Run agents, edit answers | Approve / reject, arbitrate | Invite, settings, delete |
 |---|---|---|---|---|
@@ -205,7 +213,7 @@ erDiagram
 | editor | ✓ | ✓ | ✓ | |
 | reviewer | ✓ | | ✓ | |
 
-Three rules the tests enforce:
+Rules the tests enforce:
 
 - **Stage is derived, never stored.** A project's progress is computed from
   its approved artifacts and pending drafts on every read.
@@ -216,7 +224,19 @@ Three rules the tests enforce:
 - **History is tamper-evident on both backends.** Git objects locally; in the
   database each version's digest covers its parent digest, its message, its
   timestamp and the SHA-256 of every file it wrote, and `verify_history()`
-  recomputes all of them.
+  recomputes all of them. The event log — re-confirmations, card verdicts,
+  rejections, which a stage's *Needs review* status is computed from — is
+  hash-chained the same way and verified with it.
+- **A decision names its draft.** Approve and reject carry the id of the draft
+  the person saw; a decision on a draft another run has replaced is refused.
+  Approving over failed checks a reviewer must act on needs a recorded reason.
+- **No lost update.** The registers (backlog, sprints, open issues) are read,
+  changed and written in one optimistic step: a write computed from an old
+  read is refused and recomputed on the new state.
+- **People are named by reference.** Everything recorded names a person as
+  `user:<id>`; pages and exports resolve the reference to a name. No name or
+  email enters the hash chain or a model prompt, so deleting an account
+  leaves nobody named.
 
 ## 1d. The sprint cycle: backlog, sprints and roadmap
 

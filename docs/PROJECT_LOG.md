@@ -155,6 +155,15 @@ Recorded so the log stays honest about its own errors.
 | D65 | Every vocabulary, scale, rule and table in the skill is generated from the code (`raia.skill.build`), and the per-project facts (`PROJECT_CONTEXT.md`) by code from the approved records, never by a model; a copy is kept in `docs/ai-skill/` and tested against the code. The download leaves out the evaluation events, the version history and the hash chain. | A skill that drifted from the software would teach an assistant rules RAIA does not apply. The download goes into a product repository, where research data and RAIA's own integrity records have no reader. |
 | D66 | The assessment adds one required item on the AI Skill, apart from the five dimensions (instrument `raia-panel-v2`). | The skill is part of what the panel evaluates, but the plan's success criterion is computed over exactly the five dimensions; a separate item keeps that computation unchanged. |
 | D67 | Every stage is rated, one required statement per stage that names it, shown in full; the profile's expertise question asks about AI product development (`ai_product_experience`). Both within `raia-panel-v2`. | Optional ratings behind dropdowns were mostly left empty, which leaves the per-stage results without data. The panel's profile that matters for interpreting a work tool is experience building AI products, not Responsible AI expertise as such. |
+| D68 | A restricted practice stays restricted whatever else is declared; if its legal exception is used, the high-risk obligations still apply. The narrow-task exemption is refused for a system that profiles people and outside the Annex III areas; profiling is asked, not inferred. | An honest answer (ticking the matching purpose area) used to soften the verdict, and an exemption the law excludes was accepted. Both are enumerable rules, so they belong in code (D7). |
+| D69 | Every decision at a gate names the draft it was taken on; a decision on a replaced draft, or on none, is refused. Approving over failed checks a reviewer must act on is allowed only with a recorded reason. | The approve button acted on whatever draft was at the gate, which could be one another member generated after the page loaded. A fallback record could be approved without a word. |
+| D70 | Dev sign-in is served only when chosen (`RAIA_AUTH=dev`); deleting a project deletes its graph threads and run transcripts. | A hosted app without PostgreSQL and without sign-in used to open for everyone as one person; deleted projects left answers, drafts and names in the checkpoint store. |
+| D71 | Dependencies are locked (`requirements.in` → `requirements.txt`, universal, uv); CI runs every suite on both stores and PostgreSQL, measures coverage and audits the lock. Accepted advisories are listed with the reason. Streamlit stays on 1.63, so Pillow stays on 12.3. | Unpinned ranges meant a deploy could run versions no test ran. Pillow 13 needs Streamlit 1.67, which changes behaviour a UI test checks; RAIA never opens an untrusted image, so the upgrade is scheduled, not forced. |
+| D72 | Registers are written optimistically: a write names the version it was computed from and is recomputed if another landed in between. Issue ids are max+1. | Two people editing the board at once silently lost one edit; concurrent appends could hand out the same ISSUE id. |
+| D73 | The event log is hash-chained and verified with the versions. | The *Needs review* status and the human decisions it rests on (re-confirmations, card verdicts, rejections) lived outside the tamper-evident record. |
+| D74 | Everything recorded names people by reference (`user:<id>`); pages and exports resolve the name. | Names and emails in an append-only chain could never be erased on account deletion, and reached model prompts through upstream artifacts. Existing records keep the labels they were written with. |
+| D75 | Every run keeps its exact prompt and raw replies, encrypted (`RAIA_TRANSCRIPT_KEY`), with its token use; without a key, only the hash and token use. All model calls, recommendations included, go through one model pass (`BaseAgent.converse`). Test-double hints are written only for the mock. | A 64-bit prompt hash proved a prompt matched but could not recover it. The recommendation path had its own call with no repair or accounting; real prompts carried lines only the mock reads. |
+| D76 | Assessments are rows: status, project, instrument and build are columns, every answer is an item linked to the project and, for a stage, to the approved version rated. Security-relevant actions are kept in an audit log; errors reach the person as a reference. | Assessments were findable only by person, inside a JSON blob, and research exports by coordinators left no trace. Raw exception text could carry internals. |
 
 ---
 
@@ -163,6 +172,65 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-11-05 — Audit fixes, phases 0 and 1 (branch `audit-phase-0-1`)
+
+Decisions D68–D76. Closes the phase 0 and phase 1 findings of the November 2026
+software audit (AUD- ids below; the audit report lives outside the repository).
+
+#### What was wrong
+
+- **AUD-R1** Declaring real-time remote biometric identification together with its
+  purpose area classified it high-risk instead of restricted.
+- **AUD-R2** The narrow-task exemption was accepted for systems that profile people.
+- **AUD-S1** An approval was not bound to the draft the reviewer saw.
+- **AUD-S2** Without PostgreSQL and without sign-in, the app served everyone as one identity.
+- **AUD-S3** No dependency lock; 44 known advisories in the resolved set.
+- **AUD-S4** No logging or audit trail of administrative actions.
+- **AUD-S6** Raw exception text was shown to people.
+- **AUD-G1** Graph checkpoints (answers, drafts, feedback, names) survived project deletion.
+- **AUD-G2** Names and emails were written into the hash chain.
+- **AUD-G3** Decisions in the event log were not tamper-evident.
+- **AUD-G6** Naive local timestamps beside UTC ones.
+- **AUD-DB1** Concurrent board edits lost one edit; issue ids could collide.
+- **AUD-DB2** Assessments could not be found by project, stage or version.
+- **AUD-T1** Failed critical checks and fallback records could be approved silently.
+- **AUD-T2** Provenance could not reproduce a prompt; no token accounting.
+- **AUD-M1** Mock hints in real prompts; recommendations bypassed the standard model pass.
+- **AUD-Q1** No CI, no coverage, tests invisible to pytest; README said MIT with no LICENSE.
+
+#### What changed
+
+- `raia/rationale/risk_screen.py`, `agents/risk_classifier.py`: prohibitions dominate;
+  new `profiling` question; exemption refused when unavailable (D68).
+- `pipeline.py`, `projects.py`, `ui/gate.py`, `views/stage.py`: `draft_id` on every draft;
+  `StaleDraft`; `OverrideRequired` with the reason in provenance (D69).
+- `auth.py`, `.env.example`: explicit dev sign-in; `StageRunner.forget` on deletion (D70).
+- `requirements.in`/`requirements.txt` lock, `.pip-audit-ignore`, `requirements-dev.txt`,
+  `.github/workflows/ci.yml`, `tests/test_suites.py`, `pytest.ini`, `.coveragerc`, `LICENSE` (D71).
+- `repository.py`, `storage.py`: `head`, `atomic`, `ConcurrentEdit`, chained events on both
+  stores; `db.py`: migration runner with four migrations (D72, D73, D75, D76).
+- `people.py`, `ProjectService.reader/humanize/people_map`, `people.json` in the download (D74).
+- `sealed.py`, run transcripts, `llm.add_usage`, `BaseAgent.converse`, `contract/prompt.hints_line` (D75).
+- Assessment project picker, `assessment_items`, `project_assessments`; `logs.py`, `audit_log` (D76).
+
+#### Tests
+
+- `test_engines.py`: restricted practices, profiling and the exemption.
+- `test_projects.py`: stale and unnamed decisions, overrides, transcripts and hints, deletion of
+  graph threads and transcripts, concurrent edits and issue ids, event tampering on both stores,
+  in-place upgrade of an old database, reference-only records, assessments by project, audit log.
+- All suites pass on the Git store, the database store (SQLite) and PostgreSQL 16.
+
+#### Still open, by decision
+
+- Pillow 13 needs Streamlit ≥ 1.67, which fails one UI check today: upgrade with a visual
+  review of the theme (D71).
+- Records written before this change keep the names they were written with (D74).
+- The privacy terms are unchanged: say whether to describe the run transcripts and the audit
+  log there (a new effective date asks every person to accept again).
+- Phase 2 of the audit (API and workers, projection tables, agent plug-ins, official legal
+  texts, evidence ingestion, PII control, operations).
+
 ### 2026-11-03 — Assessment: every stage rated, AI product experience (branch `ai-skill`)
 
 Decision D67.

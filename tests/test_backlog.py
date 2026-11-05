@@ -67,7 +67,7 @@ def approve(svc, user, pid, key, inputs):
     out = svc.start_run(user, pid, key, inputs)
     payload = out["payload"]
     failed = [i["code"] for i in payload["validation"]["items"] if i["level"] == "fail"]
-    svc.resume(user, pid, key, {"action": "approve", "record": payload["record"]})
+    svc.resume(user, pid, key, {"action": "approve", "draft_id": payload["draft_id"], "record": payload["record"]})
     return payload, failed
 
 
@@ -195,7 +195,7 @@ def main() -> None:
     for i in record["extension"]["items"]:
         if i["item_id"] in crit:
             i["verdict"] = "satisfied"
-    svc.resume(ana, p.id, "auditor", {"action": "approve", "record": record})
+    svc.resume(ana, p.id, "auditor", {"action": "approve", "draft_id": payload["draft_id"], "record": record})
     board = svc.board(ana, p.id)
     sp1 = B.sprint(board["sprints"], "SPR-1")
     check(sp1["state"] == B.CLOSED and sp1["snapshot"], "the approved audit closes the sprint and records its numbers")
@@ -217,7 +217,8 @@ def main() -> None:
                                                  "sprint_outcomes": "Nothing was delivered."})
     tr = out["payload"]["record"]["extension"]["progress"]["trend"]["direction"]
     check(tr in ("declining", "flat"), f"a sprint that verifies nothing does not read as improving ({tr})")
-    svc.resume(ana, p.id, "auditor", {"action": "approve", "record": out["payload"]["record"]})
+    svc.resume(ana, p.id, "auditor", {"action": "approve", "draft_id": out["payload"]["draft_id"],
+                                       "record": out["payload"]["record"]})
     rm = svc.board(ana, p.id)["roadmap"]
     check(rm["closed_sprints"] == 2 and len(rm["series"]) == 2, "the roadmap shows both sprints")
 

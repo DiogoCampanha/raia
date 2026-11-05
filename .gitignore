@@ -16,3 +16,9 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+
+# Test coverage data
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/

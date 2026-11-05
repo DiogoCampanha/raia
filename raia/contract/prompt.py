@@ -24,6 +24,20 @@ from .schema import model_facing_schema
 HINTS_MARKER = "RAIA-RECORD-HINTS:"
 
 
+def hints_line(h: Dict[str, Any]) -> str:
+    """The line the offline mock model reads its identifiers from.
+
+    It exists only for the test double (:mod:`raia.contract.mock`), so it is
+    written only when the mock is the configured provider: a real model never
+    pays the tokens for it, nor sees internal ids it does not need.
+    """
+    from .. import config
+
+    if config.LLM_PROVIDER != "mock":
+        return ""
+    return f"{HINTS_MARKER} {json.dumps(h, ensure_ascii=False, default=str)}\n"
+
+
 def _anchors(title: str, anchors: Dict[str, str]) -> str:
     return f"**{title}**\n" + "\n".join(f"- `{k}` — {v}" for k, v in anchors.items())
 
@@ -165,5 +179,4 @@ seconds:
 
 {id_lines}
 
-{_scales(agent_key)}{HINTS_MARKER} {json.dumps(h, ensure_ascii=False, default=str)}
-"""
+{_scales(agent_key)}{hints_line(h)}"""

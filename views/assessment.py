@@ -77,6 +77,17 @@ with st.container(border=True):
     st.checkbox(CONSENT_TEXT, key="a_consent")
     routes.link(routes.PRIVACY, "Read the Privacy Policy and User Agreement", icon=I.PRIVACY)
 
+# Which project the assessment is about. Optional: a tester may have tried
+# several. When named, each stage rating is linked to the version of that stage
+# the tester was looking at, so ratings can be found by project and by stage.
+my_projects = {p.id: p.name for p in svc.list_projects(user, include_archived=True)}
+_prefill("a_project", source.get("project_id") if source.get("project_id") in my_projects else None)
+with st.container(border=True):
+    st.markdown(f"{I.PROJECT} **The project you evaluated**")
+    st.selectbox("Which project are your answers about? (optional)", list(my_projects), index=None,
+                 key="a_project", format_func=lambda pid: my_projects.get(pid, pid),
+                 placeholder="Several projects, or none in particular")
+
 st.subheader("1. About you", anchor=False)
 st.caption("Optional. Broad categories only, reported in aggregate. Nothing here identifies you.")
 with st.container(border=True):
@@ -121,6 +132,7 @@ def _payload() -> dict:
     ss = st.session_state
     return {
         "instrument": INSTRUMENT_ID,
+        "project_id": ss.get("a_project") or "",
         "consent": bool(ss.get("a_consent")),
         "profile": {k: ss.get(f"a_profile_{k}") for k, _, _ in PROFILE},
         "dimensions": {k: {"score": ss.get(f"a_dim_{k}"),

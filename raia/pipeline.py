@@ -36,6 +36,7 @@ still requires an explicit approval, and still reaches ``persist`` the only way
 anything ever reaches it. Nothing is written that a human did not approve.
 """
 
+import uuid
 from typing import Any, Dict, List, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -75,6 +76,9 @@ def _generate(state: StageState) -> StageState:
     preset = state.get("preset")
     if preset and not state.get("feedback"):
         payload = dict(preset)
+        # A draft saved before drafts carried an id gets one now; the gate
+        # binds every decision to it either way.
+        payload["draft_id"] = payload.get("draft_id") or uuid.uuid4().hex
         payload["restored"] = True
         payload["attempt"] = payload.get("attempt", attempt)
         return {"run": payload, "preset": {}}
@@ -87,6 +91,9 @@ def _generate(state: StageState) -> StageState:
         artifact_key=agent.spec.output_key,
         attempt=attempt,
     )
+    # Every draft has its own identity. A decision at the gate names the draft
+    # it was taken on, and is refused if a newer draft has replaced it since.
+    payload["draft_id"] = uuid.uuid4().hex
     payload["required_sections"] = list(agent.spec.required_sections)
     payload["checklist_keys"] = result.rationale.checklist_keys() if result.rationale else []
     # Who ran the stage and with which answers. The first lets a project
@@ -96,6 +103,11 @@ def _generate(state: StageState) -> StageState:
     payload["run_by"] = actor.get("id", "")
     payload["run_by_name"] = actor.get("name", "")
     payload["inputs"] = state.get("inputs") or {}
+    prov = payload.get("provenance") or {}
+    usage = prov.get("usage") or {}
+    repo.save_transcript(agent.spec.key, payload["draft_id"], result.transcript, {
+        "prompt_sha256_16": prov.get("prompt_sha256_16", ""),
+        "model": (prov.get("model") or {}).get("name", ""), **usage})
     repo.save_pending(agent.spec.key, payload)
     return {"run": payload}
 
@@ -193,20 +205,37 @@ def _persist(state: StageState) -> StageState:
     )
     if decision.get("approver_id"):
         prov["approval"]["approver_id"] = decision["approver_id"]
+    if decision.get("override"):
+        # Approved although checks a reviewer must act on had failed: the
+        # reason travels with the approval, in the chained record.
+        prov["approval"]["override"] = dict(decision["override"])
     if run.get("run_by"):
         prov["approval"]["run_by"] = run["run_by"]
 
-    extra_files, sprint_id, effect = _board_effects(agent, repo, record, rationale, structured, approver)
+    # The approval and the register changes it causes are one version. The
+    # registers are read, changed and written in that version; if anyone else
+    # recorded a version in between, the changes are recomputed on top of it.
+    from .repository import ATOMIC_ATTEMPTS, ConcurrentEdit
 
-    commit = repo.save_artifact(
-        agent.spec.output_key,
-        content,
-        approved_by=approver,
-        structured=structured,
-        run_provenance=prov,
-        extra_files=extra_files,
-        sprint_id=sprint_id,
-    )
+    for attempt in range(ATOMIC_ATTEMPTS):
+        repo.refresh()
+        base = repo.head()
+        extra_files, sprint_id, effect = _board_effects(agent, repo, record, rationale, structured, approver)
+        try:
+            commit = repo.save_artifact(
+                agent.spec.output_key,
+                content,
+                approved_by=approver,
+                structured=structured,
+                run_provenance=prov,
+                extra_files=extra_files,
+                sprint_id=sprint_id,
+                expected_head=base,
+            )
+            break
+        except ConcurrentEdit:
+            if attempt == ATOMIC_ATTEMPTS - 1:
+                raise
     if effect:
         repo.record_event("backlog_updated", {"agent": agent.spec.key, "user": decision.get("approver_id", ""),
                                               "commit": commit, **effect})
@@ -257,6 +286,7 @@ def _persist(state: StageState) -> StageState:
             "cards": {k: v for k, v in RV.tally(agent.spec.key, run.get("record") or {}, rv).items()
                       if k != "missing_reason"},
             "decisions_taken": sum(1 for d in taken.values() if (d or {}).get("choice")),
+            "override_checks": list((decision.get("override") or {}).get("checks") or []),
         },
     )
     return {"commit": commit, "approved_content": content}
@@ -500,6 +530,32 @@ class StageRunner:
             Command(resume=decision), config=self._config(project, agent_key)
         )
         return self._outcome(result)
+
+    def draft_at_gate(self, project: str, agent_key: str) -> Optional[Dict[str, Any]]:
+        """The draft the paused graph thread will act on, or ``None``."""
+        try:
+            state = self._graph.get_state(self._config(project, agent_key))
+        except Exception:  # noqa: BLE001 - no thread is the same as no draft
+            return None
+        if not (state and state.next):
+            return None
+        return (state.values or {}).get("run") or None
+
+    def forget(self, project: str) -> None:
+        """Delete every graph thread of a project from the checkpointer.
+
+        A paused or finished thread holds the intake answers, drafts, reviewer
+        feedback and approver names of its runs. Deleting a project must not
+        leave them behind in the checkpoint store.
+        """
+        from .agents import RUNNABLE
+
+        for key in RUNNABLE:
+            thread = self._config(project, key)["configurable"]["thread_id"]
+            try:
+                self._checkpointer.delete_thread(thread)
+            except Exception:  # noqa: BLE001 - a thread that never existed
+                pass
 
     def has_thread(self, project: str, agent_key: str) -> bool:
         """True when a paused graph thread still exists in this process.

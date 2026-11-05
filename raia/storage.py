@@ -32,8 +32,13 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from . import config
-from .db import Database, get_database, utcnow
-from .repository import ArtifactRepository, BaseRepository
+from .db import Database, get_database, is_unique_violation, utcnow
+from .repository import ArtifactRepository, BaseRepository, ConcurrentEdit
+
+#: How many times a write is re-tried when another writer took the next
+#: version number first. Only plain writes are re-tried here; a write that was
+#: computed from what it read raises ConcurrentEdit so the caller can recompute.
+WRITE_ATTEMPTS = 5
 
 GENESIS = "0" * 64
 
@@ -69,6 +74,27 @@ def _event_time() -> str:
 
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def event_digest(parent: str, seq: int, at: str, kind: str, payload_json: str) -> str:
+    """Digest of one event, chained to the one before it in the same project."""
+    material = json.dumps({"parent": parent, "seq": int(seq), "at": at, "kind": kind,
+                           "payload": payload_json}, sort_keys=True, ensure_ascii=False)
+    return _sha(material)
+
+
+def verify_events(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Recompute an event chain: rows carry seq, at, kind, payload, parent_digest, digest."""
+    parent, expected = GENESIS, 1
+    for r in rows:
+        if r.get("seq") != expected:
+            return {"ok": False, "detail": f"event {expected} is missing from the event chain"}
+        if r.get("parent_digest") != parent:
+            return {"ok": False, "detail": f"event {expected} does not follow its parent"}
+        if event_digest(parent, r["seq"], r["at"], r["kind"], r["payload"]) != r.get("digest"):
+            return {"ok": False, "detail": f"event {expected} was altered"}
+        parent, expected = r["digest"], expected + 1
+    return {"ok": True, "detail": f"event chain intact ({len(rows)} events)"}
 
 
 def commit_digest(parent: str, message: str, file_hashes: Dict[str, str], at: str) -> str:
@@ -124,31 +150,57 @@ class DatabaseRepository(BaseRepository):
     def _read_file(self, name: str) -> Optional[str]:
         return self._current().get(name)
 
-    def _commit_files(self, files: Dict[str, str], message: str) -> str:
-        at = utcnow()
+    def head(self) -> str:
+        row = self.db.one("SELECT MAX(seq) AS seq FROM project_commits WHERE project_id = ?", (self.project,))
+        return str((row or {}).get("seq") or 0)
+
+    def refresh(self) -> None:
+        self._files = None
+        self._pending = None
+        self._seen = -1
+
+    def _commit_files(self, files: Dict[str, str], message: str,
+                      expected_head: Optional[str] = None) -> str:
         hashes = {name: _sha(content) for name, content in files.items()}
-        with self.db.tx() as t:
-            last = t.one(
-                "SELECT seq, digest FROM project_commits WHERE project_id = ? "
-                "ORDER BY seq DESC LIMIT 1",
-                (self.project,),
-            )
-            seq = (last["seq"] + 1) if last else 1
-            parent = last["digest"] if last else GENESIS
-            digest = commit_digest(parent, message, hashes, at)
-            for name, content in files.items():
-                t.execute(
-                    "INSERT INTO project_files (project_id, name, seq, content, sha256) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (self.project, name, seq, content, hashes[name]),
-                )
-            t.execute(
-                "INSERT INTO project_commits (project_id, seq, at, message, files, parent_digest, digest) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (self.project, seq, at, message, json.dumps(sorted(files)), parent, digest),
-            )
-        _bump(self.project)
-        return digest[:8]
+        for attempt in range(WRITE_ATTEMPTS):
+            at = utcnow()
+            try:
+                with self.db.tx() as t:
+                    last = t.one(
+                        "SELECT seq, digest FROM project_commits WHERE project_id = ? "
+                        "ORDER BY seq DESC LIMIT 1",
+                        (self.project,),
+                    )
+                    if expected_head is not None and str(last["seq"] if last else 0) != str(expected_head):
+                        raise ConcurrentEdit(self.project)
+                    seq = (last["seq"] + 1) if last else 1
+                    parent = last["digest"] if last else GENESIS
+                    digest = commit_digest(parent, message, hashes, at)
+                    for name, content in files.items():
+                        t.execute(
+                            "INSERT INTO project_files (project_id, name, seq, content, sha256) "
+                            "VALUES (?, ?, ?, ?, ?)",
+                            (self.project, name, seq, content, hashes[name]),
+                        )
+                    t.execute(
+                        "INSERT INTO project_commits (project_id, seq, at, message, files, parent_digest, digest) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (self.project, seq, at, message, json.dumps(sorted(files)), parent, digest),
+                    )
+            except Exception as exc:  # noqa: BLE001 - only a version-number race is retried
+                if not is_unique_violation(exc):
+                    raise
+                # Another writer took this version number between our read and
+                # our insert. A write computed from what it read must be
+                # recomputed by its caller; a plain write simply goes again.
+                if expected_head is not None:
+                    raise ConcurrentEdit(self.project) from exc
+                if attempt == WRITE_ATTEMPTS - 1:
+                    raise
+                continue
+            _bump(self.project)
+            return digest[:8]
+        raise RuntimeError("unreachable")
 
     def history(self, limit: int = 50) -> List[Dict[str, str]]:
         rows = self.db.query(
@@ -180,7 +232,21 @@ class DatabaseRepository(BaseRepository):
         return [{**c, "file_hashes": by_seq.get(c["seq"], {})} for c in commits]
 
     def verify_history(self) -> Dict[str, Any]:
-        """Recompute every digest and every file hash."""
+        """Recompute every digest and every file hash, then the event chain."""
+        files = self._verify_files()
+        if not files["ok"]:
+            return files
+        events = verify_events(self._event_rows())
+        if not events["ok"]:
+            return events
+        return {"ok": True, "detail": f"{files['detail']}; {events['detail']}"}
+
+    def _event_rows(self) -> List[Dict[str, Any]]:
+        return self.db.query(
+            "SELECT seq, at, kind, payload, parent_digest, digest FROM project_events "
+            "WHERE project_id = ? ORDER BY seq", (self.project,))
+
+    def _verify_files(self) -> Dict[str, Any]:
         parent = GENESIS
         commits = self.chain()
         contents = self.db.query(
@@ -258,15 +324,37 @@ class DatabaseRepository(BaseRepository):
             return {}
 
     def record_event(self, kind: str, payload: Dict[str, Any]) -> None:
-        self.db.execute(
-            "INSERT INTO project_events (id, project_id, at, kind, payload) VALUES (?, ?, ?, ?, ?)",
-            (uuid.uuid4().hex, self.project, _event_time(), kind,
-             json.dumps(payload, ensure_ascii=False, default=str)),
-        )
+        """Append one event to the project's hash-chained event log.
+
+        Events carry decisions that are not artifacts — a stage re-confirmed,
+        a card accepted or rejected, a draft rejected with its reason — and the
+        "needs review" status of every stage is computed from them, so they are
+        chained like the versions are: editing one breaks ``verify_history``.
+        """
+        body = json.dumps(payload, ensure_ascii=False, default=str)
+        for attempt in range(WRITE_ATTEMPTS):
+            at = _event_time()
+            try:
+                with self.db.tx() as t:
+                    last = t.one(
+                        "SELECT seq, digest FROM project_events WHERE project_id = ? AND seq IS NOT NULL "
+                        "ORDER BY seq DESC LIMIT 1", (self.project,))
+                    seq = (last["seq"] + 1) if last else 1
+                    parent = last["digest"] if last else GENESIS
+                    t.execute(
+                        "INSERT INTO project_events (id, project_id, at, kind, payload, seq, parent_digest, digest) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (uuid.uuid4().hex, self.project, at, kind, body, seq, parent,
+                         event_digest(parent, seq, at, kind, body)),
+                    )
+                return
+            except Exception as exc:  # noqa: BLE001 - only a sequence race is retried
+                if not is_unique_violation(exc) or attempt == WRITE_ATTEMPTS - 1:
+                    raise
 
     def events(self) -> List[Dict[str, Any]]:
         rows = self.db.query(
-            "SELECT at, kind, payload FROM project_events WHERE project_id = ? ORDER BY at, id",
+            "SELECT at, kind, payload FROM project_events WHERE project_id = ? ORDER BY seq, at, id",
             (self.project,),
         )
         out = []
@@ -278,11 +366,25 @@ class DatabaseRepository(BaseRepository):
             out.append({"at": r["at"], "kind": r["kind"], **body})
         return out
 
+    def _transcript_write(self, row: Dict[str, Any]) -> None:
+        self.db.execute(
+            "INSERT INTO run_transcripts (project_id, draft_id, agent_key, created_at, prompt_sha256_16, model, "
+            "input_tokens, output_tokens, calls, sealed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT (project_id, draft_id) DO NOTHING",
+            (self.project, row["draft_id"], row["agent_key"], row["created_at"], row["prompt_sha256_16"],
+             row["model"], row["input_tokens"], row["output_tokens"], row["calls"], row["sealed"]),
+        )
+
+    def _transcript_rows(self) -> List[Dict[str, Any]]:
+        return self.db.query(
+            "SELECT draft_id, agent_key, created_at, prompt_sha256_16, model, input_tokens, output_tokens, "
+            "calls, sealed FROM run_transcripts WHERE project_id = ? ORDER BY created_at", (self.project,))
+
     def reset(self) -> None:
         """Erase every trace of this project (used when a project is deleted)."""
         with self.db.tx() as t:
             for table in ("project_files", "project_commits", "pending_reviews",
-                          "intake_drafts", "project_events"):
+                          "intake_drafts", "project_events", "run_transcripts"):
                 t.execute(f"DELETE FROM {table} WHERE project_id = ?", (self.project,))
         _bump(self.project)
 

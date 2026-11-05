@@ -116,7 +116,8 @@ def main() -> None:
     p = svc.create_project(ana, "Hiring")
     for key in ("risk_classifier", "requirements_reviewer", "story_generate"):
         out = svc.start_run(ana, p.id, key, EXAMPLES[key])
-        svc.resume(ana, p.id, key, {"action": "approve", "record": out["payload"]["record"]})
+        svc.resume(ana, p.id, key, {"action": "approve", "draft_id": out["payload"]["draft_id"],
+                                    "record": out["payload"]["record"]})
     svc.create_sprint(ana, p.id, capacity=60)
     bl = svc.board(ana, p.id)["backlog"]
     rai = [s["id"] for s in bl["stories"]]

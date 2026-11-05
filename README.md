@@ -84,7 +84,9 @@ streamlit run app.py
 
 Locally there is nothing else to configure: users and projects live in a
 SQLite file under `workspace/`, each project's blackboard is a Git repository,
-and you are signed in as a fixed local developer identity. A shared deployment
+and you are signed in as a fixed local developer identity (`RAIA_AUTH=dev`,
+already set in `.env.example`; without it, or Google sign-in, the app refuses
+to open, so a deployment that forgot its sign-in fails closed). A shared deployment
 uses Google sign-in and PostgreSQL instead — see
 [Hosted deployment](#hosted-deployment-streamlit-community-cloud--neon--google-sign-in).
 
@@ -329,10 +331,12 @@ only when its file really is the official wording.
 | `RAIA_WORKSPACE_DIR` | `./workspace` | local git blackboards and SQLite registry (git-ignored) |
 | `RAIA_DATABASE_URL` | SQLite under the workspace | PostgreSQL URL (e.g. Neon) for a shared deployment |
 | `RAIA_STORE` | `git` locally, `database` with PostgreSQL | where project blackboards live |
-| `RAIA_AUTH` | `google` if `[auth]` is set, else `dev` | a PostgreSQL deployment never falls back to `dev` |
+| `RAIA_AUTH` | `google` if `[auth]` is set | `dev` must be set explicitly; with neither, the app refuses to open |
 | `RAIA_ADMIN_EMAILS` | — | may download the pseudonymized research dataset |
 | `RAIA_PSEUDONYM_KEY` | — | keyed participant codes, stable across exports |
 | `RAIA_JIRA_KEY` | — | optional: encrypts a person's Jira API token; without it the token is kept for the session only |
+| `RAIA_TRANSCRIPT_KEY` | — | encrypts the exact prompt and raw replies of every run, for reproducibility (comma-separated keys: the first encrypts, all decrypt). Without it only the prompt hash and token use are kept |
+| `RAIA_LOG_LEVEL` | `INFO` | JSON logs on stderr; security-relevant actions also go to the `audit_log` table |
 | `RAIA_CONTACT_EMAIL` | — | contact shown on the public Privacy & terms page (`/privacy`) |
 | `RAIA_MAX_RUNS_PER_DAY` | `60` | model calls per person per UTC day; `0` = unlimited |
 | `RAIA_CORPUS_DIR` / `RAIA_CHROMA_DIR` | `./corpus` / `./.chroma` | |
@@ -371,6 +375,21 @@ restart does not lose it; the stored-draft restore path remains as a second
 line of defence and still re-enters the gate.
 
 ## Testing
+
+```bash
+pip install -r requirements-dev.txt
+pytest                                             # every suite, each in its own process, on both stores
+RAIA_TEST_DATABASE_URL=postgresql://... pytest     # …and on a disposable PostgreSQL database
+RAIA_COVERAGE=1 pytest && coverage combine && coverage report
+```
+
+CI (`.github/workflows/ci.yml`) runs the same on Python 3.10 and 3.12 with a
+PostgreSQL 16 service, reports coverage, and audits the locked dependencies
+(`pip-audit` against `requirements.txt`; accepted advisories are listed, with
+the reason, in `.pip-audit-ignore`). Dependencies are locked: edit
+`requirements.in`, then regenerate `requirements.txt` with the command at its top.
+
+Each suite can also be run on its own:
 
 ```bash
 RAIA_LLM_PROVIDER=mock RAIA_FAKE_EMBED=1 python tests/smoke_test.py

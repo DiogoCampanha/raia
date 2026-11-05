@@ -10,9 +10,9 @@ it receives an identity the provider has verified — an email address and a
 display name — and everything else (projects, roles, approvals) hangs off that.
 
 A ``dev`` mode exists for laptops and the test-suite: one fixed local identity,
-no network. It is refused on any deployment backed by PostgreSQL unless it is
-selected explicitly, so a misconfigured hosted app fails closed instead of
-opening every project to whoever finds the URL.
+no network. It is served only when selected explicitly (``RAIA_AUTH=dev``), so
+a misconfigured hosted app fails closed instead of opening every project to
+whoever finds the URL.
 """
 
 from __future__ import annotations
@@ -59,12 +59,23 @@ def mode() -> str:
 
 
 def configuration_problem() -> Optional[str]:
-    """A reason the app must not serve anyone, or ``None``."""
+    """A reason the app must not serve anyone, or ``None``.
+
+    Dev mode signs everyone in as one fixed identity, so it is served only when
+    it was chosen explicitly (``RAIA_AUTH=dev``). A deployment that simply
+    forgot its sign-in configuration fails closed, whatever its database.
+    """
     m = mode()
-    if m == "dev" and db.is_postgres_url(config.DATABASE_URL) and config.AUTH_MODE != "dev":
+    if m == "dev" and config.AUTH_MODE != "dev":
+        if db.is_postgres_url(config.DATABASE_URL):
+            return (
+                "This deployment stores projects in a shared database but has no sign-in "
+                "configured. Add the [auth] block for Google sign-in to the app's secrets."
+            )
         return (
-            "This deployment stores projects in a shared database but has no sign-in "
-            "configured. Add the [auth] block for Google sign-in to the app's secrets."
+            "No sign-in is configured. For a shared deployment, add the [auth] block for Google "
+            "sign-in to the app's secrets. For a local, single-person run, set RAIA_AUTH=dev "
+            "(the .env.example file does)."
         )
     if m == "google" and not oidc_configured():
         return (
