@@ -62,24 +62,83 @@ FENCE_RE = re.compile(r"```(?:json|raia-record)?\s*\n(?P<body>\{.*?\})\s*```", r
 # ---------------------------------------------------------------------------
 
 
-def extract_json(text: str) -> Dict[str, Any]:
-    """Find the one JSON object in a reply (fenced, or bare)."""
+def strip_trailing_commas(text: str) -> Tuple[str, int]:
+    """Remove commas that close an object or array (``[1, 2,]``, ``{"a": 1,}``).
+
+    Models write these now and then; strict JSON rejects them, and with them
+    an otherwise complete record. Removing one changes no value, so code does
+    it rather than spending a model call. Commas inside strings are left alone.
+    Returns the text and how many commas were removed.
+    """
+    out: List[str] = []
+    in_string = escaped = False
+    removed = 0
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+            out.append(ch)
+        elif ch == ",":
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in "}]":
+                removed += 1
+            else:
+                out.append(ch)
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out), removed
+
+
+def extract_json(text: str, notes: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Find the one JSON object in a reply (fenced, or bare).
+
+    Strict JSON first. If that fails, the same text with trailing commas
+    removed: a lossless correction, reported in ``notes`` when given.
+    """
     text = text or ""
     m = FENCE_RE.search(text)
     candidates = [m.group("body")] if m else []
     start, end = text.find("{"), text.rfind("}")
     if start != -1 and end > start:
         candidates.append(text[start:end + 1])
-    last: Exception = ValueError("the reply contains no JSON object")
+    first: Optional[Exception] = None
     for c in candidates:
         try:
             value = json.loads(c)
         except ValueError as exc:
-            last = exc
-            continue
+            first = first or exc
+            fixed, removed = strip_trailing_commas(c)
+            if not removed:
+                continue
+            try:
+                value = json.loads(fixed)
+            except ValueError:
+                continue
+            if notes is not None:
+                notes.append(f"{removed} trailing comma(s) removed from the reply before reading it")
         if isinstance(value, dict):
             return value
-    raise ValueError(f"the reply is not a JSON object ({last})")
+    if first is None:
+        raise ValueError("the reply contains no JSON object")
+    raise ValueError(f"the reply is not a JSON object ({first})")
+
+
+def is_syntax_error(errors: Sequence[str]) -> bool:
+    """True when a reply failed as JSON text, before any schema check."""
+    return any(str(e).startswith(("the reply is not a JSON object", "the reply contains no JSON object"))
+               for e in errors)
 
 
 LENGTH_ERRORS = ("string_too_long", "too_long")
@@ -140,8 +199,9 @@ def parse_record(agent_key: str, text: str) -> Tuple[Optional[Dict[str, Any]], L
     record's ``shortened`` list) rather than failing the reply; every other
     error is returned for the bounded repair.
     """
+    syntax: List[str] = []
     try:
-        raw = extract_json(text)
+        raw = extract_json(text, syntax)
     except ValueError as exc:
         return None, [str(exc)]
     shortened: List[str] = []
@@ -162,6 +222,8 @@ def parse_record(agent_key: str, text: str) -> Tuple[Optional[Dict[str, Any]], L
         record = model.model_dump()
         if shortened:
             record["shortened"] = shortened
+        if syntax:
+            record["syntax_corrected"] = syntax
         return record, []
     return None, ["the reply kept exceeding its length limits after shortening"]
 
@@ -190,6 +252,17 @@ def compact_prompt(budget: int) -> str:
 
 
 def repair_prompt(errors: Sequence[str]) -> str:
+    if is_syntax_error(errors):
+        # The reply was not valid JSON at all: say so, and name the usual
+        # causes, instead of implying the content was wrong.
+        return (
+            "Your reply could not be parsed as JSON, so none of it could be read:\n"
+            + "\n".join(f"- {e}" for e in errors)
+            + "\n\nThe content may well be right; the syntax is not. Send the complete record again "
+              "as ONE strictly valid JSON object in a ```json fence, and nothing else. Check in "
+              "particular: no comma after the last item of an object or array; every quote inside "
+              "a string escaped as \\\"; no line breaks inside strings (use \\n); no comments."
+        )
     return (
         "Your reply did not validate against the RAIA record schema. Errors:\n"
         + "\n".join(f"- {e}" for e in errors)
@@ -607,6 +680,7 @@ def finalize(
         rec["overall_status"] = floor
 
     notes += [f"SHORTENED: {n}" for n in rec.get("shortened") or []]
+    notes += [f"SYNTAX: {n}" for n in rec.get("syntax_corrected") or []]
     if prune.removed:
         rec["pruned_citations"] = prune.removed
     notes += [f"PRUNED_CITATION: {n}" for n in prune.removed]

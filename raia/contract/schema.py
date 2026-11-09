@@ -480,4 +480,40 @@ def model_facing_schema(agent_key: str) -> Dict[str, Any]:
             props.pop(name, None)
             if name in schema.get("required", []):
                 schema["required"].remove(name)
+    _prune_unused_defs(schema)
     return schema
+
+
+def _prune_unused_defs(schema: Dict[str, Any]) -> None:
+    """Drop ``$defs`` nothing references any more (e.g. Finding, for a stage that writes none).
+
+    A shape the model is shown invites it to write one, and costs tokens on
+    every call.
+    """
+    defs = schema.get("$defs")
+    if not isinstance(defs, dict):
+        return
+
+    def refs(node: Any, out: set) -> set:
+        if isinstance(node, dict):
+            r = node.get("$ref")
+            if isinstance(r, str) and r.startswith("#/$defs/"):
+                out.add(r.split("/")[-1])
+            for k, v in node.items():
+                if k != "$defs":
+                    refs(v, out)
+        elif isinstance(node, list):
+            for v in node:
+                refs(v, out)
+        return out
+
+    keep = refs(schema, set())
+    while True:
+        more = set()
+        for name in keep:
+            refs(defs.get(name, {}), more)
+        if more <= keep:
+            break
+        keep |= more
+    for name in [n for n in defs if n not in keep]:
+        defs.pop(name)

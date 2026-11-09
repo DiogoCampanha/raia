@@ -264,6 +264,21 @@ def audience(item: Dict[str, Any]) -> str:
     return aud
 
 
+def display_name(item: Dict[str, Any]) -> str:
+    """The name a reviewer sees for a check result.
+
+    Several checks share one catalogue entry (every ``*.mismatch``); each is
+    then named with its own label, so two of them never read as one shown twice.
+    """
+    code = str(item.get("code") or "")
+    info = check_info(code)
+    name = info.get("name") or item.get("title", "")
+    title = str(item.get("title") or "")
+    if code not in CHECKS and title and title.lower() not in name.lower():
+        return f"{name}: {title}"
+    return name
+
+
 def critical_failures(validation: Dict[str, Any]) -> List[str]:
     """Failed checks a reviewer must act on, by name.
 
@@ -275,7 +290,7 @@ def critical_failures(validation: Dict[str, Any]) -> List[str]:
     out: List[str] = []
     for item in (validation or {}).get("items") or []:
         if item.get("level") == FAIL and audience(item) == ACT:
-            out.append(check_info(item.get("code", "")).get("name") or item.get("title", ""))
+            out.append(display_name(item))
     return out
 
 
@@ -284,7 +299,7 @@ def partition(validation: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
     out: Dict[str, List[Dict[str, Any]]] = {ACT: [], HANDLED: [], DECISION: [], PASSED: []}
     for item in (validation or {}).get("items") or []:
         info = check_info(item.get("code", ""))
-        out[audience(item)].append({**item, "name": info.get("name") or item.get("title", ""),
+        out[audience(item)].append({**item, "name": display_name(item),
                                     "why": info.get("why", ""), "todo": info.get("todo", "")})
     return out
 
