@@ -306,6 +306,13 @@ class BaseAgent:
         report = validators.ValidationReport()
         record = record or {}
         report.add(contract_checks.check_schema(record, repairs))
+        if record.get("schema_errors"):
+            # The reply could not be read, so the record holds no analysis.
+            # Checking citations, coverage or identifiers of an empty record
+            # only repeats that failure several times over, under names that
+            # suggest the model's analysis was wrong. One clear failure.
+            report.add(validators.check_truncation(draft, finish_reason))
+            return report
         for item in contract_checks.check_corrections(record):
             report.add(item)
         report.add(contract_checks.check_responses(record))

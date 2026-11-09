@@ -35,6 +35,7 @@ What is asserted, and why it matters:
 
 import io
 import json
+import re
 import os
 import sys
 import tempfile
@@ -59,6 +60,7 @@ from raia.projects import (                                      # noqa: E402
 )
 from raia.rag import ingest_corpus                               # noqa: E402
 from raia.repository import ConcurrentEdit                       # noqa: E402
+from raia import validators                                       # noqa: E402
 from raia.storage import open_repository                         # noqa: E402
 
 FAILURES = []
@@ -274,6 +276,9 @@ def main() -> None:
         contract_mock.reply = real_reply
     check(broken["record"].get("schema_errors") and svc.override_needed(broken),
           "an unreadable reply yields the fallback record, and approving it is an override")
+    failed = [i for i in broken["validation"]["items"] if i["level"] == "fail"]
+    check([i["code"] for i in failed] == ["contract.schema_invalid"],
+          "…reported as ONE failure, not a cascade of checks on an empty record")
     try:
         svc.resume(bruno, p1.id, "risk_classifier", {"action": "approve", "draft_id": broken["draft_id"]})
         check(False, "approving over failed checks without a reason is refused")
@@ -288,6 +293,22 @@ def main() -> None:
     svc.resume(bruno, p1.id, "risk_classifier", {"action": "approve", "draft_id": fixed["draft_id"]})
     check("override" not in repo1.read_data("risk_classification")["provenance"]["approval"],
           "a draft whose checks pass needs no reason")
+
+    print("== 7c2. A reply with trailing commas is read, not discarded ==")
+    real_reply = contract_mock.reply
+    contract_mock.reply = lambda prompt: re.sub(r'(["\]}\d]|true|false|null)(\s*\n\s*[}\]])', r"\1,\2",
+                                                 real_reply(prompt))
+    try:
+        sloppy = svc.start_run(ana, p1.id, "requirements_reviewer", EXAMPLES["requirements_reviewer"])["payload"]
+    finally:
+        contract_mock.reply = real_reply
+    check(not sloppy["record"].get("schema_errors") and sloppy["record"].get("syntax_corrected")
+          and sloppy["provenance"]["contract"]["repairs"] == 0,
+          "the Requirements Reviewer's record is read on the first reply, without a repair call")
+    check(not svc.override_needed(sloppy) and (sloppy["record"].get("extension") or {}).get("evrs"),
+          "…with its requirements, and nothing a reviewer must override")
+    names = [i["name"] for i in validators.partition(sloppy["validation"])[validators.PASSED]]
+    check(len(names) == len(set(names)), "two checks of the same family never show under the same name")
 
     print("== 7d. Every run keeps its exact prompt, sealed, and its token use ==")
     from raia import provenance as _prov

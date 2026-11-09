@@ -136,9 +136,38 @@ def test_parse_and_fallback() -> None:
     bad["findings"][0]["magnitude"] = "catastrophic"
     rec, errors = assemble.parse_record("risk_classifier", json.dumps(bad))
     check(rec is None and any("findings.0.magnitude" in e for e in errors), "an off-scale value is rejected with its path")
+    check("did not validate" in assemble.repair_prompt(errors) and "findings.0.magnitude" in assemble.repair_prompt(errors),
+          "the repair prompt carries the schema errors")
+
+    # A trailing comma is a syntax slip, not a wrong record: code removes it.
+    dumped = json.dumps(_record(), indent=2)
+    sloppy = dumped.replace('"\n  }', '",\n  }').replace("]\n}", "],\n}")
+    check(sloppy != dumped, "(the test reply has trailing commas)")
+    try:
+        json.loads(sloppy)
+        check(False, "(strict JSON rejects the test reply)")
+    except ValueError:
+        pass
+    rec, errors = assemble.parse_record("risk_classifier", "```json\n" + sloppy + "\n```")
+    check(rec is not None and not errors and rec.get("syntax_corrected"),
+          "a reply with trailing commas is read, and the correction is recorded")
+    fixed, n = assemble.strip_trailing_commas('{"a": "keep, } this,]", "b": [1, 2, ], }')
+    check(json.loads(fixed) == {"a": "keep, } this,]", "b": [1, 2]} and n == 2,
+          "only commas that close an object or array go; commas inside strings stay")
+
+    from raia import validators as _v
+    two = {"items": [
+        {"code": "evr_register.mismatch", "level": FAIL, "title": "Requirement register", "items": ["missing: EVR-1"]},
+        {"code": "gap_analysis.mismatch", "level": FAIL, "title": "Gap analysis", "items": ["missing: EVR-1"]}]}
+    names = [i["name"] for i in _v.partition(two)[_v.ACT]]
+    check(len(set(names)) == 2 and "Requirement register" in names[0] and "Gap analysis" in names[1],
+          f"two checks of one family are named apart, each with its own label ({names})")
+
     rec, errors = assemble.parse_record("risk_classifier", "I think the system is high risk.")
     check(rec is None and errors, "prose is not a record")
-    check("did not validate" in assemble.repair_prompt(errors), "the repair prompt carries the errors")
+    check("could not be parsed as JSON" in assemble.repair_prompt(errors)
+          and "no comma after the last item" in assemble.repair_prompt(errors),
+          "a reply that is not JSON gets a repair prompt about syntax, naming the usual causes")
     r = _rationale("risk_classifier")
     fb = assemble.finalize("risk_classifier", assemble.fallback_record("risk_classifier", r, errors, "prose"),
                            r, EVIDENCE, AGENTS["risk_classifier"].spec)

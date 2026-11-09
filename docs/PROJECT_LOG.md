@@ -164,6 +164,7 @@ Recorded so the log stays honest about its own errors.
 | D74 | Everything recorded names people by reference (`user:<id>`); pages and exports resolve the name. | Names and emails in an append-only chain could never be erased on account deletion, and reached model prompts through upstream artifacts. Existing records keep the labels they were written with. |
 | D75 | Every run keeps its exact prompt and raw replies, encrypted (`RAIA_TRANSCRIPT_KEY`), with its token use; without a key, only the hash and token use. All model calls, recommendations included, go through one model pass (`BaseAgent.converse`). Test-double hints are written only for the mock. | A 64-bit prompt hash proved a prompt matched but could not recover it. The recommendation path had its own call with no repair or accounting; real prompts carried lines only the mock reads. |
 | D76 | Assessments are rows: status, project, instrument and build are columns, every answer is an item linked to the project and, for a stage, to the approved version rated. Security-relevant actions are kept in an audit log; errors reach the person as a reference. | Assessments were findable only by person, inside a JSON blob, and research exports by coordinators left no trace. Raw exception text could carry internals. |
+| D77 | A reply whose only fault is trailing commas is read by code (the commas removed, the correction noted in the record); a reply that is not JSON at all gets a repair prompt about syntax, not schema; an unreadable reply is reported as one failure, not a cascade; checks of one family are named with their own label. Unused schema definitions are not shown to the model. | The Requirements Reviewer kept failing on a single trailing comma: strict JSON discarded a complete record, the repair prompt blamed the schema, and the empty fallback record then failed five more checks (two of them under the same name). |
 
 ---
 
@@ -172,6 +173,26 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-11-09 — Replies with trailing commas are read (branch `fix-reply-parsing`)
+
+Decision D77.
+
+- **Symptom.** The Requirements Reviewer repeatedly produced "The reply could not be read" with
+  `Illegal trailing comma before end of object`, followed by "No claim is tied to a source",
+  "Checklist items left unaddressed" and "Computed items the agent skipped" shown twice.
+- **Cause.** `assemble.extract_json` used strict `json.loads`, so one comma after the last item of
+  an object discarded a complete record. The repair prompt said the reply "did not validate
+  against the schema", which did not point the model at the syntax. The fallback record (empty)
+  then ran every content check, and the two register checks share one display name.
+- **Changed.** `assemble.strip_trailing_commas` + `extract_json` second pass (lossless, string-aware;
+  noted as `syntax_corrected` and a `SYNTAX:` note); `repair_prompt` names syntax causes when the
+  reply is not JSON; `BaseAgent.validate` stops after the schema check for a fallback record;
+  `validators.display_name` names family checks with their label; `schema._prune_unused_defs`
+  (the Requirements Reviewer no longer receives the Finding and Action shapes).
+- **Tests.** `test_contract.py`: trailing commas read, commas inside strings kept, syntax repair
+  prompt, family checks named apart. `test_projects.py`: a full Requirements Reviewer turn with a
+  trailing-comma reply is read on the first reply; an unreadable reply is one failure.
+
 ### 2026-11-05 — Audit fixes, phases 0 and 1 (branch `audit-phase-0-1`)
 
 Decisions D68–D76. Closes the phase 0 and phase 1 findings of the November 2026
