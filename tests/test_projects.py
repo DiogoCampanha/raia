@@ -52,11 +52,13 @@ os.environ["RAIA_CHROMA_DIR"] = str(Path(_tmp) / "chroma")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from raia import auth, config, db                                # noqa: E402
+from raia.agents import AGENTS                                   # noqa: E402
 from raia.examples import EXAMPLES                               # noqa: E402
 from raia.export import session_bundle                           # noqa: E402
 from raia.pipeline import StageRunner                            # noqa: E402
 from raia.projects import (                                      # noqa: E402
-    EDITOR, OWNER, REVIEWER, AccessDenied, ProjectService, StaleDraft, UsageLimitReached, pseudonym,
+    EDITOR, OWNER, REVIEWER, AccessDenied, ProjectService, PseudonymKeyMissing, StaleDraft,
+    UsageLimitReached, assessment_code, pseudonym,
 )
 from raia.rag import ingest_corpus                               # noqa: E402
 from raia.repository import ConcurrentEdit                       # noqa: E402
@@ -493,6 +495,13 @@ def main() -> None:
     check(denied(svc.research_export, bruno), "only coordinators can export research data")
     config.ADMIN_EMAILS = {"ana@example.org"}
     ana = svc.get_user(ana.id)
+    config.PSEUDONYM_KEY = ""
+    try:
+        svc.research_export(ana)
+        check(False, "research data is not exported without a pseudonym key")
+    except PseudonymKeyMissing:
+        check(True, "research data is not exported without a pseudonym key")
+    config.PSEUDONYM_KEY = "a-test-key-that-is-long-enough"
     raw = svc.research_export(ana)
     with zipfile.ZipFile(io.BytesIO(raw)) as z:
         blob = "\n".join(z.read(n).decode("utf-8") for n in z.namelist())
@@ -513,34 +522,58 @@ def main() -> None:
     check("History integrity at export: OK" in manifest, "the project export states its integrity")
     check("bruno@example.org" not in ev and bruno.id not in ev, "the project export's events are pseudonymized")
 
-    print("== 11a. Assessments can be found by project, stage and version ==")
-    svc.submit_rating(bruno, {"instrument": "raia-panel-v2", "project_id": p1.id,
-                              "dimensions": {"usefulness": {"score": 4, "comment": "clear"}},
-                              "stages": {"risk_classifier": {"score": 5, "comment": ""},
-                                         "auditor": {"score": None, "comment": ""}},
-                              "profile": {"region": "Brazil"}, "open": {"improve": "More examples"}})
-    row = db.get_database().one("SELECT status, project_id, instrument, build FROM experience_ratings "
-                                "WHERE user_id = ? AND project_id = ?", (bruno.id, p1.id))
-    check(row["status"] == "submitted" and row["project_id"] == p1.id and row["instrument"] == "raia-panel-v2"
-          and row["build"], "status, project, instrument and build are columns, not buried in JSON")
-    found = svc.project_assessments(ana, p1.id)
-    stage = [i for i in found if i["kind"] == "stage" and i["item_key"] == "risk_classifier"]
-    from raia.projects import approved_versions
-    check(stage and stage[0]["score"] == 5
-          and stage[0]["commit_ref"] == approved_versions(open_repository(p1.id))["risk_classifier"],
-          "a stage rating is found by project and names the approved version it was about")
-    check({i["kind"] for i in found} >= {"dimension", "stage", "profile", "open"}
-          and all("participant" in i and "user_id" not in i for i in found),
-          "…every answer is a row, pseudonymized for the coordinators")
-    check(denied(svc.project_assessments, bruno, p1.id), "only coordinators read assessments by project")
-    try:
-        svc.submit_rating(carla, {"project_id": p1.id, "dimensions": {}})
-        check(False, "an assessment cannot name a project its author is not a member of")
-    except AccessDenied:
-        check(True, "an assessment cannot name a project its author is not a member of")
-    audit = svc.audit_entries(ana)
-    check(any(e["action"] == "assessments_read" and e["target"] == p1.id for e in audit),
-          "reading assessments is recorded in the audit log")
+    print("== 11a. An assessment is stored with what its author used, never with a project ==")
+    exposure = svc.my_exposure(bruno)
+    check(set(exposure["stages"]) == set(AGENTS) and exposure["stages"]["risk_classifier"] in ("approved", "run")
+          and exposure["on"] in ("own", "both"),
+          f"what a person used is derived from their own runs and approvals ({exposure})")
+    dora = svc.sign_in("dora@example.org", "Dora Alves")
+    check(svc.my_exposure(dora) == {"stages": {k: "none" for k in AGENTS}, "on": "none"},
+          "someone who ran nothing has used nothing")
+    carla_used = svc.my_exposure(carla)
+    check(carla_used["stages"]["risk_classifier"] == "run" and carla_used["on"] == "own",
+          f"a draft left at the gate counts as run, not approved ({carla_used})")
+    svc.submit_rating(bruno, {"instrument": "raia-panel-v3", "project_id": p1.id,
+                              "dimensions": {"utility": {"score": 4, "comment": "clear"}},
+                              "stages": {"risk_classifier": {"score": 5, "not_used": False, "comment": ""},
+                                         "auditor": {"score": None, "not_used": True, "comment": ""}},
+                              "profile": {"role_family": "Product or project management"},
+                              "open": {"missing": "More examples"}})
+    row = db.get_database().one("SELECT id, status, project_id, instrument, build, payload FROM experience_ratings "
+                                "WHERE user_id = ? AND instrument = 'raia-panel-v3'", (bruno.id,))
+    stored = json.loads(row["payload"])
+    check(row["status"] == "submitted" and row["instrument"] == "raia-panel-v3" and row["build"],
+          "status, instrument and build are columns, not buried in JSON")
+    check(row["project_id"] is None and "project_id" not in stored and "stage_versions" not in stored,
+          "an assessment names no project, even when one is sent with it")
+    check(stored["exposure"] == exposure, "…and carries what its author had used")
+    rows = db.get_database().query("SELECT kind, item_key, score, value, project_id, commit_ref "
+                                   "FROM assessment_items WHERE rating_id = ?", (row["id"],))
+    by = {(r["kind"], r["item_key"]): r for r in rows}
+    check(by[("stage", "risk_classifier")]["score"] == 5 and by[("stage", "auditor")]["score"] is None
+          and by[("stage", "auditor")]["value"] == "not_used",
+          "a stage answered 'did not use' is a row with no score")
+    check(by[("exposure", "risk_classifier")]["value"] == exposure["stages"]["risk_classifier"]
+          and by[("exposure", "on")]["value"] == exposure["on"], "…what was used is a row per stage")
+    check(all(r["project_id"] is None and r["commit_ref"] is None for r in rows),
+          "no answer is linked to a project or to a version")
+    raw = svc.research_export(ana)
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        ratings = [json.loads(l) for l in z.read("experience_ratings.jsonl").decode().splitlines() if l]
+        items = [json.loads(l) for l in z.read("assessment_items.jsonl").decode().splitlines() if l]
+        activity = z.read("evaluation_events.jsonl").decode() + z.read("memberships.jsonl").decode()
+        readme = z.read("README.txt").decode()
+    codes = {r["participant"] for r in ratings}
+    check(codes == {assessment_code(bruno.id)} and pseudonym(bruno.id) not in codes
+          and assessment_code(bruno.id) != pseudonym(bruno.id),
+          "assessments leave under their own participant code")
+    check(assessment_code(bruno.id) not in activity and pseudonym(bruno.id) in activity,
+          "…which project activity never carries, so the two cannot be joined")
+    check(all("project" not in r and "project_id" not in r and "stage_versions" not in r
+              and "submitted_at" not in r and len(r["submitted_on"]) == 10 for r in ratings)
+          and all("project" not in i and "version" not in i for i in items),
+          "an exported assessment has no project, no version and only the day it was submitted")
+    check("A-xxxxxxxxxx" in readme and "not_used" in readme, "the export says how to read both")
 
     print("== 11b. Revising a stage flags what depends on it, and re-runs nothing ==")
     from raia import lineage

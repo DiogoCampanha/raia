@@ -114,7 +114,9 @@ Under **People and settings**, invite a colleague as a **reviewer** by the email
 
 ### 11. Complete the assessment
 
-Open **Assessment** in the top menu. It asks five required statements (utility, completeness, usability, methodological rigor, generalizability), one required statement for each stage and one on the AI Skill, optional profile questions, and three open questions. About ten minutes; you can save a draft and come back. It is the most useful thing you can leave behind.
+Open **Assessment** in the top menu once you have gone through the software; a demo project is enough. The page shows what you have used so far. It asks five required statements (utility, completeness, usability, methodological rigor, generalizability), each with a line saying where to look, and one statement for each stage, which you can answer **Did not use this stage**. Three optional profile questions and three open questions follow. Negative feedback is as useful as positive, and a reason helps either way. About ten minutes; you can save a draft and come back.
+
+Your answers are about the software, not about a project: an assessment names no project, and it is stored under a participant code apart from your projects. The download you may have taken from **Download AI Skill** is not rated.
 
 ![Complete the assessment](images/guide/assessment.png)
 

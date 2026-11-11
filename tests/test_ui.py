@@ -677,6 +677,19 @@ def main() -> None:
           "…one statement per stage, naming it")
     check(any(s.label == "Experience with AI Product Development" for s in at.selectbox),
           "the profile asks about AI product development")
+    check(sorted(s.key for s in at.selectbox if (s.key or "").startswith("a_profile_"))
+          == ["a_profile_ai_product_experience", "a_profile_experience", "a_profile_role_family"],
+          "…and three questions only: nothing that tells colleagues apart")
+    check(not any(k.startswith("a_extra_") for k in radios) and "AI Skill" not in text(at),
+          "the AI Skill is not rated")
+    check(all("not_used" in [str(o) for o in r.options] or "Did not use this stage" in [str(o) for o in r.options]
+              for r in stage_radios if r is not None), "every stage can be answered 'Did not use this stage'")
+    check(not any((s.key or "") == "a_project" for s in at.selectbox), "an assessment names no project")
+    check("Negative feedback is as useful as positive" in text(at), "the framing is neutral")
+    check("Before you rate" in text(at) and "run and approved" in text(at),
+          "…and the page says what the person has used so far")
+    check("Where to look" in text(at), "each dimension says where to look")
+    check("apart from your projects" in text(at), "the consent says how answers are stored")
     button(at, "assess_submit").click()
     ok(at.run(), "an incomplete submission is refused")
     check("Please give your consent" in text(at), "…consent comes first")
@@ -690,20 +703,21 @@ def main() -> None:
     for k in ("a_dim_completeness", "a_dim_usability", "a_dim_rigor", "a_dim_generalizability"):
         radios[k].set_value(4)
     radios["a_stage_risk_classifier"].set_value(5)
-    next(s for s in at.selectbox if s.key == "a_profile_context").set_value("Industry")
+    next(s for s in at.selectbox if s.key == "a_profile_role_family").set_value("Product or project management")
     button(at, "assess_submit").click()
-    ok(at.run(), "a submission with stages and the AI Skill item unrated is refused")
+    ok(at.run(), "a submission with stages unanswered is refused")
     refusal = " ".join(str(e.value) for e in at.error)
-    check("Please rate every evaluation statement" in refusal and "AI Skill" in refusal
-          and "Auditor" in refusal and "Risk Classifier" not in refusal,
-          "…naming the unrated stages and the AI Skill item, and only those")
+    check("Please answer every evaluation statement" in refusal and "Auditor" in refusal
+          and "Risk Classifier" not in refusal and "Did not use this stage" in refusal,
+          "…naming the unanswered stages, and only those")
     radios = {r.key: r for r in at.radio if r.key}
+    from raia.ui.assessment import NOT_USED as _NOT_USED
     for k in _AGENTS:
-        if k != "risk_classifier":
+        if k not in ("risk_classifier", "auditor"):
             radios[f"a_stage_{k}"].set_value(4)
-    radios["a_extra_ai_skill"].set_value(4)
+    radios["a_stage_auditor"].set_value(_NOT_USED)
     button(at, "assess_submit").click()
-    ok(at.run(), "the assessment is submitted")
+    ok(at.run(), "the assessment is submitted, one stage answered 'did not use'")
     check("your assessment was recorded" in text(at).lower(), "…and confirmed")
     no_emoji(at, "assessment page")
 

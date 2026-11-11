@@ -151,9 +151,13 @@ artifact.
    their sign-in email as **editor** (runs agents, approves) or **reviewer**
    (reviews and approves, does not run agents), and can require a **second
    approver**, so the person who ran a stage cannot approve it.
-9. **Assessment** — one page in the top menu: consent, optional profile, the
-   evaluation plan's five dimensions on a five-point scale, one required item
-   per stage, one on the AI Skill and open questions, with drafts.
+9. **Assessment** — one page in the top menu, about the software only: what
+   you have used so far, consent, three optional profile questions, the
+   evaluation plan's five dimensions on a five-point scale (each with a line
+   saying where to look), one answer per stage (a score, or *Did not use this
+   stage*) and open questions, with drafts. An assessment names no project: it
+   is stored with what its author used, and leaves in the research export under
+   a participant code of its own.
 10. **Work the action plan** — the Project page gathers every action from every
    approved record, sorted by computed priority, filterable by owner and stage,
    and exports it as CSV or JSON.
@@ -333,7 +337,7 @@ only when its file really is the official wording.
 | `RAIA_STORE` | `git` locally, `database` with PostgreSQL | where project blackboards live |
 | `RAIA_AUTH` | `google` if `[auth]` is set | `dev` must be set explicitly; with neither, the app refuses to open |
 | `RAIA_ADMIN_EMAILS` | — | may download the pseudonymized research dataset |
-| `RAIA_PSEUDONYM_KEY` | — | keyed participant codes, stable across exports |
+| `RAIA_PSEUDONYM_KEY` | — | keyed participant codes, stable across exports; the research export is refused until it is set |
 | `RAIA_JIRA_KEY` | — | optional: encrypts a person's Jira API token; without it the token is kept for the session only |
 | `RAIA_TRANSCRIPT_KEY` | — | encrypts the exact prompt and raw replies of every run, for reproducibility (comma-separated keys: the first encrypts, all decrypt). Without it only the prompt hash and token use are kept |
 | `RAIA_LOG_LEVEL` | `INFO` | JSON logs on stderr; security-relevant actions also go to the `audit_log` table |
