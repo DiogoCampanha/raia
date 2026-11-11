@@ -9,6 +9,7 @@ from raia.agents import AGENTS
 from raia.contract import SCHEMA_VERSION
 from raia.contract.assemble import RECORD_TYPES
 from raia.repository import ARTIFACT_FILES
+from raia.ui import guide
 from raia.ui.agent_docs import DOCS, LAYERS, TURN
 from raia.ui.components import agent_header, esc, page_header
 from raia.ui.theme import look
@@ -26,7 +27,7 @@ for col, (icon, head, body) in zip((p1, p2, p3), [
      "No agent output is saved until a person reviews and approves it, and no agent ever "
      "triggers another one."),
     (":material/calculate:", "Code decides what is decidable",
-     "Prohibition lists, obligation tables, coverage matrices and fairness metrics are computed "
+     "Prohibition lists, obligation tables, coverage matrices and verdict registers are computed "
      "by rules before any model is called. The model explains; it does not produce the facts."),
     (":material/verified:", "Everything is cited and versioned",
      "Citations are verified against the excerpts actually retrieved, and every approval becomes "
@@ -35,6 +36,11 @@ for col, (icon, head, body) in zip((p1, p2, p3), [
     with col, st.container(border=True, height="stretch"):
         st.markdown(f"{icon} **{head}**")
         st.caption(body)
+
+# ---- What RAIA is, and is not --------------------------------------------------------
+
+with st.expander(guide.SCOPE_TITLE, icon=":material/info:"):
+    st.markdown("\n".join(f"- **{head}** {text}" for head, text in guide.SCOPE))
 
 # ---- Interactive architecture diagram -----------------------------------------------
 

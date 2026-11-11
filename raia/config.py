@@ -158,7 +158,7 @@ CONTACT_EMAIL: str = os.getenv("RAIA_CONTACT_EMAIL", "")
 #: Effective date of the current Privacy Policy and User Agreement
 #: (docs/legal/PRIVACY_AND_TERMS.md). Anyone who accepted an earlier version is
 #: asked to accept again on their next visit.
-LEGAL_EFFECTIVE: str = "2026-09-27T00:00:00+00:00"
+LEGAL_EFFECTIVE: str = "2026-11-11T00:00:00+00:00"
 
 #: Model calls (runs and regenerations) one person may trigger per UTC day.
 #: Protects the deployment's API key from a runaway session. 0 disables it.

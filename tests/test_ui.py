@@ -658,6 +658,13 @@ def main() -> None:
     no_emoji(at, "guide page")
     from raia.ui import guide as _guide
 
+    check(_guide.EVALUATION_PATH_TITLE in body and body.index(_guide.EVALUATION_PATH_TITLE) < body.index("Step by step")
+          and "Did not use this stage" in body, "the Guide opens with the short path to the Assessment")
+    check(_guide.SCOPE_TITLE in body and "Curated summaries, not the official texts." in body
+          and "has not been enacted" in body, "…and says what RAIA is and is not")
+    check("use a demo project, or describe your product in generic terms" in body,
+          "…with the advice on what to enter")
+
     check(_guide.DOCUMENT.read_text(encoding="utf-8") == _guide.markdown(),
           "docs/TESTERS.md is generated from the guide and up to date (python -m raia.ui.guide)")
 

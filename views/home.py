@@ -6,6 +6,7 @@ from raia.agents import AGENTS
 from raia.examples import CASES, EXAMPLE_KEY
 from raia.lineage import next_steps
 from raia.ui import routes
+from raia.ui.guide import ADVICE
 from raia.ui.components import (empty_state, esc, page_header, progress_segments, risk_badge, role_badge,
                                 rule, stat_tiles, status_badge)
 from raia.ui.state import current_user, flash, get_service, show_flash
@@ -153,6 +154,7 @@ with new_project_slot.popover("New project", type="primary", icon=I.ADD):
     with st.form("new_project", clear_on_submit=True, border=False):
         name = st.text_input("Project name", placeholder="e.g. Credit-limit recommender")
         description = st.text_area("Description (optional)", height=80)
+        st.caption(ADVICE)
         if st.form_submit_button("Create project", type="primary"):
             try:
                 p = svc.create_project(user, name, description)

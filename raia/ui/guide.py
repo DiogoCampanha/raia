@@ -38,6 +38,60 @@ INTRO = (
     "password); the first time, you are shown what RAIA stores and asked to agree."
 )
 
+#: What to enter. Advice, said once and plainly; RAIA does not police it.
+ADVICE = ("RAIA is a research prototype. Unless your organisation has told you otherwise, it is not "
+          "one of its approved tools: use a demo project, or describe your product in generic terms.")
+
+#: The shortest way through RAIA for someone who will answer the Assessment.
+#: One screen; the numbered steps further down are the detail.
+EVALUATION_PATH_TITLE = "Evaluating RAIA: the short path"
+EVALUATION_PATH_LEAD = ("Going through the software once is enough to answer the Assessment, and a demo "
+                        "project is enough for that. Everything is saved as you go, so you can stop and "
+                        "come back.")
+EVALUATION_PATH: List[Tuple[str, str]] = [
+    ("Create a demo project",
+     "On **Home**, pick the demo closest to your work. Every form in it is pre-filled."),
+    ("Run and approve each stage",
+     "Open the Risk Classifier, press **Run**, read the draft, then **Approve and commit**. "
+     "**Continue to** the next stage and do the same. Reject a card with a reason at least once, "
+     "to see what a rejection does."),
+    ("Work one sprint on the Board",
+     "Once the requirements are approved: generate stories from them, plan a sprint, start it, "
+     "tick a story done, end the sprint and run the Auditor."),
+    ("See what the project now holds",
+     "On the project page: **Action plan**, **Traceability**, **Open issues** and **Documents**."),
+    ("Answer the Assessment",
+     "In the top menu. A stage you did not reach can be answered **Did not use this stage**."),
+]
+
+#: What RAIA is and is not, for someone about to judge it. Each line is a fact
+#: about the build, not an argument for it.
+SCOPE_TITLE = "What RAIA is, and what it is not"
+SCOPE: List[Tuple[str, str]] = [
+    ("A research prototype.",
+     "It was built for a research project and is being evaluated by the people who use it. It "
+     "may change or be unavailable."),
+    ("Drafts for a person to decide on.",
+     "Every output is a draft that someone approves, edits or rejects. It supports legal and "
+     "compliance advice and does not replace it."),
+    ("Four agents in two layers.",
+     "Product and Dev. The architecture also specifies an Ops layer, which monitors a system "
+     "after release; it needs production telemetry and has no agent in this build."),
+    ("Six sources, and only those.",
+     "The EU AI Act, the Brazilian bill PL 2338/2023, IEEE 7000, the NIST AI Risk Management "
+     "Framework, the Microsoft Responsible AI Standard v2 and ECCOLA. Other laws, and your "
+     "organisation's own policies, are outside what RAIA checks."),
+    ("Curated summaries, not the official texts.",
+     "What the agents retrieve and cite are summaries of those six sources prepared for this "
+     "project. The **Evidence** tab of a draft shows the excerpts a run used."),
+    ("One of the two legal sources is a bill.",
+     "PL 2338/2023 has not been enacted. Its tier and obligations are shown as proposed, and "
+     "say what the law would ask if it passes as it stands."),
+    ("As specific as what it is told.",
+     "The structured answers decide the verdict; the text you write decides how concrete the "
+     "rest is. A generic description gets a generic analysis."),
+]
+
 #: (heading, body) — what the menu at the top of the screen holds.
 MENU: List[Tuple[str, str]] = [
     ("Home", "Every project you belong to, with its risk level, progress and next step, and a "
@@ -417,6 +471,11 @@ def markdown() -> str:
         "",
     ]
     out += [f"- **{head}** — {body}" for head, body in MENU]
+    out += ["", f"## {EVALUATION_PATH_TITLE}", "", EVALUATION_PATH_LEAD, ""]
+    out += [f"{n}. **{head}.** {body}" for n, (head, body) in enumerate(EVALUATION_PATH, 1)]
+    out += ["", ADVICE]
+    out += ["", f"## {SCOPE_TITLE}", ""]
+    out += [f"- **{head}** {body}" for head, body in SCOPE]
     out += ["", "## Step by step", ""]
     for n, step in enumerate(STEPS, 1):
         out += [f"### {n}. {step.title}", "", step.body, ""]
