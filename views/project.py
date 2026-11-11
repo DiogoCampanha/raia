@@ -183,7 +183,7 @@ with tab_docs:
         show = b1.toggle("Show it here, to read or copy", key=pkey("brief_show"), disabled=not existing)
         slot = st.empty()
         if show and existing:
-            slot.code(_brief().decode("utf-8"), language="markdown", wrap_lines=True)
+            slot.code(_brief().decode("utf-8"), language=None, wrap_lines=True)
     with st.container(border=True, key="card-ai-skill"):
         s1, s2 = st.columns([4, 1.4], vertical_alignment="center")
         s1.markdown(f"{I.SKILL} **Continue with your own AI assistant**")

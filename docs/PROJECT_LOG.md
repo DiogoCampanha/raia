@@ -165,6 +165,15 @@ Recorded so the log stays honest about its own errors.
 | D75 | Every run keeps its exact prompt and raw replies, encrypted (`RAIA_TRANSCRIPT_KEY`), with its token use; without a key, only the hash and token use. All model calls, recommendations included, go through one model pass (`BaseAgent.converse`). Test-double hints are written only for the mock. | A 64-bit prompt hash proved a prompt matched but could not recover it. The recommendation path had its own call with no repair or accounting; real prompts carried lines only the mock reads. |
 | D76 | Assessments are rows: status, project, instrument and build are columns, every answer is an item linked to the project and, for a stage, to the approved version rated. Security-relevant actions are kept in an audit log; errors reach the person as a reference. | Assessments were findable only by person, inside a JSON blob, and research exports by coordinators left no trace. Raw exception text could carry internals. |
 | D77 | A reply whose only fault is trailing commas is read by code (the commas removed, the correction noted in the record); a reply that is not JSON at all gets a repair prompt about syntax, not schema; an unreadable reply is reported as one failure, not a cascade; checks of one family are named with their own label. Unused schema definitions are not shown to the model. | The Requirements Reviewer kept failing on a single trailing comma: strict JSON discarded a complete record, the repair prompt blamed the schema, and the empty fallback record then failed five more checks (two of them under the same name). |
+| D78 | The assessment is about the software only: the AI Skill is not rated (instrument `raia-panel-v3`). This reverses D66. | The panel evaluates in its own time and judges the software. The skill is a download people use freely afterwards; an item answered from reading its README measured nothing, and the success criterion never included it. |
+| D79 | Every stage still needs an answer, and "Did not use this stage" is one. It is stored with no score, counted, and never enters a median. | D67 made the stage items required so they would not be left empty; with people working alone, some will not reach every stage, and a required score for a stage nobody opened is a guess pooled with real ratings. |
+| D80 | An assessment names no project and no version. It is stored with what its author used (per stage: approved, run or none; on a demo, a project of their own, or both) and leaves in the research export under a participant code of its own, dated by day, numbered in an order that is not the order of submission. The export is refused until `RAIA_PSEUDONYM_KEY` is set. This reverses the project link of D76. | The panel is small and its members know each other and the researcher, who also administers the deployment. A rating joined to a project is a rating joined to a person, because a project's description says who wrote it. What the analysis needs from the link (how much of RAIA the person had seen) is kept without it. |
+| D81 | The profile asks three questions (role, years of experience, experience building AI products); the page opens with a neutral line (negative feedback is as useful as positive) and with what the person has used so far, which informs and never blocks; each dimension carries a line saying where to look; the consent says who administers the deployment and how answers are stored. | Region, sector and context are the same for a panel drawn from one place and only help tell people apart. The software may simply be good, so nothing on the form pushes a rating either way. Rigor and completeness cannot be judged from running one stage. A consent has to be true as written. |
+| D82 | A third example case, B2B marketplace: models recommend products and choose the promotions each small shop sees. Outside every listed area, in production, sold in Brazil and other markets but not the EU, fully automated. Cases are listed from the lightest tier to the heaviest. Extends D53. | Neither existing case resembled commercial product work, and neither took the path most products take: a tier that says "minimal" and "not listed", nothing blocking, and work that comes from the principles rather than from an obligation table. |
+| D83 | A legal source that is not law yet is labelled wherever its tier or obligations are shown (`config.PROPOSED_SOURCES`); each tier says whether it binds the product, from the declared markets; a product outside the listed areas is told what the tier does not settle and how many risks were found. The priority floor for legal obligations is unchanged. | PL 2338/2023 is a bill and was shown like law in force; a tier shown without its applicability left "does this bind us?" unanswered; "minimal risk" beside a short obligation table read as "nothing applies". The floor stays because RAIA never lowers a priority on its own and the source keeps its legal authority level; the label says what kind of obligation it is. |
+| D84 | Keeping inputs generic is advice, not a control: one line under New project and in the Guide, and the same in the terms. The Privacy Policy (version 1.2) describes the record kept of each run, the audit log, and the assessment as it now is. | RAIA cannot know what a person is allowed to enter, and a warning that guesses wrong teaches people to ignore it. What the software owes people is an accurate account of what it stores. |
+| D85 | The AI Skill has a fixed part and a project part. The fixed part (instructions and references) takes no project, person or date, is byte-identical for every download of a version, and carries a version and a recorded fingerprint. The project part is everything that differs between downloads. Both are offered in four formats from the same text: Cursor, ChatGPT, Claude, and one Markdown file for any assistant. The fixed part names no assistant, assumes no file access and no connection, and works with no RAIA project, labelling its result self-assessed. Extends D64 and D65. | One package per project meant the instructions could differ between two people's downloads and had to be replaced whenever a project changed. Naming one assistant and one tracker made it a tool for one setup. A product manager or scrum master with several products needs it before any of them has been through RAIA. |
+| D86 | The Risk Classifier's five rarely-needed questions sit in a last group drawn closed; they stay on the form with their default of no and are never inferred. The Requirements Reviewer runs with no requirements list. Every identifier and code is explained on the page that uses it. A one-page brief is written by code from the approved records, naming roles. | A first form of 24 questions, several in the vocabulary of the exceptions, and a second form that required a list a person working from a generic description does not have, stopped people before the first result. Pre-filling the classifier's answers from prose was considered and refused: the answers decide the verdict, and they are asked, not guessed (D7, D30). |
 
 ---
 
@@ -173,6 +182,110 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-11-11 — Ready for the panel to evaluate on its own (branch `panel-readiness`)
+
+Decisions D78–D86. New finding prefix **PAN-** (panel readiness): what stood between the build
+and an evaluation that product managers, working alone and voluntarily, can make honestly and
+well. The review behind these findings lives outside the repository.
+
+#### What was wrong
+
+- **PAN-1** The assessment required a rating of the AI Skill, which is not part of what the
+  panel evaluates.
+- **PAN-2** Every stage required a score, so a stage a person had not opened was rated anyway.
+- **PAN-3** An assessment could name a project, and the research export put the same participant
+  code on assessments and on project membership: a rating could be joined to its author's
+  projects. The codes fell back to a built-in key when none was configured.
+- **PAN-4** The profile asked six questions of a panel in which three of the answers are the
+  same for everyone; nothing on the form said where to look before rating rigor or
+  completeness; the consent did not say who administers the deployment.
+- **PAN-5** Neither demo was close to commercial product work.
+- **PAN-6** A product outside the listed high-risk areas ended on "minimal risk" and a short
+  obligation table, which read as "nothing applies".
+- **PAN-7** PL 2338/2023 was shown like law in force, and no tier said whether it bound the
+  product.
+- **PAN-8** The Privacy Policy did not mention the record of each run or the audit log, and
+  described the assessment as it used to be.
+- **PAN-9** The Guide had twelve steps and no short route to the Assessment, and nothing said in
+  one place what RAIA does not do.
+- **PAN-10** The AI Skill was one package per project, written for a developer's repository and
+  one assistant, with Jira as the only tracker and no use without a RAIA project.
+- **PAN-11** The first form asked 24 questions; the second required a requirements list;
+  identifiers and codes were explained nowhere on the page; no export was a page to hand on.
+
+#### What changed
+
+- **Assessment** (`raia/ui/assessment.py`, `views/assessment.py`): instrument `raia-panel-v3`.
+  The five dimensions are untouched. No skill item; `NOT_USED` on every stage item; three
+  profile questions; `FRAMING`, `BEFORE_RATING`, `DIMENSION_HINTS`, `CONSENT_DETAIL`. The page
+  shows what the person has used (PAN-1, PAN-2, PAN-4).
+- **What was used** (`ProjectService.my_exposure`): derived from the person's own approvals,
+  rejections and drafts at the gate across their projects; a mode counts for its stage; demo or
+  own from the saved example marker. Stored with every assessment; no project id, no version
+  (`_store_assessment`). `project_assessments` is removed (PAN-3).
+- **Research export** (`ProjectService.research_export`): `assessment_code` (A-…) for
+  assessments, `pseudonym` (P-…) for project activity; no project or version on an assessment;
+  `submitted_on` is a day; ratings are numbered by code, not by time; `PseudonymKeyMissing`
+  when no key is set. The README in the export says how to read "did not use" and what the
+  exposure can still reveal on a small panel (PAN-3).
+- **Third example** (`raia/examples.py`, `B2B_MARKETPLACE`): every stage and both Story Refiner
+  modes filled; Home lists the cases lightest tier first (PAN-5).
+- **Risk picture** (`raia/contract/digest.py`): `EU_LABEL`, `BR_LABEL`, `applicability`, and a
+  caption for products outside the listed areas; `config.PROPOSED_SOURCES` and `PROPOSED_NOTE`.
+  The same line is drawn on screen and in the document. The Risk Classifier's prompt says what
+  a finding is when few obligations apply (PAN-6, PAN-7).
+- **Terms** (`docs/legal/PRIVACY_AND_TERMS.md`, version 1.2; `config.LEGAL_EFFECTIVE`): run
+  records, audit log, the assessment, the two participant codes, who administers and exports,
+  what project deletion removes; "Your commitment" is now advice. Everyone is asked to accept
+  again (PAN-8).
+- **Guide** (`raia/ui/guide.py`): "Evaluating RAIA: the short path", "What RAIA is, and what it
+  is not", "Words RAIA uses" (`GLOSSARY`), three demos, the assessment as it now is. The scope
+  block also opens the Agents page. Screenshots retaken from the app (PAN-9, PAN-11).
+- **AI Skill** (`raia/skill/`): fixed part with `SKILL_VERSION` and `FIXED_FINGERPRINT`; project
+  part `raia-project/`; install notes per format in `text/install/`; `references/screening.md`
+  generated from the rule engine; new playbooks (review a product document, check the board,
+  one-page brief, sprint ceremonies), export to any tracker, a plain criterion format, "Before
+  you write anywhere". A Format selector on the Documents tab; `docs/ai-skill/` regenerated,
+  and the generator removes files it no longer writes (PAN-10).
+- **Forms** (`AgentSpec.collapsed_groups`, `raia/ui/gate.py`): "Less common situations" drawn
+  closed on the Risk Classifier; the Requirements Reviewer accepts an empty requirements list;
+  "Words used here" on every stage page (PAN-11).
+- **One-page brief** (`raia/brief.py`): written by code from the approved records, roles only;
+  on the Documents tab, in the project download and in the skill's project part (PAN-11).
+
+#### Tests
+
+- `test_projects.py` 11, 11a: no export without a key; what a person used; an assessment with
+  no project even when one is sent; "did not use" as a row with no score; assessments and
+  project activity cannot be joined in the export.
+- `test_ui.py`: the assessment page (three profile questions, no skill item, "did not use",
+  framing, hints, consent detail); three demos on Home; the Guide additions; the closed group;
+  the glossary; the brief.
+- `test_engines.py`: the third case's verdict and obligations; every case fills every stage
+  with nothing required left empty; the closed group gives the same verdict as answering no;
+  an empty requirements list.
+- `test_contract.py`: labels, applicability and caption of the risk picture.
+- `test_skill.py`: the fixed part is identical across projects and matches its recorded
+  fingerprint; each format's layout; the single file; no assistant named in the fixed part;
+  the brief in the project part.
+- Every suite passes on the Git store and on the database store (SQLite). PostgreSQL was not
+  run for this change.
+
+#### Still open, by decision
+
+- The Risk Classifier's structured answers are not suggested from the description (D86).
+- The priority floor treats a PL 2338/2023 obligation like any legal obligation (D83).
+- Assessments recorded before `raia-panel-v3` keep their project link in the database; nothing
+  exported carries it. They are never pooled with v3 answers.
+- What a person used is derived from the same activity the events record, so an unusual pattern
+  can still point to one participant on a small panel. The export's README says so.
+- Keeping inputs generic is not enforced, and the optional Jira connection stays (D84).
+- The new example was walked end to end with the mock model only. How useful a live model's
+  analysis of a minimal-risk product is has not been measured.
+- The skill has no slot for an organisation's own policies, no sample files, and its behaviour
+  was not checked inside each assistant.
+- No in-app way to report a problem apart from the assessment.
+
 ### 2026-11-09 — Replies with trailing commas are read (branch `fix-reply-parsing`)
 
 Decision D77.

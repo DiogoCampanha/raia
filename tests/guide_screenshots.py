@@ -127,7 +127,8 @@ def walk(base: str, wording: bool) -> None:
         _idle(page)
         shoot(page, "Create a project", wording, at='[class*="st-key-card-demo-"]', block="center")
 
-        page.locator("button", has_text="Create this demo project").first.click()
+        # The example wording below is the resume-screening case's, so that is the demo walked.
+        page.locator('[class*="st-key-demo_project_resume_screening"] button').first.click()
         page.wait_for_url(re.compile("id="), timeout=60000)
         pid = re.search(r"id=([0-9a-f]+)", page.url).group(1)
 
