@@ -282,10 +282,12 @@ STEPS: List[Step] = [
         "stages (**Decided**). Take an open one, or mark it resolved or accept the risk, noting "
         "what was decided.\n"
         "- **Documents** — each approved artifact with its provenance (model, corpus version, "
-        "attempt, edits, checks), **Download project**, and **Download AI Skill**: a skill your "
-        "own AI assistant can follow to apply these results to a real backlog and Jira. Open "
-        "`README_FIRST.md` and `raia-responsible-ai/SKILL.md` in it; if you can, give it to an "
-        "assistant you use with a few backlog items and see what it does.\n"
+        "attempt, edits, checks), **Download project**, and **Download AI Skill**: instructions "
+        "an AI assistant you are allowed to use can follow to apply these results to a real "
+        "backlog, tickets and product documents. Choose the format (Cursor, ChatGPT, Claude, or "
+        "one Markdown file for any assistant) and open `README_FIRST.md`. The skill has a fixed "
+        "part, the same for every project, and a project part you replace after new approvals. "
+        "It is yours to use freely and is not part of the assessment.\n"
         "- **Activity** — the version history and the project log.",
     ),
     Step(

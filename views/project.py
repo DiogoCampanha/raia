@@ -8,9 +8,10 @@ from raia.agents import AGENTS, RUNNABLE, identity_key
 from raia.contract import actions as action_plan
 from raia.contract import vocab as V
 from raia.contract.digest import BR_LABEL
-from raia.export import bundle_name, session_bundle, skill_bundle, skill_bundle_name
+from raia.export import bundle_name, session_bundle, skill_bundle, skill_bundle_mime, skill_bundle_name
 from raia.lineage import next_steps
 from raia.projects import EDITOR, OWNER, REVIEWER, ROLE_LABELS
+from raia.skill.build import FORMATS as SKILL_FORMATS
 from raia.repository import ACCEPTED, ARTIFACT_FILES, DECIDED, OPEN, RESOLVED, RETIRED_ARTIFACTS
 from raia.ui import routes
 from raia.ui.board import board_tab, sprint_step
@@ -40,8 +41,9 @@ def _bundle() -> bytes:
 
 
 def _skill() -> bytes:
-    """The AI Skill download, built on press like the project download."""
-    return skill_bundle(svc.repository(user, proj.id, "view"), proj.name)
+    """The AI Skill download in the chosen format, built on press like the project download."""
+    return skill_bundle(svc.repository(user, proj.id, "view"), proj.name,
+                        st.session_state.get(pkey("skill_format"), "cursor"))
 
 stages = summary["stages"]
 
@@ -160,14 +162,19 @@ with tab_docs:
     with st.container(border=True, key="card-ai-skill"):
         s1, s2 = st.columns([4, 1.4], vertical_alignment="center")
         s1.markdown(f"{I.SKILL} **Continue with your own AI assistant**")
-        s1.caption("The AI Skill teaches an assistant your organisation already approves how to read these "
-                   "outputs and apply them to your real backlog and Jira: it classifies stories, writes ethical "
-                   "acceptance criteria, suggests sprints and self-audits, with RAIA's rules. The download holds "
-                   "the skill, an AGENTS.md for your repository and this project's approved outputs, without the "
-                   "research data.")
+        s1.caption("The AI Skill teaches an AI assistant you are allowed to use how to apply these results to "
+                   "your real backlog, tickets and product documents: it triages stories, writes ethical "
+                   "acceptance criteria, reviews documents, suggests sprints and self-audits, with RAIA's "
+                   "rules. It has two parts: the skill itself, which is the same for every project and never "
+                   "changes, and this project's outputs, which you replace after new approvals. No research "
+                   "data is included, and the skill is not part of the assessment.")
         ready = repo.read_artifact("risk_classification") is not None
-        s2.download_button("Download AI Skill", data=_skill, file_name=skill_bundle_name(proj.name),
-                           mime="application/zip", icon=I.SKILL, key="docs_skill", width="stretch",
+        fmt = s2.selectbox("Format", list(SKILL_FORMATS), key=pkey("skill_format"),
+                           format_func=lambda k: SKILL_FORMATS[k][0],
+                           help="Cursor, ChatGPT and Claude get the skill laid out for them; the single "
+                                "Markdown file works in any assistant.")
+        s2.download_button("Download AI Skill", data=_skill, file_name=skill_bundle_name(proj.name, fmt),
+                           mime=skill_bundle_mime(fmt), icon=I.SKILL, key="docs_skill", width="stretch",
                            disabled=not ready,
                            help=None if ready else "Available once the Risk Classifier is approved.")
         if ready and repo.read_artifact("requirements_review") is None:

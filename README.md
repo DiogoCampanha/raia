@@ -168,14 +168,21 @@ artifact.
 12. **Export a project** — artifacts, structured records, the action plan,
    version history with its integrity check, and pseudonymized activity, in one zip.
 13. **Continue with your own AI assistant** — *Download AI Skill* (Documents
-   tab) packs a portable skill, an `AGENTS.md` for your repository and the
-   project's approved outputs. An assistant your organisation already approves
-   then reads RAIA's records, applies them to your real backlog and Jira
-   (triage, ethical acceptance criteria, sprint suggestions, self-audits,
-   Jira CSV) with RAIA's rules, and says when a change needs a new RAIA run.
-   Teams that can give RAIA only a generic description reconcile it with the
-   real product as the first step. No research data is included. See
-   [`docs/ai-skill/`](docs/ai-skill/).
+   tab), in four formats: Cursor, ChatGPT, Claude, or one Markdown file for any
+   assistant. The skill has two parts. The **fixed part** (`SKILL.md` and its
+   references) is the same for every project and every download of a version,
+   and nobody edits it. The **project part** is this project's approved outputs
+   and `PROJECT_CONTEXT.md`, replaced after new approvals. An assistant a
+   person is allowed to use then applies RAIA's records to the real backlog,
+   tickets and product documents (triage, ethical acceptance criteria, document
+   review, sprint suggestions, self-audits, a one-page brief, tracker export)
+   with RAIA's rules, and says when a change needs a new RAIA run. Teams that
+   can give RAIA only a generic description reconcile it with the real product
+   as the first step. With no RAIA project at all, the assistant screens the
+   product itself with the rule engine's tables and labels the result
+   self-assessed. The text names no assistant and assumes no connection to a
+   tracker. No research data is included, and the skill is not part of the
+   assessment. See [`docs/ai-skill/`](docs/ai-skill/).
 
 ## How Reliability Is Handled
 
@@ -279,7 +286,7 @@ raia/
 │   ├── pipeline.py            # the graph: generate → human gate → persist
 │   ├── sanitize.py            # injection screening (EN + PT), flag-never-delete
 │   ├── export.py              # one-zip project export, and the AI Skill download
-│   ├── skill/                 # the AI Skill: instructions and references (text/ + build.py),
+│   ├── skill/                 # the AI Skill: the fixed part and the four formats (text/ + build.py),
 │   │                          #   PROJECT_CONTEXT.md from the blackboard (context.py)
 │   └── agents/                # the four agent specifications (and the Refiner's generate mode)
 ├── corpus/                    # curated normative summaries (extensible)
@@ -287,7 +294,7 @@ raia/
 │   ├── architecture.md        # diagrams and the traceability table
 │   ├── output-contract.md     # the standard record every agent produces
 │   ├── agents/                # one generated agent card per agent
-│   ├── ai-skill/              # the AI Skill as downloaded, without a project (generated)
+│   ├── ai-skill/              # the AI Skill without a project: fixed part, install notes, single file (generated)
 │   ├── schema/                # published JSON Schemas of the record
 │   ├── templates/             # agent card and project-log entry templates
 │   ├── PROJECT_LOG.md         # what was wrong, what was decided, what changed
@@ -301,7 +308,7 @@ raia/
     ├── test_projects.py       # isolation, roles, durability, tamper evidence
     ├── test_backlog.py        # the sprint cycle: generate, plan, tick, audit, close, change control
     ├── test_jira.py           # optional Jira: CSV, push, sync, token privacy (mock Jira)
-    ├── test_skill.py          # the AI Skill: generated from the code, portable, no research data
+    ├── test_skill.py          # the AI Skill: generated from the code, frozen fixed part, four formats, no research data
     └── test_ui.py             # headless walkthrough of the project-based UI
 ```
 

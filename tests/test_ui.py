@@ -328,6 +328,9 @@ def main() -> None:
     check(any("Action plan" in t.label for t in at.tabs), "the project has an action plan tab")
     skill_btn = next((d for d in at.get("download_button") if "Download AI Skill" in str(d.proto.label)), None)
     check(skill_btn is not None and not skill_btn.proto.disabled, "…and the AI Skill can be downloaded")
+    fmt = next((s for s in at.selectbox if (s.key or "").endswith("skill_format")), None)
+    check(fmt is not None and list(fmt.options) == ["Cursor", "ChatGPT", "Claude", "One Markdown file (any assistant)"],
+          "…in four formats")
     check("Actions come from the User Story Refiner" in text(at),
           "…empty while only the analysis and the requirements are approved, and saying where actions come from")
 
