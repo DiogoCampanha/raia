@@ -32,7 +32,7 @@ def _seed_demo(case: str):
     proj = svc.create_project(
         user, c["project_name"],
         f"A worked example: {c['summary'][0].lower()}{c['summary'][1:]} Every stage's form is "
-        "pre-filled, so you can walk the whole pipeline in about 20 minutes.",
+        "pre-filled, so you can walk the whole pipeline in one sitting.",
     )
     for agent_key, values in c["agents"].items():
         if agent_key in AGENTS:
@@ -146,7 +146,7 @@ def _demo_cards(where) -> None:
                 routes.go(routes.PROJECT, id=p.id)
 
 
-DEMO_ICON = {"resume_screening": "work", "customer_support": "support_agent"}
+DEMO_ICON = {"b2b_marketplace": "storefront", "support_assistant": "support_agent", "resume_screening": "work"}
 newcomer = not any(summaries[p.id]["approved"] for p in projects)
 
 with new_project_slot.popover("New project", type="primary", icon=I.ADD):
@@ -166,7 +166,8 @@ with new_project_slot.popover("New project", type="primary", icon=I.ADD):
 
 if newcomer:
     st.html('<p class="raia-lead-in"><b>Start from an example.</b> Every form in a demo project is '
-            "pre-filled. The two cases sit at opposite ends of the risk scales: try one, then the other.</p>")
+            "pre-filled. The three cases run from a product outside the high-risk lists to one that is "
+            "blocked: start with the one closest to your work.</p>")
     _demo_cards(st)
 
 if not projects:

@@ -481,14 +481,34 @@ def test_second_example_case() -> None:
     check(sorted(o["code"] for o in r.data["obligations"]) == ["br.governance", "br.rights", "eu.art50"],
           "a deployer of a chat assistant: transparency, governance and rights obligations only")
     check(not any(m["blocking"] for m in r.typed_issues()), "nothing blocks it")
-    check(set(CASES) == {"resume_screening", "support_assistant"} and all(
-        example_for(c, "requirements_reviewer") for c in CASES), "both cases fill every stage")
+    check(set(CASES) == {"b2b_marketplace", "resume_screening", "support_assistant"}, "three example cases")
+    from raia.agents import AGENTS, MODES
+    from raia.fields import missing_required
+    gaps = [(c, k) for c in CASES for k, a in {**AGENTS, **MODES}.items()
+            if not example_for(c, k) or missing_required(a.spec.input_fields, example_for(c, k))]
+    check(not gaps, f"every case fills every stage, with nothing required left empty ({gaps or 'none'})")
+
+
+def test_third_example_case() -> None:
+    print("== the B2B marketplace example is outside the high-risk lists, and still has work to do ==")
+    from raia.examples import example_for
+
+    r = risk_screen.run(example_for("b2b_marketplace", "risk_classifier"))
+    check(r.verdict["eu_tier"] == risk_screen.TIER_MINIMAL and r.verdict["br_tier"] == risk_screen.BR_NOT_LISTED,
+          "minimal risk in the EU, not in the listed areas in Brazil")
+    check(r.verdict["br_in_scope"] and not r.verdict["eu_in_scope"],
+          "Brazil is a target market and the EU is not: the EU tier is for reference")
+    check(sorted(o["code"] for o in r.data["obligations"]) == ["br.governance", "br.rights"],
+          "only the obligations every AI system carries in Brazil")
+    issues = r.typed_issues()
+    check(len(issues) == 2 and not any(m["blocking"] for m in issues),
+          "two decisions for a person (significant effects, automation against oversight), none blocking")
 
 
 def main() -> None:
     for fn in (test_risk_screen, test_risk_screen_how_the_ai_works, test_coverage, test_suggestions,
                test_recommendation_checks, test_story_map, test_traceability,
-               test_validators, test_second_example_case, test_sanitize, test_principles,
+               test_validators, test_second_example_case, test_third_example_case, test_sanitize, test_principles,
                test_temperature_fallback):
         fn()
     print()

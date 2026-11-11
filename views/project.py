@@ -7,6 +7,7 @@ import streamlit as st
 from raia.agents import AGENTS, RUNNABLE, identity_key
 from raia.contract import actions as action_plan
 from raia.contract import vocab as V
+from raia.contract.digest import BR_LABEL
 from raia.export import bundle_name, session_bundle, skill_bundle, skill_bundle_name
 from raia.lineage import next_steps
 from raia.projects import EDITOR, OWNER, REVIEWER, ROLE_LABELS
@@ -136,7 +137,7 @@ with tab_overview:
             r1, r2 = st.columns(2)
             r1.caption("EU AI Act")
             r1.markdown(f"**{summary['risk']['eu_tier']}**")
-            r2.caption("Brazil PL 2338/2023")
+            r2.caption(f"Brazil {BR_LABEL}")
             r2.markdown(f"**{summary['risk']['br_tier'] or '—'}**")
     if summary["approved"] == 0:
         st.info("**Start here (about 20 minutes):** open the **Risk Classifier**, load the "

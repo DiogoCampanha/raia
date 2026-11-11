@@ -104,9 +104,10 @@ artifact.
 
 0. **Sign in and open a project.** *My projects* lists the projects you own or
    were invited to, with each one's progress derived from its approved
-   artifacts. Create one, start from one of the two pre-filled demo projects
-   (resume screening: high risk and blocked; a customer-support assistant:
-   limited risk), or accept an invitation. Everything below happens inside the open project, and your form
+   artifacts. Create one, start from one of the three pre-filled demo projects
+   (a B2B marketplace: outside the high-risk lists; a customer-support
+   assistant: limited risk; resume screening: high risk and blocked), or accept
+   an invitation. Everything below happens inside the open project, and your form
    answers are saved to it as you type.
 1. **See what the stage receives, and fill in the structured form.** From the
    second stage on, *What this stage receives* lists the upstream work it
@@ -238,7 +239,7 @@ raia/
 ├── raia/
 │   ├── config.py              # env-driven settings; authority + source registries
 │   ├── fields.py              # the structured-intake field model
-│   ├── examples.py            # the two example cases (resume screening, customer-support assistant)
+│   ├── examples.py            # the three example cases (B2B marketplace, customer-support assistant, resume screening)
 │   ├── llm.py                 # provider-agnostic factory, retry, contract-aware mock
 │   ├── rag.py                 # retrieval with pinned excerpts and excerpt ids
 │   ├── rationale/             # the deterministic decision procedures

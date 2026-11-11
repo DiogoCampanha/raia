@@ -408,6 +408,25 @@ def test_signatures() -> None:
     check(digest.signature("risk_classifier", {"computed_verdict": {"eu_tier": "unacceptable — prohibited practice",
                                                                     "br_tier": "excessive risk — prohibited"}}, {})
           ["rows"][1]["steps"][2] == "Excessive", "a prohibited practice lands on the last step of both scales")
+    br = sig["rows"][1]
+    check(br["label"] == "PL 2338/2023 (bill, not in force)" and "PL 2338/2023 (bill, not in force)" in md,
+          "the Brazilian bill is named as a bill wherever its tier is shown, on screen and in the document")
+    check(eu["applies"] == "applies: the EU is a target market"
+          and br["applies"] == "would apply once in force: Brazil is a target market",
+          "each tier says whether it binds this product, from the declared markets")
+    check("settles the legal tier" not in sig["caption"], "a high-risk product gets no reassurance about its tier")
+    quiet = digest.signature("risk_classifier", {
+        "computed_verdict": {"eu_tier": "minimal risk", "br_tier": "not in the listed high-risk areas",
+                             "eu_in_scope": False, "br_in_scope": True},
+        "findings": [{"id": "RC-F1"}, {"id": "RC-F2"}]}, {})
+    check("settles the legal tier, not the risk: 2 risks to manage were found" in quiet["caption"]
+          and quiet["rows"][0]["applies"] == "reference only: the EU is not a target market",
+          "outside the listed areas, the picture says what the tier does not settle, and counts the risks found")
+    check("applies" in digest.signature_text(quiet) or "reference only" in digest.signature_text(quiet),
+          "…and the document line carries it")
+    old = digest.signature("risk_classifier", {"computed_verdict": {"eu_tier": "minimal risk",
+                                                                    "br_tier": "not in the listed high-risk areas"}}, {})
+    check(all(r["applies"] == "" for r in old["rows"]), "a record that kept no markets says nothing about them")
 
     sig = digest.signature("requirements_reviewer", {"computed_verdict": {"gap_count": 3, "obligation_gaps": 2}},
                            {"principle_coverage": {"Transparency": "addressed",

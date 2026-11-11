@@ -13,6 +13,7 @@ import re
 from typing import Any, Dict, List, Sequence
 
 from ..contract import vocab as V
+from ..contract.digest import BR_LABEL
 from .build import stages
 
 #: Longest free text copied into a table cell; the full text is in the artifacts.
@@ -118,7 +119,7 @@ def _risk(repo: Any) -> str:
     verdict = rc.get("computed_verdict") or {}
     record = rc.get("record") or {}
     out = [f"- **EU AI Act:** {verdict.get('eu_tier') or '—'}",
-           f"- **PL 2338/2023 (Brazil):** {verdict.get('br_tier') or '—'}",
+           f"- **{BR_LABEL} (Brazil):** {verdict.get('br_tier') or '—'}",
            f"- **Role:** {verdict.get('role') or rc.get('role') or '—'}", ""]
     if rc.get("obligations"):
         out += ["Obligations that follow:", "",

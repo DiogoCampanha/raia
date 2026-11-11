@@ -226,6 +226,9 @@ def main() -> None:
     no_emoji(at, "home page")
 
     print("== 2. The demo project ==")
+    from raia.examples import CASES as _CASES
+    check(list(_CASES)[0] == "b2b_marketplace" and all(has_button(at, f"demo_project_{c}") for c in _CASES),
+          "three demo projects are offered, the B2B marketplace first")
     button(at, "demo_project_resume_screening").click()
     ok(at.run(), "the demo project is created and opened")
     pid1 = at.query_params["id"][0]

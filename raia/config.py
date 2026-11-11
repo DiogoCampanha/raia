@@ -223,6 +223,16 @@ SOURCE_NAMES = {
 #: audit trail instead of being implied by the citation's authority level.
 DERIVED_SOURCES = {"ieee_7000", "ms_rai_v2", "nist_ai_rmf", "eccola"}
 
+#: Legal sources that are not law yet. PL 2338/2023 is a bill: the Senate
+#: approved it and the Chamber of Deputies has not voted. RAIA screens against
+#: it because a team building today will ship under it, and says so wherever a
+#: tier or an obligation of such a source is shown, so nobody reads a proposal
+#: as a duty already in force. Remove a source from this set when it is enacted
+#: (and check its corpus file against the enacted text).
+PROPOSED_SOURCES = {"pl_2338_2023"}
+#: What follows the name of a proposed source on screen and in documents.
+PROPOSED_NOTE = "bill, not in force"
+
 
 def corpus_version() -> str:
     """Short content hash of the corpus directory.

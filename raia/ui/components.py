@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import streamlit as st
 
+from raia.contract.digest import BR_LABEL
 from raia.lineage import next_steps
 
 from . import routes
@@ -118,7 +119,7 @@ def status_badge(status: str) -> None:
 def risk_badge(risk: Dict[str, str]) -> None:
     color, icon = RISK.get(risk.get("level", "none"), RISK["none"])
     st.badge(risk.get("label", "Not assessed"), icon=icon, color=color,
-             help=("EU AI Act: " + risk["eu_tier"] + (" · PL 2338/2023: " + risk["br_tier"]
+             help=("EU AI Act: " + risk["eu_tier"] + (f" · {BR_LABEL}: " + risk["br_tier"]
                                                        if risk.get("br_tier") else ""))
              if risk.get("eu_tier") else "No approved risk classification yet.")
 

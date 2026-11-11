@@ -65,17 +65,20 @@ class Step:
 STEPS: List[Step] = [
     Step(
         "Create a project",
-        "Work happens in **projects**. On **Home**, open **New project** and pick one of the two "
+        "Work happens in **projects**. On **Home**, open **New project** and pick one of the three "
         "demo projects; every form in it is pre-filled, which is the quickest way to see every "
         "stage:\n\n"
-        "- **Resume screening** — a model ranks job applications and rejects the lowest "
-        "automatically. High risk under both laws, and blocked in its current form: you see what "
-        "stops a product and what unblocks it.\n"
+        "- **B2B marketplace** — in an ordering app for small shops, models recommend products and "
+        "choose the promotions each shop sees. Outside the high-risk lists of both instruments: "
+        "you see what is left to manage when the legal tier says minimal.\n"
         "- **Customer-support assistant** — a third-party language model answers customers and "
         "proposes refunds a person confirms. Limited risk: transparency duties, a deployer's "
-        "obligations, and a clean path to sprints.\n\n"
-        "Try one, then the other. You can also create an empty project and describe a product you "
-        "know; on any form, **Load an example** fills in either case.",
+        "obligations, and a clean path to sprints.\n"
+        "- **Resume screening** — a model ranks job applications and rejects the lowest "
+        "automatically. High risk under both instruments, and blocked in its current form: you "
+        "see what stops a product and what unblocks it.\n\n"
+        "Start with the one closest to your work. You can also create an empty project and "
+        "describe a product you know; on any form, **Load an example** fills in any of the cases.",
         ("home", "Go to Home"),
     ),
     Step(
