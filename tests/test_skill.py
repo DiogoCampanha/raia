@@ -195,7 +195,7 @@ def test_bundle() -> None:
     svc.schedule(ana, p.id, picked)
     svc.start_sprint(ana, p.id)
     repo = svc.repository(ana, p.id)
-    project_files = {f"{PROJ}/{f}" for f in ("README.md", "PROJECT_CONTEXT.md", "MANIFEST.txt", "backlog.csv",
+    project_files = {f"{PROJ}/{f}" for f in ("README.md", "PROJECT_CONTEXT.md", "MANIFEST.txt", "BRIEF.md", "backlog.csv",
                                              "backlog.json", "sprints.json", "roadmap.csv", "action_plan.csv",
                                              "action_plan.json")}
     project_files.add(f"{PROJ}/artifacts/{ARTIFACT_FILES['requirements_review']}")
@@ -253,8 +253,8 @@ def test_bundle() -> None:
     check("{{" not in one and not head.startswith("---"), "it is plain Markdown, with no frontmatter to trip a reader")
 
     full = set(zipfile.ZipFile(io.BytesIO(session_bundle(repo, p.name))).namelist())
-    check("evaluation_events.jsonl" in full and "artifacts/03_requirements_review.md" in full,
-          "the full project download is unchanged")
+    check("evaluation_events.jsonl" in full and "artifacts/03_requirements_review.md" in full
+          and "BRIEF.md" in full, "the full project download keeps the research data, and carries the brief")
     check(skill_bundle_name(p.name, "cursor").startswith("raia-hiring-assistant-ai-skill-cursor-")
           and skill_bundle_name(p.name, "generic").endswith(".md"), "the file is named for the project and the format")
     try:

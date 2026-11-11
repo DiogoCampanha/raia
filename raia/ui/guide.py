@@ -92,6 +92,64 @@ SCOPE: List[Tuple[str, str]] = [
      "rest is. A generic description gets a generic analysis."),
 ]
 
+#: The words RAIA uses, in plain terms: (term, meaning, the stages it appears in).
+#: An empty tuple means everywhere. The stage page shows the ones for its stage;
+#: the Guide shows them all. Every identifier follows one pattern: a prefix that
+#: says what it is, then a number.
+ALL: Tuple[str, ...] = ()
+GLOSSARY: List[Tuple[str, str, Tuple[str, ...]]] = [
+    ("Stage", "One agent's turn: you answer its questions, it drafts, you review and approve.", ALL),
+    ("Gate", "The point where a draft waits for a person. Nothing is saved until someone approves.", ALL),
+    ("Blocked in its current form",
+     "The product cannot go ahead as described until a blocking decision is taken. It says nothing about "
+     "the stage or the agent being stuck.", ALL),
+    ("Decision, or open issue (ISSUE-1)",
+     "Something only a person can settle, with its options and who should decide.", ALL),
+    ("Priority", "Critical, high, medium or low. Computed by code from how severe and how likely a risk is; "
+                 "the model never sets it.", ALL),
+    ("Provenance", "The record of how a draft was produced: the model, the excerpts it was given, which "
+                   "attempt was approved and by whom.", ALL),
+    ("Tier", "Where a legal instrument places the product: minimal, limited, high or prohibited in the EU "
+             "AI Act; not listed, high or excessive in the Brazilian bill.", ("risk_classifier",)),
+    ("Obligation (eu.art14, br.rights)",
+     "A legal duty that follows from the tier and your role. The prefix says which instrument: eu for the "
+     "EU AI Act, br for PL 2338/2023, a bill.", ("risk_classifier", "requirements_reviewer")),
+    ("Risk, or finding (RC-F1)",
+     "Something that could go wrong for someone, placed on how severe and how likely it is.",
+     ("risk_classifier", "story_refiner", "auditor")),
+    ("Gap", "An obligation or a principle that no requirement or control of yours covers yet.",
+     ("requirements_reviewer",)),
+    ("Ethical value requirement (EVR-1)",
+     "A requirement that protects a value for a named group of people, written so that it can be checked.",
+     ("requirements_reviewer", "story_refiner", "auditor")),
+    ("Fit criterion", "The test that tells whether a requirement is met: a measurement, a test, an audit or "
+                      "an inspection.", ("requirements_reviewer",)),
+    ("RAI story (RAI-1), product story (US-1)",
+     "An RAI story was written to implement a requirement. A product story is your own, with ethical "
+     "criteria added to it.", ("story_refiner", "auditor")),
+    ("Ethical acceptance criterion (AC-US-1-1)",
+     "A condition added to a story, with a threshold, the evidence that shows it holds and who produces it. "
+     "Your own criteria keep their wording and are numbered US-1-E1, E2 and so on.", ("story_refiner", "auditor")),
+    ("ECCOLA card (#5)",
+     "A set of questions from the ECCOLA method, chosen by what a story touches. The number is the card's.",
+     ("story_refiner",)),
+    ("Goal (F2, T2, A5)",
+     "A goal of the Microsoft Responsible AI Standard v2 that a criterion serves. The letter is the family: "
+     "A accountability, T transparency, F fairness, RS reliability and safety, PS privacy and security, "
+     "I inclusiveness.", ("story_refiner",)),
+    ("Verdict", "Satisfied, partially satisfied, at risk or not verified. Without evidence the answer is "
+                "not verified, whatever was ticked done.", ("auditor",)),
+    ("Opinion", "The audit's overall rating, computed by code and never better than the evidence allows.",
+     ("auditor",)),
+]
+
+
+def glossary_for(stage: str) -> List[Tuple[str, str]]:
+    """The terms a person meets on one stage's page, the general ones last."""
+    own = [(t, m) for t, m, where in GLOSSARY if stage in where]
+    return own + [(t, m) for t, m, where in GLOSSARY if not where]
+
+
 #: (heading, body) — what the menu at the top of the screen holds.
 MENU: List[Tuple[str, str]] = [
     ("Home", "Every project you belong to, with its risk level, progress and next step, and a "
@@ -146,7 +204,11 @@ STEPS: List[Step] = [
         "- **How the AI works** asks which techniques it uses (rules, machine learning, "
         "generative AI...), where in the product the AI acts, and where the model comes from.\n"
         "- The remaining groups are dropdowns and checklists: your role, the markets, the "
-        "purpose, how decisions are made, the data, and the lifecycle stage.\n\n"
+        "purpose, how decisions are made, the data, and the lifecycle stage.\n"
+        "- **Less common situations** is closed, and its answers are \"no\" unless you change "
+        "them. Open it if the product is deployed by a public body, is a general-purpose AI "
+        "model you provide, is a safety component of a regulated product, or if you intend to "
+        "claim the narrow-task exemption.\n\n"
         "Fields marked **\\*** are required. Answers are saved to the project as you type, so "
         "you can leave and come back.",
     ),
@@ -214,7 +276,9 @@ STEPS: List[Step] = [
         "know which one you are working with. Each stage builds on the ones approved before it, "
         "so a stage whose inputs are not approved yet says **Waiting on upstream** and cannot "
         "run. The table below says what each agent asks of you.\n\n"
-        "In the **Requirements Reviewer**, first tick the controls you already have, then press "
+        "In the **Requirements Reviewer**, paste your requirements if you have them written (you "
+        "can leave them empty: every obligation and principle is then a gap), tick the controls "
+        "you already have, then press "
         "**Recommend ethical requirements**. RAIA pre-fills the stakeholder and principle "
         "questions you left empty from the approved classification (each value says why) and "
         "proposes a few candidate requirements for the gaps that remain. **Adopt**, edit or "
@@ -489,6 +553,8 @@ def markdown() -> str:
     out += [f"| {a} | {b} | {c} | {d} |" for a, b, c, d in agent_rows()]
     out += ["", "Stage statuses:", ""]
     out += [f"- **{s}** — {d}" for s, d in STATUSES]
+    out += ["", "## Words RAIA uses", ""]
+    out += [f"- **{term}** — {meaning}" for term, meaning, _ in GLOSSARY]
     out += ["", "## What to look for", "",
             "These are what the study is asking you about.", ""]
     out += [f"- **{head}** {body}" for head, body in LOOK_FOR]

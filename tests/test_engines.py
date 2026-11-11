@@ -489,6 +489,36 @@ def test_second_example_case() -> None:
     check(not gaps, f"every case fills every stage, with nothing required left empty ({gaps or 'none'})")
 
 
+def test_forms_ask_less_up_front() -> None:
+    print("== the forms ask what most products need, and keep the rest closed or optional ==")
+    from raia.agents import AGENTS
+    from raia.examples import example_for
+    from raia.fields import missing_required
+
+    spec = AGENTS["risk_classifier"].spec
+    rare = [f for f in spec.input_fields if f.group in spec.collapsed_groups]
+    check({f.key for f in rare} == {"public_sector", "gpai_provider", "annex_i_product", "art63_claim", "art63_reason"},
+          "the rarely-needed questions of the Risk Classifier are in one closed group")
+    check(spec.field_groups()[-1] in spec.collapsed_groups and not any(f.required for f in rare),
+          "…the last one on the form, with nothing required in it")
+    check(all(f.default == "no" for f in rare if f.kind == "boolean"), "…and a default answer of no")
+    plain = {k: v for k, v in example_for("resume_screening", "risk_classifier").items()
+             if k not in {f.key for f in rare}}
+    untouched = risk_screen.run(plain)
+    full = risk_screen.run(example_for("resume_screening", "risk_classifier"))
+    check(untouched.verdict == full.verdict and untouched.data["obligations"] == full.data["obligations"],
+          "left closed, they give the same verdict as answering no")
+    rr = AGENTS["requirements_reviewer"].spec
+    answers = {**example_for("b2b_marketplace", "requirements_reviewer"), "requirements": ""}
+    check("Software requirements" not in missing_required(rr.input_fields, answers),
+          "the Requirements Reviewer runs without a written requirements list")
+    upstream = {"risk_classification": {"structured": {**risk_screen.run(
+        example_for("b2b_marketplace", "risk_classifier")).data}}}
+    r = coverage.run(answers, upstream)
+    check(r.verdict["gap_count"] >= 7 and r.verdict["principle_gaps"] == 7,
+          f"…and then every principle is a gap to close ({r.verdict})")
+
+
 def test_third_example_case() -> None:
     print("== the B2B marketplace example is outside the high-risk lists, and still has work to do ==")
     from raia.examples import example_for
@@ -508,7 +538,8 @@ def test_third_example_case() -> None:
 def main() -> None:
     for fn in (test_risk_screen, test_risk_screen_how_the_ai_works, test_coverage, test_suggestions,
                test_recommendation_checks, test_story_map, test_traceability,
-               test_validators, test_second_example_case, test_third_example_case, test_sanitize, test_principles,
+               test_validators, test_second_example_case, test_third_example_case, test_forms_ask_less_up_front,
+               test_sanitize, test_principles,
                test_temperature_fallback):
         fn()
     print()

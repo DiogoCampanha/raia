@@ -40,20 +40,20 @@ Classifies the AI system into a legal risk tier and lists the obligations that f
 | How the AI works | Where does the model come from? | select | yes |
 | Legal footprint | Your role | select | yes |
 | Legal footprint | Where will it be placed on the market or used? | multiselect | yes |
-| Legal footprint | Is it deployed by a public body, or to provide a public service? | boolean | no |
-| Legal footprint | Are you the provider of a general-purpose AI model? | boolean | no |
 | Purpose and practices | Which of these describes what the system is used for? | multiselect | yes |
 | Purpose and practices | Does the system profile people? | boolean | no |
-| Purpose and practices | Is the AI a safety component of a product already regulated for safety? | boolean | no |
 | Purpose and practices | Does the system do any of these? | multiselect | yes |
 | Purpose and practices | Does any of these apply? | multiselect | yes |
 | How decisions are made | How much does the system decide on its own? | select | yes |
 | How decisions are made | Does an output produce legal effects, or otherwise significantly affect a person? | select | yes |
 | How decisions are made | What oversight exists today? | select | yes |
 | Data | Which of these does the system process? | multiselect | yes |
-| Status and exemptions | Where is the system in its lifecycle? | select | yes |
-| Status and exemptions | Do you intend to claim the narrow-task exemption from high-risk status? | boolean | no |
-| Status and exemptions | On what basis? | textarea | no |
+| Status | Where is the system in its lifecycle? | select | yes |
+| Less common situations | Is it deployed by a public body, or to provide a public service? | boolean | no |
+| Less common situations | Are you the provider of a general-purpose AI model? | boolean | no |
+| Less common situations | Is the AI a safety component of a product already regulated for safety? | boolean | no |
+| Less common situations | Do you intend to claim the narrow-task exemption from high-risk status? | boolean | no |
+| Less common situations | On what basis? | textarea | no |
 
 ## 5. What the decision procedure settles in code
 

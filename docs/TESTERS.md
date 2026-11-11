@@ -59,6 +59,7 @@ On the project page, press **Continue with Risk Classifier**. Read the form befo
 - **The product** asks what the product is, what the AI produces or decides, where and by whom it is used, who is affected, and what it should not be used for. Each box shows an example answer. Two or three concrete sentences are better than a paragraph of marketing.
 - **How the AI works** asks which techniques it uses (rules, machine learning, generative AI...), where in the product the AI acts, and where the model comes from.
 - The remaining groups are dropdowns and checklists: your role, the markets, the purpose, how decisions are made, the data, and the lifecycle stage.
+- **Less common situations** is closed, and its answers are "no" unless you change them. Open it if the product is deployed by a public body, is a general-purpose AI model you provide, is a safety component of a regulated product, or if you intend to claim the narrow-task exemption.
 
 Fields marked **\*** are required. Answers are saved to the project as you type, so you can leave and come back.
 
@@ -95,7 +96,7 @@ Under **Reject and regenerate**, choose the main reason and say what the agent s
 
 Right after an approval, **What's next** offers the next stage and says what travels on to it: press **Continue to** it. Before you run the next stage, **What this stage receives** lists the work it builds on and any decision still open from earlier stages, which you can take there. Every stage page also shows every stage across the top and ends with **Previous** and **Next**, and each agent has its own colour and icon, so you always know which one you are working with. Each stage builds on the ones approved before it, so a stage whose inputs are not approved yet says **Waiting on upstream** and cannot run. The table below says what each agent asks of you.
 
-In the **Requirements Reviewer**, first tick the controls you already have, then press **Recommend ethical requirements**. RAIA pre-fills the stakeholder and principle questions you left empty from the approved classification (each value says why) and proposes a few candidate requirements for the gaps that remain. **Adopt**, edit or **Reject** each one (a rejection needs a reason); a decided candidate folds into one summary line. Nothing counts until you adopt it, and before running you confirm that the pre-filled answers reflect your project. The record then says which requirements RAIA recommended and you adopted.
+In the **Requirements Reviewer**, paste your requirements if you have them written (you can leave them empty: every obligation and principle is then a gap), tick the controls you already have, then press **Recommend ethical requirements**. RAIA pre-fills the stakeholder and principle questions you left empty from the approved classification (each value says why) and proposes a few candidate requirements for the gaps that remain. **Adopt**, edit or **Reject** each one (a rejection needs a reason); a decided candidate folds into one summary line. Nothing counts until you adopt it, and before running you confirm that the pre-filled answers reflect your project. The record then says which requirements RAIA recommended and you adopted.
 
 Once the requirements are approved, the project page opens on its **Board** (next step). From there the **User Story Refiner** has two modes: **Generate from requirements** turns approved requirements into RAI stories for the backlog, and **Refine sprint stories** adds ethical criteria to your product stories.
 
@@ -151,8 +152,8 @@ Your answers are about the software, not about a project: an assessment names no
 
 | Agent | What it asks you | Needs approved first | Produces |
 |---|---|---|---|
-| Risk Classifier (Product) | The product, How the AI works, Legal footprint, Purpose and practices, How decisions are made, Data, Status and exemptions (17 required answers) | nothing | `02_risk_classification.md` |
-| Requirements Reviewer (Product) | Current requirements, What already exists, Values and stakeholders (3 required answers) | Risk Classifier | `03_requirements_review.md` |
+| Risk Classifier (Product) | The product, How the AI works, Legal footprint, Purpose and practices, How decisions are made, Data, Status, Less common situations (17 required answers) | nothing | `02_risk_classification.md` |
+| Requirements Reviewer (Product) | Current requirements, What already exists, Values and stakeholders (2 required answers) | Risk Classifier | `03_requirements_review.md` |
 | User Story Refiner (Dev) | The stories, The sprint (1 required answers) | Requirements Reviewer | `04_refined_stories.md` |
 | Auditor (Dev) | What happened this sprint, Evidence produced, What comes next (2 required answers) | Requirements Reviewer | `05_audit_report.md` |
 
@@ -163,6 +164,27 @@ Stage statuses:
 - **Approved** — a person approved it; it is recorded in the history
 - **Waiting on upstream** — an earlier stage must be approved first
 - **Needs review** — an earlier stage changed after this one was approved
+
+## Words RAIA uses
+
+- **Stage** — One agent's turn: you answer its questions, it drafts, you review and approve.
+- **Gate** — The point where a draft waits for a person. Nothing is saved until someone approves.
+- **Blocked in its current form** — The product cannot go ahead as described until a blocking decision is taken. It says nothing about the stage or the agent being stuck.
+- **Decision, or open issue (ISSUE-1)** — Something only a person can settle, with its options and who should decide.
+- **Priority** — Critical, high, medium or low. Computed by code from how severe and how likely a risk is; the model never sets it.
+- **Provenance** — The record of how a draft was produced: the model, the excerpts it was given, which attempt was approved and by whom.
+- **Tier** — Where a legal instrument places the product: minimal, limited, high or prohibited in the EU AI Act; not listed, high or excessive in the Brazilian bill.
+- **Obligation (eu.art14, br.rights)** — A legal duty that follows from the tier and your role. The prefix says which instrument: eu for the EU AI Act, br for PL 2338/2023, a bill.
+- **Risk, or finding (RC-F1)** — Something that could go wrong for someone, placed on how severe and how likely it is.
+- **Gap** — An obligation or a principle that no requirement or control of yours covers yet.
+- **Ethical value requirement (EVR-1)** — A requirement that protects a value for a named group of people, written so that it can be checked.
+- **Fit criterion** — The test that tells whether a requirement is met: a measurement, a test, an audit or an inspection.
+- **RAI story (RAI-1), product story (US-1)** — An RAI story was written to implement a requirement. A product story is your own, with ethical criteria added to it.
+- **Ethical acceptance criterion (AC-US-1-1)** — A condition added to a story, with a threshold, the evidence that shows it holds and who produces it. Your own criteria keep their wording and are numbered US-1-E1, E2 and so on.
+- **ECCOLA card (#5)** — A set of questions from the ECCOLA method, chosen by what a story touches. The number is the card's.
+- **Goal (F2, T2, A5)** — A goal of the Microsoft Responsible AI Standard v2 that a criterion serves. The letter is the family: A accountability, T transparency, F fairness, RS reliability and safety, PS privacy and security, I inclusiveness.
+- **Verdict** — Satisfied, partially satisfied, at risk or not verified. Without evidence the answer is not verified, whatever was ticked done.
+- **Opinion** — The audit's overall rating, computed by code and never better than the evidence allows.
 
 ## What to look for
 

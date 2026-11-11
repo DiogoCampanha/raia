@@ -28,7 +28,8 @@ G_FOOTPRINT = "3 · Legal footprint"
 G_PURPOSE = "4 · Purpose and practices"
 G_DECISIONS = "5 · How decisions are made"
 G_DATA = "6 · Data"
-G_STATUS = "7 · Status and exemptions"
+G_STATUS = "7 · Status"
+G_RARE = "8 · Less common situations"
 
 
 class RiskClassifierAgent(BaseAgent):
@@ -52,6 +53,7 @@ class RiskClassifierAgent(BaseAgent):
         output_key="risk_classification",
         engine=lambda inputs, upstream: risk_screen.run(inputs),
         verdict_keys=["eu_tier", "br_tier"],
+        collapsed_groups=[G_RARE],
         input_fields=[
             # The product, in the team's words. Each question asks for one thing
             # and shows an answer of the expected shape: the model reasons over
@@ -130,16 +132,6 @@ class RiskClassifierAgent(BaseAgent):
                 options=risk_screen.MARKET_OPTIONS,
                 help="Both regimes are screened either way; this decides which result is binding.",
             ),
-            InputField(
-                key="public_sector", label="Is it deployed by a public body, or to provide a public service?",
-                kind="boolean", group=G_FOOTPRINT, options=YES_NO, default="no",
-                help="Triggers the impact-assessment duty for deployers and extra publicity in Brazil.",
-            ),
-            InputField(
-                key="gpai_provider", label="Are you the provider of a general-purpose AI model?",
-                kind="boolean", group=G_FOOTPRINT, options=YES_NO, default="no",
-                help="Answer no if you are only using someone else's foundation model in a product.",
-            ),
 
             InputField(
                 key="purpose_areas", label="Which of these describes what the system is used for?",
@@ -156,12 +148,6 @@ class RiskClassifierAgent(BaseAgent):
                      "behaviour, location or movements. Scoring or ranking applicants, borrowers or users "
                      "is profiling. A high-risk system that profiles people cannot claim the narrow-task "
                      "exemption.",
-            ),
-            InputField(
-                key="annex_i_product",
-                label="Is the AI a safety component of a product already regulated for safety?",
-                kind="boolean", group=G_PURPOSE, options=YES_NO, default="no",
-                help="For example medical devices, machinery, lifts, vehicles. This is a separate high-risk route.",
             ),
             InputField(
                 key="prohibited_practices", label="Does the system do any of these?",
@@ -206,15 +192,36 @@ class RiskClassifierAgent(BaseAgent):
                 kind="select", group=G_STATUS, required=True, options=risk_screen.STAGE_OPTIONS,
                 help="Recommendations are scaled to what is still changeable at this stage.",
             ),
+
+            # Questions whose answer is "no" for most products. They stay on the
+            # form, since each one changes the verdict when it applies, but closed:
+            # a person describing an ordinary product should not have to read the
+            # vocabulary of the exceptions to get a first result.
+            InputField(
+                key="public_sector", label="Is it deployed by a public body, or to provide a public service?",
+                kind="boolean", group=G_RARE, options=YES_NO, default="no",
+                help="Triggers the impact-assessment duty for deployers and extra publicity in Brazil.",
+            ),
+            InputField(
+                key="gpai_provider", label="Are you the provider of a general-purpose AI model?",
+                kind="boolean", group=G_RARE, options=YES_NO, default="no",
+                help="Answer no if you are only using someone else's foundation model in a product.",
+            ),
+            InputField(
+                key="annex_i_product",
+                label="Is the AI a safety component of a product already regulated for safety?",
+                kind="boolean", group=G_RARE, options=YES_NO, default="no",
+                help="For example medical devices, machinery, lifts, vehicles. This is a separate high-risk route.",
+            ),
             InputField(
                 key="art63_claim",
                 label="Do you intend to claim the narrow-task exemption from high-risk status?",
-                kind="boolean", group=G_STATUS, options=YES_NO, default="no",
+                kind="boolean", group=G_RARE, options=YES_NO, default="no",
                 help="Available where a system only performs a narrow procedural task or improves "
                      "the result of a completed human activity. It must be documented and stays reviewable.",
             ),
             InputField(
-                key="art63_reason", label="On what basis?", kind="textarea", group=G_STATUS, height=100,
+                key="art63_reason", label="On what basis?", kind="textarea", group=G_RARE, height=100,
                 show_if=ShowIf("art63_claim", ("yes",)),
                 help="The rule engine cannot confirm this; it is recorded as an open issue for a human.",
             ),

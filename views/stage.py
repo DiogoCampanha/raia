@@ -15,8 +15,8 @@ from raia import progress
 from raia.agents import AGENTS, RUNNABLE, identity_key
 from raia.deploy import friendly_llm_error
 from raia.projects import AccessDenied, StaleDraft, UsageLimitReached
-from raia.ui import routes
-from raia.ui.components import (agent_header, artifact_body, handoff_strip, next_step_card, receives_card,
+from raia.ui import guide, routes
+from raia.ui.components import (agent_header, artifact_body, esc, handoff_strip, next_step_card, receives_card,
                                 stage_footer, stage_rail)
 from raia.rationale.coverage import ORIGIN_KEY
 from raia.ui.gate import approved_decisions, intake_form, pending_suggestions, prefill, review_gate
@@ -391,6 +391,10 @@ with st.container(key=look_key(ident, "page")):
     # draft waits for review): the rail shows the one this page is about.
     stage_rail(proj.id, [{**s, "status": state["status"]} if s["agent"] == ident else s for s in stages],
                current=ident)
+    # Always drawn, in every state of the stage, so nothing below it moves.
+    with st.popover("Words used here", icon=":material/dictionary:"):
+        st.html('<dl class="guide-menu">' + "".join(
+            f"<dt>{esc(term)}</dt><dd>{esc(meaning)}</dd>" for term, meaning in guide.glossary_for(ident)) + "</dl>")
     show_flash()
     # One slot for everything between the rail and the footer: when an agent
     # runs, the working screen replaces the form in it at once, instead of the

@@ -426,7 +426,7 @@ def vocabulary() -> str:
 #: rule the tables are generated from) means a new version here and a new
 #: :data:`FIXED_FINGERPRINT`; ``tests/test_skill.py`` fails until both are set.
 SKILL_VERSION = "2.0.0"
-FIXED_FINGERPRINT = "7d28ce84b894ac32"
+FIXED_FINGERPRINT = "00399ba6d511f513"
 
 #: The folder (or part of a single file) that holds one project's outputs.
 PROJECT_DIR = "raia-project"

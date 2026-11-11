@@ -5,6 +5,7 @@ import json
 import streamlit as st
 
 from raia.agents import AGENTS, RUNNABLE, identity_key
+from raia.brief import project_brief
 from raia.contract import actions as action_plan
 from raia.contract import vocab as V
 from raia.contract.digest import BR_LABEL
@@ -38,6 +39,14 @@ def _bundle() -> bytes:
     """
     return session_bundle(svc.repository(user, proj.id, "view"), proj.name,
                           people=svc.people_map(user, proj.id))
+
+
+def _brief() -> bytes:
+    """The one-page brief, written by code from the approved records when asked for."""
+    import datetime as _dt
+
+    return project_brief(svc.reader(user, proj.id), proj.name,
+                         _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")).encode("utf-8")
 
 
 def _skill() -> bytes:
@@ -159,6 +168,22 @@ with tab_docs:
                        file_name=bundle_name(proj.name), mime="application/zip",
                        icon=I.DOWNLOAD, key="docs_export", width="stretch")
     existing = repo.existing_artifacts()
+    with st.container(border=True, key="card-brief"):
+        b1, b2 = st.columns([4, 1.4], vertical_alignment="center")
+        b1.markdown(f"{I.DOCS} **One-page brief**")
+        b1.caption("What the product does with AI, where it sits, the most pressing risks, the requirements "
+                   "that answer them, the decisions still needed and what has been verified: one page to hand "
+                   "to a manager, a squad or the legal and privacy owners. Written by code from the approved "
+                   "records; it names roles, not people.")
+        b2.download_button("Download brief", data=_brief, file_name=f"raia-{proj.name.lower().replace(' ', '-')[:40]}-brief.md",
+                           mime="text/markdown", icon=I.DOWNLOAD, key="docs_brief", width="stretch",
+                           disabled=not existing,
+                           help=None if existing else "Available once a stage is approved.")
+        # Built only when asked for: the page does not read the records twice to draw a card.
+        show = b1.toggle("Show it here, to read or copy", key=pkey("brief_show"), disabled=not existing)
+        slot = st.empty()
+        if show and existing:
+            slot.code(_brief().decode("utf-8"), language="markdown", wrap_lines=True)
     with st.container(border=True, key="card-ai-skill"):
         s1, s2 = st.columns([4, 1.4], vertical_alignment="center")
         s1.markdown(f"{I.SKILL} **Continue with your own AI assistant**")

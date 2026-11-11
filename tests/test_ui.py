@@ -254,6 +254,13 @@ def main() -> None:
                   and any(t.label.startswith("What does the AI produce or decide?") for t in at.text_area)
                   and any(m.label.startswith("What kind of AI does it use?") for m in at.multiselect),
                   "the Risk Classifier asks what the AI produces and how it works")
+            # AppTest reports an expander as a status element.
+            closed = [e for e in at.status if "Less common situations" in (e.label or "")]
+            check(closed and not closed[0].proto.expanded
+                  and any((r.key or "").endswith("::public_sector") for r in at.radio),
+                  "…and keeps the rarely-needed questions on the form, closed")
+        check(any(getattr(b, "type", "") == "popover" and "Words used here" in str(b.proto) for b in at.main),
+              "the stage explains the words it uses")
         button(at, f"{pid1}::run::{agent}").click()
         ok(at.run(), "the run pauses at the gate")
         check("Human review required" in text(at), "the gate is shown")
@@ -328,6 +335,14 @@ def main() -> None:
     check(any("Action plan" in t.label for t in at.tabs), "the project has an action plan tab")
     skill_btn = next((d for d in at.get("download_button") if "Download AI Skill" in str(d.proto.label)), None)
     check(skill_btn is not None and not skill_btn.proto.disabled, "…and the AI Skill can be downloaded")
+    brief_btn = next((d for d in at.get("download_button") if "Download brief" in str(d.proto.label)), None)
+    check(brief_btn is not None and not brief_btn.proto.disabled, "…and a one-page brief")
+    from raia.brief import project_brief as _brief
+    page = _brief(open_repository(pid1), "Demo", "2026-01-01")
+    check(all(h in page for h in ("## What it does with AI", "## Where it sits", "## Most pressing risks",
+                                  "## Requirements that answer them", "## Decisions needed"))
+          and "bill, not in force" in page and "@" not in page,
+          "the brief is one page from the approved records, and names no one")
     fmt = next((s for s in at.selectbox if (s.key or "").endswith("skill_format")), None)
     check(fmt is not None and list(fmt.options) == ["Cursor", "ChatGPT", "Claude", "One Markdown file (any assistant)"],
           "…in four formats")

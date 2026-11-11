@@ -730,6 +730,20 @@ def _intake_fields(project: Project, agent, can_run: bool) -> None:
         visible = [f for f in fields if f.visible(current)]
         if not visible:
             continue
+        if group in spec.collapsed_groups:
+            # Rarely-needed questions: on the form, answered "no" by default, and
+            # closed, so the page a person reads first is the questions that
+            # decide most products. An expander keeps its fields in the page, so
+            # their answers are read like any other.
+            title = group.partition("·")[2].strip() or group
+            with st.expander(f"{title} (answered \"no\" unless you change them)", icon=":material/tune:"):
+                st.caption("Open this if the product is deployed by a public body, is a general-purpose AI "
+                           "model you provide, is a safety component of a regulated product, or if you "
+                           "intend to claim the narrow-task exemption.")
+                for f in visible:
+                    _render_field(spec.key, f, disabled=not can_run)
+                    _field_origin_note(spec.key, f)
+            continue
         with st.container(border=True):
             _group_heading(group)
             for f in visible:
