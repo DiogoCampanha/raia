@@ -182,6 +182,47 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-11-11 — A new Pillow advisory, accepted with the others (branch `panel-readiness`)
+
+Decision D71 stands; no new decision.
+
+#### What was wrong
+
+- The dependency audit failed on every push: `pip-audit` reported PYSEC-2026-4363
+  (CVE-2026-112902) against Pillow 12.3.0, published the same day and fixed in 13.0.0.
+
+#### What changed
+
+- `.pip-audit-ignore` lists PYSEC-2026-4363 with its reason. The advisory concerns the TIFF
+  encoder when an application saves image metadata an attacker controls. RAIA saves no image:
+  uploads are read as text and `st.image` shows only the bundled Guide screenshots.
+- The upgrade was tried before it was set aside, so the next attempt starts from facts:
+  - Pillow 13 needs Python 3.11. Streamlit 1.63 to 1.66 require `pillow<13`; 1.67 is the first
+    that accepts it, and it needs Python 3.11 too.
+  - With `streamlit>=1.67,<1.68` and `--python-version 3.11`, keeping every other pin, the lock
+    changes in three ways only: Streamlit 1.67.0, Pillow 13.0.0, and the Python 3.10 variants
+    of other packages go (159 lines to 130).
+  - On Python 3.12 with that lock, seven of the eight suites pass unchanged. `test_ui.py` does
+    not: the test harness returns a query parameter as text where 1.63 returned a list (two
+    lines of the test), four checks then fail (the closed group of the Risk Classifier form;
+    a decision taken on a draft shown decided, lifting *Blocked*, and reaching the register),
+    and the run stops on a harness attribute that no longer exists. Whether the decision
+    checks fail in the harness or in the app was not established. The design layer
+    (`theme.css` against Streamlit's test ids) and the browser checks were not run.
+
+#### Tests
+
+- `pip-audit -r requirements.txt` with the ignore list finds nothing on Python 3.12, the
+  version the audit job runs on.
+
+#### Still open, by decision
+
+- Moving to Python 3.11, Streamlit 1.67 and Pillow 13 is its own piece of work, not to be
+  done on the build the panel evaluates: it would remove all 40 accepted Pillow findings.
+- The audit job runs on Python 3.12 only. On Python 3.10 the lock installs an older
+  `filelock` (4.1.0) that carries 17 known advisories with no fix for that Python; the audit
+  does not see them. They go away with the move to Python 3.11.
+
 ### 2026-11-11 — Ready for the panel to evaluate on its own (branch `panel-readiness`)
 
 Decisions D78–D86. New finding prefix **PAN-** (panel readiness): what stood between the build

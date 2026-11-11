@@ -10,12 +10,13 @@ PYSEC-2026-3813
 PYSEC-2026-3814
 PYSEC-2026-3815
 #
-# pillow 12.3.0 (fixed in 13.0.0). Streamlit 1.63 requires pillow<13, and the
-# first Streamlit that accepts 13 (1.67) changes behaviour the UI tests check,
-# so the upgrade is its own piece of work (see docs/PROJECT_LOG.md). RAIA never
-# opens an untrusted image: uploads are read as text and st.image shows only the
-# bundled guide screenshots, so the parsers these advisories concern are not
-# reachable from user input.
+# pillow 12.3.0 (fixed in 13.0.0). Streamlit 1.63 requires pillow<13. Pillow 13
+# needs Python 3.11 and the first Streamlit that accepts it is 1.67, which also
+# needs Python 3.11 and changes behaviour the UI tests check, so the upgrade is
+# its own piece of work (see docs/PROJECT_LOG.md, 2026-11-11). RAIA never opens
+# an untrusted image and never writes one: uploads are read as text and st.image
+# shows only the bundled guide screenshots, so neither the parsers nor the
+# encoders these advisories concern are reachable from user input.
 CVE-2026-112390
 CVE-2026-112391
 CVE-2026-112393
@@ -55,3 +56,7 @@ PYSEC-2026-4340
 PYSEC-2026-4341
 PYSEC-2026-4342
 PYSEC-2026-4343
+# PYSEC-2026-4363 (CVE-2026-112902), published 2026-11-11: the TIFF encoder can
+# read invalid memory when an application saves attacker-controlled image
+# metadata. RAIA saves no image in any format.
+PYSEC-2026-4363
