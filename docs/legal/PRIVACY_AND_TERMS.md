@@ -1,6 +1,6 @@
 # Privacy Policy and User Agreement
 
-**Effective date:** 27 September 2026 · **Version:** 1.1
+**Effective date:** 11 November 2026 · **Version:** 1.2
 
 RAIA (Responsible AI Assistant) is a research prototype developed as part of a
 master's research project on Responsible AI. This page explains what RAIA does
@@ -33,9 +33,12 @@ files, calendar or any other Google data, and requests no other permissions.
   rejected and the reason you gave, and the decisions you took and why —
   recorded under your name like an approval.
 - Your role on each project and the invitations you send or receive.
-- Your assessment answers, if you take part in the evaluation, including the
-  optional profile questions (broad categories only, such as region or years of
-  experience).
+- Your assessment answers, if you take part in the evaluation: your ratings,
+  your open answers, three optional profile questions (role, years of
+  experience, experience with AI product development) and a summary of what you
+  had used when you answered (for each stage, whether you ran or approved it,
+  and whether that was on a demo or on a project of your own). An assessment is
+  about the software: it is not linked to any of your projects.
 
 **Optional: a Jira connection.** Only if you choose to connect Jira in
 Settings, RAIA stores your Jira Cloud site address, the email you use there, a
@@ -50,6 +53,17 @@ all and is kept only for your browser session. RAIA works fully without Jira.
 when you accepted this agreement and a daily count of agent runs used to
 enforce fair-use limits.
 
+**A record of each agent run.** So that a draft can be reproduced and checked
+later, RAIA keeps, with each run, how much the model was used and a fingerprint
+of the prompt. Where the deployment is configured to, it also keeps the exact
+prompt that was sent to the model and the model's replies, encrypted. That
+prompt contains the form answers of the stage and the approved project
+documents the stage reads. It is deleted with the project.
+
+**An audit log.** Sign-ins, account and project deletions, changes of role,
+downloads of your personal data and research exports are recorded with who did
+them and when, so that administrative actions can be accounted for.
+
 ## 3. How we use information
 
 - **To provide the service:** to sign you in, show you your projects, and
@@ -58,8 +72,10 @@ enforce fair-use limits.
   signed-in identity, because accountability is the purpose of RAIA's human
   approval gates. Project members can see who approved what.
 - **For research:** activity events and assessment answers are analysed to
-  evaluate RAIA. Research exports replace your identity with a participant code
-  and never include your name or email address. Results are published only in
+  evaluate RAIA. Research exports never include your name or email address.
+  They replace your identity with participant codes: one for project activity
+  and a different one for assessments, so that an assessment cannot be matched
+  to the projects of the person who wrote it. Results are published only in
   aggregate.
 
 RAIA does not sell information, does not use it for advertising and does not
@@ -89,10 +105,15 @@ pseudonymized research export, and does not publish it. Free-text assessment
 comments may be quoted in research publications without any identifying
 information.
 
-**Your commitment.** Do not enter into RAIA personal data about other people,
-trade secrets or information you are not authorized to share. Use fictional or
-anonymized scenarios when in doubt; the demo project is provided for that
-purpose.
+**Who administers RAIA.** The researcher who runs this study also administers
+this deployment and its database, and prepares the research export. The
+analysis is done from that export. Open answers are read as you wrote them, so
+leave out anything that would identify you.
+
+**What to enter.** RAIA is a research prototype. Unless your organisation has
+told you otherwise, it is not one of its approved tools. Use a demo project, or
+describe your product in generic terms. Do not enter personal data about other
+people, trade secrets or information you are not authorized to share.
 
 ## 6. Retention and deletion
 
@@ -104,8 +125,11 @@ project needs it. You can, at any time, from **Settings**:
 - leave projects you were invited to;
 - delete your account.
 
-Deleting your account removes your account, memberships, invitations and
-assessment answers, and every project of which you are the only owner.
+Deleting a project removes its content, its drafts and the record of its agent
+runs. Deleting your account removes your account, memberships, invitations and
+assessment answers, and every project of which you are the only owner. Audit-log
+entries for actions you took are kept, under an internal reference that no
+longer leads to you.
 Approvals you recorded on projects owned by other people remain in those
 projects' audit trails, since removing them would falsify the record.
 Pseudonymized data already included in a research export cannot be traced back

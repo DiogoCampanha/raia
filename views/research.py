@@ -2,6 +2,7 @@
 
 import streamlit as st
 
+from raia.projects import PseudonymKeyMissing
 from raia.ui.assessment import INSTRUMENT_ID
 from raia.ui.components import page_header
 from raia.ui.state import current_user, get_service
@@ -16,10 +17,16 @@ if not user.is_admin:
 st.markdown(
     "Participants are codes, projects are numbered, and no names or email addresses are "
     f"included. Assessments carry the instrument id (current: `{INSTRUMENT_ID}`); drafts are "
-    "excluded. Free-text answers are exported as written: read them before publishing."
+    "excluded. An assessment names no project and carries a different participant code from "
+    "project activity, so the two cannot be joined. Free-text answers are exported as written: "
+    "read them before publishing."
 )
 if st.button("Prepare export", type="primary", icon=I.RESEARCH):
-    st.session_state["_research_zip"] = get_service().research_export(user)
+    try:
+        st.session_state["_research_zip"] = get_service().research_export(user)
+    except PseudonymKeyMissing as exc:
+        st.session_state.pop("_research_zip", None)
+        st.error(str(exc), icon=I.ERROR)
 data = st.session_state.get("_research_zip")
 if data:
     st.download_button("Download research data (zip)", data=data, icon=I.DOWNLOAD,

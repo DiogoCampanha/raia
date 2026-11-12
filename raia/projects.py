@@ -92,6 +92,10 @@ class StaleDraft(RuntimeError):
     """The decision was taken on a draft that is no longer the one at the gate."""
 
 
+class PseudonymKeyMissing(ValueError):
+    """Research data cannot be exported: no key to derive participant codes from."""
+
+
 class OverrideRequired(ValueError):
     """Approving this draft needs a recorded reason: critical checks failed."""
 
@@ -152,11 +156,26 @@ def normalize_email(email: str) -> str:
 
 
 def pseudonym(user_id: str) -> str:
-    """Stable, one-way participant code for research exports."""
+    """Stable, one-way participant code for project activity in exports."""
     if not user_id:
         return ""
     key = (config.PSEUDONYM_KEY or "raia-default-pseudonym-key").encode("utf-8")
     return "P-" + hmac.new(key, user_id.encode("utf-8"), hashlib.sha256).hexdigest()[:10]
+
+
+def assessment_code(user_id: str) -> str:
+    """Stable, one-way participant code for assessments.
+
+    A different code from :func:`pseudonym` on purpose. Project activity and
+    assessments leave in the same research export; with one code a rating could
+    be joined to the projects its author worked on, and a project's content
+    tells a colleague who wrote it. The two codes are derived from the same key
+    under different labels, so neither can be computed from the other.
+    """
+    if not user_id:
+        return ""
+    key = (config.PSEUDONYM_KEY or "raia-default-pseudonym-key").encode("utf-8")
+    return "A-" + hmac.new(key, b"assessment:" + user_id.encode("utf-8"), hashlib.sha256).hexdigest()[:10]
 
 
 #: Membership answers already looked up during the current page run. Set by
@@ -1237,10 +1256,10 @@ class ProjectService:
     def submit_rating(self, user: User, payload: Dict[str, Any]) -> None:
         """Store one tester assessment (final submission). A pending draft is discarded.
 
-        The assessment may name the project it is about (``project_id``, one
-        the person is a member of). Each stage rating is then linked to the
-        version of that stage the person was looking at, so a rating can be
-        found by project, by stage and by the exact approved version.
+        An assessment is about the software, not about a project: it names no
+        project and no version. It is stored with what its author used instead
+        (:meth:`my_exposure`), so a rating can be read against how much of RAIA
+        the person saw without saying where they saw it.
         """
         self._store_assessment(user, payload, "submitted")
 
@@ -1249,30 +1268,64 @@ class ProjectService:
         self._store_assessment(user, payload, "draft")
 
     def _store_assessment(self, user: User, payload: Dict[str, Any], status: str) -> None:
-        body = dict(payload)
+        body = {k: v for k, v in dict(payload).items() if k not in ("project_id", "stage_versions")}
         body["status"] = status
         body["build"] = config.build_id()
-        project_id = str(body.get("project_id") or "") or None
-        versions: Dict[str, str] = {}
-        if project_id:
-            versions = approved_versions(self.repository(user, project_id, "view"))
-            body["stage_versions"] = versions
+        body["exposure"] = self.my_exposure(user)
         rid, now = uuid.uuid4().hex, utcnow()
         with self.db.tx() as t:
             self._delete_drafts(t, user)
             t.execute(
                 "INSERT INTO experience_ratings (id, user_id, submitted_at, payload, status, project_id, "
                 "instrument, build, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (rid, user.id, now, json.dumps(body, ensure_ascii=False, default=str), status, project_id,
+                (rid, user.id, now, json.dumps(body, ensure_ascii=False, default=str), status, None,
                  str(body.get("instrument") or ""), body["build"], now),
             )
             for kind, key, score, value, comment in assessment_items(body):
                 t.execute(
                     "INSERT INTO assessment_items (rating_id, kind, item_key, score, value, comment, project_id, "
                     "commit_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (rid, kind, key, score, value, comment, project_id,
-                     versions.get(key) if kind == "stage" else None),
+                    (rid, kind, key, score, value, comment, None, None),
                 )
+
+    def my_exposure(self, user: User) -> Dict[str, Any]:
+        """What this person has used, across every project they belong to.
+
+        ``stages`` gives, per stage, the furthest they went themselves:
+        ``approved`` (they approved a draft of it), ``run`` (they ran it, and
+        rejected the draft or left it at the gate) or ``none``. A mode of a
+        stage counts for its stage. ``on`` says where that happened: ``demo``,
+        ``own``, ``both`` or ``none``. Nothing here names a project or carries
+        content, which is why an assessment may be stored with it.
+        """
+        from .agents import AGENTS, MODES
+        from .examples import EXAMPLE_KEY
+
+        stage_of = {**{k: k for k in AGENTS}, **{k: m.spec.parent or k for k, m in MODES.items()}}
+        level = {k: "none" for k in AGENTS}
+        rank = {"none": 0, "run": 1, "approved": 2}
+        where = set()
+        mine = {user.id, user.ref}
+
+        def reached(agent_key: str, how: str, demo: bool) -> None:
+            stage = stage_of.get(agent_key)
+            if stage is None:
+                return
+            if rank[how] > rank[level[stage]]:
+                level[stage] = how
+            where.add("demo" if demo else "own")
+
+        for p in self.list_projects(user, include_archived=True):
+            repo = open_repository(p.id)
+            demo = any((repo.load_intake(k) or {}).get(EXAMPLE_KEY) for k in stage_of)
+            for e in repo.events():
+                if e.get("user") in mine and e.get("kind") in ("approval", "rejection"):
+                    reached(str(e.get("agent") or ""), "approved" if e["kind"] == "approval" else "run", demo)
+            for k in repo.pending_agents():
+                if ((repo.load_pending(k) or {}).get("run_by")) in mine:
+                    reached(k, "run", demo)
+        on = "both" if len(where) == 2 else (next(iter(where)) if where else "none")
+        return {"stages": level, "on": on}
 
     @staticmethod
     def _delete_drafts(t, user: User) -> None:
@@ -1287,21 +1340,7 @@ class ProjectService:
             (user.id,),
         )
         return [{"submitted_at": r["submitted_at"], **json.loads(r["payload"]),
-                 "status": r["status"] or "submitted", "project_id": r["project_id"]} for r in rows]
-
-    def project_assessments(self, user: User, project_id: str) -> List[Dict[str, Any]]:
-        """Every submitted rating item about one project (coordinators only), pseudonymized."""
-        if not user.is_admin:
-            raise AccessDenied("Only the study coordinators can read assessments.")
-        rows = self.db.query(
-            "SELECT r.user_id, r.submitted_at, r.instrument, r.build, i.kind, i.item_key, i.score, i.value, "
-            "i.comment, i.commit_ref FROM assessment_items i JOIN experience_ratings r ON r.id = i.rating_id "
-            "WHERE i.project_id = ? AND r.status = 'submitted' ORDER BY r.submitted_at, i.kind, i.item_key",
-            (project_id,),
-        )
-        self.audit(user, "assessments_read", project_id)
-        return [{**{k: v for k, v in r.items() if k != "user_id"}, "participant": pseudonym(r["user_id"])}
-                for r in rows]
+                 "status": r["status"] or "submitted"} for r in rows]
 
     def my_latest_rating(self, user: User) -> Optional[Dict[str, Any]]:
         """The latest *submitted* assessment, or ``None``."""
@@ -1350,10 +1389,21 @@ class ProjectService:
         names are replaced by project codes. Free-text comments are kept, since
         they are the point of asking, and are the one field a researcher must
         read before publishing.
+
+        Assessments and project activity cannot be joined in what leaves: an
+        assessment carries its own participant code (:func:`assessment_code`),
+        no project and no version, and the day it was submitted rather than the
+        minute. The export is refused until ``RAIA_PSEUDONYM_KEY`` is set: with
+        the built-in fallback every deployment would hand out the same codes.
         """
         if not user.is_admin:
             logs.event(log, "access refused", 30, user=user.id, action="research_export")
             raise AccessDenied("Only the study coordinators can export research data.")
+        if not config.PSEUDONYM_KEY:
+            raise PseudonymKeyMissing(
+                "Set RAIA_PSEUDONYM_KEY (a long random string) before exporting research data: "
+                "participant codes are derived from it."
+            )
         self.audit(user, "research_export")
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
@@ -1365,26 +1415,29 @@ class ProjectService:
                     events.append(json.dumps(pseudonymize_event(e, codes[p["id"]]), ensure_ascii=False))
             z.writestr("evaluation_events.jsonl", "\n".join(events))
             submitted = self.db.query(
-                "SELECT id, user_id, submitted_at, payload, project_id FROM experience_ratings "
+                "SELECT id, user_id, submitted_at, payload FROM experience_ratings "
                 "WHERE status = 'submitted' ORDER BY submitted_at"
             )
+            # Ordered by assessment code, not by time: a rating's number must
+            # not say in which order people answered.
+            submitted.sort(key=lambda r: (assessment_code(r["user_id"]), r["submitted_at"]))
             rating_code = {r["id"]: f"R-{i + 1:04d}" for i, r in enumerate(submitted)}
             z.writestr("experience_ratings.jsonl", "\n".join(
-                json.dumps({"rating": rating_code[r["id"]], "participant": pseudonym(r["user_id"]),
-                            "submitted_at": r["submitted_at"],
-                            **{k: v for k, v in json.loads(r["payload"]).items() if k != "project_id"},
-                            "project": codes.get(r["project_id"] or "", "")}, ensure_ascii=False)
+                json.dumps({"rating": rating_code[r["id"]], "participant": assessment_code(r["user_id"]),
+                            "submitted_on": str(r["submitted_at"])[:10],
+                            **{k: v for k, v in json.loads(r["payload"]).items() if k not in _UNLINKED}},
+                           ensure_ascii=False)
                 for r in submitted
             ))
             items = self.db.query(
-                "SELECT i.rating_id, i.kind, i.item_key, i.score, i.value, i.comment, i.project_id, i.commit_ref "
+                "SELECT i.rating_id, i.kind, i.item_key, i.score, i.value, i.comment "
                 "FROM assessment_items i JOIN experience_ratings r ON r.id = i.rating_id "
-                "WHERE r.status = 'submitted' ORDER BY r.submitted_at, i.kind, i.item_key"
+                "WHERE r.status = 'submitted'"
             )
+            items.sort(key=lambda i: (rating_code.get(i["rating_id"], ""), i["kind"], i["item_key"]))
             z.writestr("assessment_items.jsonl", "\n".join(
                 json.dumps({"rating": rating_code.get(i["rating_id"], ""), "kind": i["kind"], "item": i["item_key"],
-                            "score": i["score"], "value": i["value"], "comment": i["comment"],
-                            "project": codes.get(i["project_id"] or "", ""), "version": i["commit_ref"] or ""},
+                            "score": i["score"], "value": i["value"], "comment": i["comment"]},
                            ensure_ascii=False)
                 for i in items
             ))
@@ -1440,8 +1493,18 @@ def approved_versions(repo: Any) -> Dict[str, str]:
     return found
 
 
+#: Keys of a stored assessment that tie it to a project. Assessments recorded
+#: before ``raia-panel-v3`` may carry them; nothing exported ever does.
+_UNLINKED = ("project_id", "stage_versions", "submitted_at")
+
+
 def assessment_items(body: Dict[str, Any]) -> List[tuple]:
-    """An assessment as rows: (kind, item_key, score, value, comment)."""
+    """An assessment as rows: (kind, item_key, score, value, comment).
+
+    A stage answered "did not use" is a row with no score and the value
+    ``not_used``: it is counted, and never enters a median. ``exposure`` rows
+    say what the person used (per stage, and ``on``: demo, own, both or none).
+    """
     rows: List[tuple] = []
     for key, value in (body.get("profile") or {}).items():
         if value not in (None, ""):
@@ -1450,13 +1513,19 @@ def assessment_items(body: Dict[str, Any]) -> List[tuple]:
         for key, ans in (body.get(group) or {}).items():
             ans = ans if isinstance(ans, dict) else {"score": ans}
             score = ans.get("score")
-            if score is None and not ans.get("comment"):
+            not_used = kind == "stage" and bool(ans.get("not_used"))
+            if score is None and not ans.get("comment") and not not_used:
                 continue
-            rows.append((kind, key, int(score) if isinstance(score, (int, float)) else None, None,
-                         ans.get("comment") or None))
+            rows.append((kind, key, int(score) if isinstance(score, (int, float)) and not not_used else None,
+                         "not_used" if not_used else None, ans.get("comment") or None))
     for key, text in (body.get("open") or {}).items():
         if text:
             rows.append(("open", key, None, str(text), None))
+    exposure = body.get("exposure") or {}
+    for key, how in (exposure.get("stages") or {}).items():
+        rows.append(("exposure", key, None, str(how), None))
+    if exposure.get("on"):
+        rows.append(("exposure", "on", None, str(exposure["on"]), None))
     return rows
 
 
@@ -1484,23 +1553,40 @@ evaluation_events.jsonl   One line per event in any project: runs rejected with
                           and Requirements Reviewer recommendations: what was
                           suggested or recommended, and each candidate adopted
                           (edited or not) or rejected.
+memberships.jsonl         Which participant held which role on which project.
+
 experience_ratings.jsonl  Each submitted tester assessment (instrument id in
-                          "instrument"): optional broad profile, the five Likert
-                          dimensions, one item per stage (required from
-                          raia-panel-v2), the AI Skill item ("extras", from
-                          raia-panel-v2) and open answers.
+                          "instrument", build in "build"): optional broad
+                          profile, the five Likert dimensions, one answer per
+                          stage, open answers, and "exposure": what the person
+                          had used when they answered (per stage: approved, run
+                          or none; "on": demo, own, both or none).
                           Drafts are excluded. A participant may submit more
                           than once; keep the latest per participant unless the
                           analysis says otherwise.
 assessment_items.jsonl    The same assessments, one row per answer (kind: profile,
-                          dimension, stage, extra, open), with the project the
-                          tester named (PRJ-nnn) and, for a stage, the version
-                          of that stage they were looking at.
-memberships.jsonl         Which participant held which role on which project.
+                          dimension, stage, open, exposure).
 
-Participants appear as P-xxxxxxxxxx codes (keyed HMAC of an internal id) and
-projects as PRJ-nnn. No email address, name or project name is included.
-Free-text comments are included verbatim: read them before publishing.
+Reading the stage answers. From raia-panel-v3 a stage is answered 1 to 5 or
+"did not use this stage": score is empty and value is "not_used". Count those
+answers; never average them. raia-panel-v2 had no such answer and also asked
+one item on the AI Skill (kind "extra"); it is not asked from raia-panel-v3.
+Do not pool answers from different instruments.
+
+Two kinds of participant code, on purpose. Project activity (the first two
+files) uses P-xxxxxxxxxx; assessments (the last two) use A-xxxxxxxxxx. Both are
+keyed HMACs of an internal id under different labels, so one cannot be turned
+into the other and the two halves of this export cannot be joined by person.
+An assessment names no project and no version, is dated by day, and ratings are
+numbered in an order that is not the order of submission.
+
+What this does not hide. The exposure of an assessment is derived from the same
+activity the events record, so on a small panel an unusual pattern of use (the
+only person who ran a given stage on a project of their own) can still point to
+one participant. Report exposure in aggregate. Free-text comments are included
+verbatim: read them before publishing.
+
+Projects appear as PRJ-nnn. No email address, name or project name is included.
 """
 
 

@@ -17,7 +17,7 @@ Everything RAIA does rests on seven principles and six sources, and nothing else
 
 How each source is used:
 
-- **EU AI Act and PL 2338/2023** decide *whether* the product is prohibited, high-risk or limited-risk, and *which obligations* follow. Treat them as escalation signals: you can recognise a trigger, but a classification change goes back to RAIA and to legal.
+- **EU AI Act and PL 2338/2023** decide *whether* the product is prohibited, high-risk or limited-risk, and *which obligations* follow. The EU AI Act is in force; PL 2338/2023 is a bill, so what it asks is proposed. You can redo the screen yourself (`screening.md`) and must label the result self-assessed; a change to a classification RAIA recorded goes back to RAIA and to legal.
 - **NIST AI RMF** gives the lifecycle frame: GOVERN (accountability, roles), MAP (context, impacts as likelihood × magnitude), MEASURE (testing, tracking), MANAGE (responses: mitigate, transfer, avoid, accept).
 - **IEEE 7000** turns values into requirements: stakeholders (direct and indirect), the values at stake, and ethical value requirements that are traceable and verifiable by test, audit, measurement or inspection.
 - **Microsoft Responsible AI Standard v2** gives the shape of a requirement teams can deliver: a goal, an owner, a review cadence and an evidence artifact.
@@ -88,7 +88,7 @@ When something new comes up — a story, an incident, a design choice, a questio
 3. **Principles.** Which of the seven does it touch? Use the probes above.
 4. **Lifecycle.** Where are we in the NIST AI RMF lifecycle? Plan and design, data, model, verify and validate, deploy and use, operate and monitor.
 5. **Place the harm.** Magnitude and likelihood on the anchored scales in `vocabulary.md`. Write one line on why. Compute the risk level from the matrix, then apply the floors (legal grounding → at least high; prohibited practice → critical and blocking).
-6. **Check the requirements.** Is an approved EVR already about this? Then the work belongs under that EVR, with its priority. If none is, say so: a new requirement is a decision for the product owner and, if the issue is material, a reason to go back to RAIA.
+6. **Check the requirements.** Is an approved EVR already about this? Then the work belongs under that EVR, with its priority. If none is, say so: a new requirement is a decision for the product owner and, if the issue is material, a reason to go back to RAIA. With no project part, trace the work to the principle instead.
 7. **Respond.** Propose a response (mitigate, transfer, avoid; never accept on the team's behalf), an owner role, a lifecycle stage, a review cadence, a verification method and an evidence artifact.
 8. **Write it as work.** An ethical acceptance criterion on an existing story, or a new story linked to the EVR. Make the condition measurable, with a threshold.
 9. **Record what a person must decide**, with options and the decision owner.

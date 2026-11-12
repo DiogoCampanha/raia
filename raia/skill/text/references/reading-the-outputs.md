@@ -1,6 +1,8 @@
 # Reading RAIA's outputs
 
-RAIA runs four agents in order, each ending at a human approval gate. Every agent answers in one standard record (schema `{{schema_version}}`): the model filled it, code computed the ids, risk levels, priorities and status, and a person approved it. What you read in `project/artifacts/` is what that person approved.
+This reference is about the project part: what a RAIA project produced and how to read it. With no project part, go to `screening.md` and `rai-guidelines.md` instead.
+
+RAIA runs four agents in order, each ending at a human approval gate. Every agent answers in one standard record (schema `{{schema_version}}`): the model filled it, code computed the ids, risk levels, priorities and status, and a person approved it. What you read in the project part's `artifacts/` is what that person approved.
 
 ## The stages at a glance
 

@@ -23,8 +23,9 @@ page_header(guide.TITLE, guide.SUBTITLE, eyebrow="Guide")
 with st.container(border=True, key="card-notice-intro"):
     st.markdown(guide.INTRO)
 
-SECTIONS = [("menu", "Finding your way")] + [(f"step-{n}", f"{n}. {s.title}") for n, s in enumerate(guide.STEPS, 1)] + [
-    ("look-for", "What to look for"), ("break", "Worth trying to break"), ("trouble", "If something goes wrong")]
+SECTIONS = [("path", guide.EVALUATION_PATH_TITLE), ("scope", guide.SCOPE_TITLE), ("menu", "Finding your way")] + [(f"step-{n}", f"{n}. {s.title}") for n, s in enumerate(guide.STEPS, 1)] + [
+    ("words", "Words RAIA uses"), ("look-for", "What to look for"), ("break", "Worth trying to break"),
+    ("trouble", "If something goes wrong")]
 
 toc, body = st.columns([1, 3.2], gap="large")
 with toc, st.container(key="guide-toc"):
@@ -32,6 +33,23 @@ with toc, st.container(key="guide-toc"):
             + "".join(f'<li><a href="#{a}">{txt(t)}</a></li>' for a, t in SECTIONS) + "</ol></nav>")
 
 with body:
+    # ---- The short path ----------------------------------------------------------
+    st.subheader(guide.EVALUATION_PATH_TITLE, anchor="path")
+    st.caption(guide.EVALUATION_PATH_LEAD)
+    with st.container(border=True, key="card-notice-path"):
+        st.markdown("\n".join(f"{n}. **{head}.** {text}"
+                              for n, (head, text) in enumerate(guide.EVALUATION_PATH, 1)))
+        st.caption(guide.ADVICE)
+        links = st.container(horizontal=True, key="guide-path-links")
+        with links:
+            routes.link(routes.HOME, "Go to Home", icon=I.OPEN)
+            routes.link(routes.ASSESSMENT, "Open the assessment", icon=I.ASSESSMENT)
+
+    # ---- What RAIA is, and is not ------------------------------------------------
+    st.subheader(guide.SCOPE_TITLE, anchor="scope")
+    with st.container(border=True):
+        st.markdown("\n".join(f"- **{head}** {text}" for head, text in guide.SCOPE))
+
     # ---- Finding your way --------------------------------------------------------
     st.subheader("Finding your way", anchor="menu")
     st.caption("The menu at the top of the screen.")
@@ -64,6 +82,14 @@ with body:
                     with c1:
                         st.badge(label, icon=icon, color=color)
                     c2.caption(meaning)
+
+    # ---- Words RAIA uses -----------------------------------------------------------
+    st.subheader("Words RAIA uses", anchor="words")
+    st.caption("Every identifier is a prefix that says what the thing is, then a number. Each stage's page "
+               "has the words for that stage under \"Words used here\".")
+    with st.container(border=True):
+        st.html('<dl class="guide-menu">' + "".join(
+            f"<dt>{txt(term)}</dt><dd>{txt(meaning)}</dd>" for term, meaning, _ in guide.GLOSSARY) + "</dl>")
 
     # ---- What to look for ----------------------------------------------------------
     st.subheader("What to look for", anchor="look-for")

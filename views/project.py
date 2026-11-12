@@ -5,11 +5,14 @@ import json
 import streamlit as st
 
 from raia.agents import AGENTS, RUNNABLE, identity_key
+from raia.brief import project_brief
 from raia.contract import actions as action_plan
 from raia.contract import vocab as V
-from raia.export import bundle_name, session_bundle, skill_bundle, skill_bundle_name
+from raia.contract.digest import BR_LABEL
+from raia.export import bundle_name, session_bundle, skill_bundle, skill_bundle_mime, skill_bundle_name
 from raia.lineage import next_steps
 from raia.projects import EDITOR, OWNER, REVIEWER, ROLE_LABELS
+from raia.skill.build import FORMATS as SKILL_FORMATS
 from raia.repository import ACCEPTED, ARTIFACT_FILES, DECIDED, OPEN, RESOLVED, RETIRED_ARTIFACTS
 from raia.ui import routes
 from raia.ui.board import board_tab, sprint_step
@@ -38,9 +41,18 @@ def _bundle() -> bytes:
                           people=svc.people_map(user, proj.id))
 
 
+def _brief() -> bytes:
+    """The one-page brief, written by code from the approved records when asked for."""
+    import datetime as _dt
+
+    return project_brief(svc.reader(user, proj.id), proj.name,
+                         _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")).encode("utf-8")
+
+
 def _skill() -> bytes:
-    """The AI Skill download, built on press like the project download."""
-    return skill_bundle(svc.repository(user, proj.id, "view"), proj.name)
+    """The AI Skill download in the chosen format, built on press like the project download."""
+    return skill_bundle(svc.repository(user, proj.id, "view"), proj.name,
+                        st.session_state.get(pkey("skill_format"), "cursor"))
 
 stages = summary["stages"]
 
@@ -136,7 +148,7 @@ with tab_overview:
             r1, r2 = st.columns(2)
             r1.caption("EU AI Act")
             r1.markdown(f"**{summary['risk']['eu_tier']}**")
-            r2.caption("Brazil PL 2338/2023")
+            r2.caption(f"Brazil {BR_LABEL}")
             r2.markdown(f"**{summary['risk']['br_tier'] or '—'}**")
     if summary["approved"] == 0:
         st.info("**Start here (about 20 minutes):** open the **Risk Classifier**, load the "
@@ -156,17 +168,38 @@ with tab_docs:
                        file_name=bundle_name(proj.name), mime="application/zip",
                        icon=I.DOWNLOAD, key="docs_export", width="stretch")
     existing = repo.existing_artifacts()
+    with st.container(border=True, key="card-brief"):
+        b1, b2 = st.columns([4, 1.4], vertical_alignment="center")
+        b1.markdown(f"{I.DOCS} **One-page brief**")
+        b1.caption("What the product does with AI, where it sits, the most pressing risks, the requirements "
+                   "that answer them, the decisions still needed and what has been verified: one page to hand "
+                   "to a manager, a squad or the legal and privacy owners. Written by code from the approved "
+                   "records; it names roles, not people.")
+        b2.download_button("Download brief", data=_brief, file_name=f"raia-{proj.name.lower().replace(' ', '-')[:40]}-brief.md",
+                           mime="text/markdown", icon=I.DOWNLOAD, key="docs_brief", width="stretch",
+                           disabled=not existing,
+                           help=None if existing else "Available once a stage is approved.")
+        # Built only when asked for: the page does not read the records twice to draw a card.
+        show = b1.toggle("Show it here, to read or copy", key=pkey("brief_show"), disabled=not existing)
+        slot = st.empty()
+        if show and existing:
+            slot.code(_brief().decode("utf-8"), language=None, wrap_lines=True)
     with st.container(border=True, key="card-ai-skill"):
         s1, s2 = st.columns([4, 1.4], vertical_alignment="center")
         s1.markdown(f"{I.SKILL} **Continue with your own AI assistant**")
-        s1.caption("The AI Skill teaches an assistant your organisation already approves how to read these "
-                   "outputs and apply them to your real backlog and Jira: it classifies stories, writes ethical "
-                   "acceptance criteria, suggests sprints and self-audits, with RAIA's rules. The download holds "
-                   "the skill, an AGENTS.md for your repository and this project's approved outputs, without the "
-                   "research data.")
+        s1.caption("The AI Skill teaches an AI assistant you are allowed to use how to apply these results to "
+                   "your real backlog, tickets and product documents: it triages stories, writes ethical "
+                   "acceptance criteria, reviews documents, suggests sprints and self-audits, with RAIA's "
+                   "rules. It has two parts: the skill itself, which is the same for every project and never "
+                   "changes, and this project's outputs, which you replace after new approvals. No research "
+                   "data is included, and the skill is not part of the assessment.")
         ready = repo.read_artifact("risk_classification") is not None
-        s2.download_button("Download AI Skill", data=_skill, file_name=skill_bundle_name(proj.name),
-                           mime="application/zip", icon=I.SKILL, key="docs_skill", width="stretch",
+        fmt = s2.selectbox("Format", list(SKILL_FORMATS), key=pkey("skill_format"),
+                           format_func=lambda k: SKILL_FORMATS[k][0],
+                           help="Cursor, ChatGPT and Claude get the skill laid out for them; the single "
+                                "Markdown file works in any assistant.")
+        s2.download_button("Download AI Skill", data=_skill, file_name=skill_bundle_name(proj.name, fmt),
+                           mime=skill_bundle_mime(fmt), icon=I.SKILL, key="docs_skill", width="stretch",
                            disabled=not ready,
                            help=None if ready else "Available once the Risk Classifier is approved.")
         if ready and repo.read_artifact("requirements_review") is None:

@@ -3,12 +3,18 @@ Write the RAIA AI Skill's instructions and references, from the code.
 
     python -m raia.skill.build
 
-Writes the static copy in ``docs/ai-skill/`` (everything but the project
-folder, which only exists in a project's download). The prose is in
-``raia/skill/text/``; each ``{{block}}`` in it is filled here from the
-vocabularies, rules and registers the software itself uses, and
-``references/vocabulary.md`` is generated whole. ``tests/test_skill.py`` fails
-when the static copy is out of date.
+The skill has two parts. The **fixed part** (``SKILL.md`` and its references)
+is the same for every project and every download of a version: it is written
+here, from the prose in ``raia/skill/text/`` with each ``{{block}}`` filled
+from the vocabularies, rules and registers the software itself uses
+(``references/vocabulary.md`` is generated whole). The **project part** is one
+project's outputs and is written at download time (:mod:`raia.export`,
+:mod:`raia.skill.context`).
+
+This module writes the static copy in ``docs/ai-skill/``: the fixed part, the
+install notes of each format and the single-file format, without a project.
+``tests/test_skill.py`` fails when that copy is out of date, and when the fixed
+part changes without a new :data:`SKILL_VERSION`.
 """
 
 import re
@@ -234,6 +240,52 @@ def blocks() -> Dict[str, str]:
         "ms_goals_table": _ms_goals_table(),
         "escalation_triggers": _escalation_triggers(),
         "jira_example": _jira_example(),
+        "skill_version": SKILL_VERSION,
+        **_screening_blocks(),
+    }
+
+
+def _screening_blocks() -> Dict[str, str]:
+    """The Risk Classifier's screen as tables, for an assistant working without a RAIA record.
+
+    Everything here is read from the rule engine: the questions and their
+    options from the agent's form, the lists from the engine's vocabularies,
+    and the obligations by running the engine on answers that trigger each of
+    them, so a row cannot say something the engine does not do.
+    """
+    from ..agents import AGENTS
+    from ..rationale import risk_screen as RS
+
+    asked = [f for f in AGENTS["risk_classifier"].spec.input_fields if f.kind in ("select", "multiselect", "boolean")]
+    questions = _table(["Question", "Answers (one, or any that apply)"],
+                       [[f.label, " · ".join(o.label for o in f.options)] for f in asked])
+
+    def where(meta) -> str:
+        return " and ".join(n for n, on in (("EU AI Act", meta["eu"]), ("PL 2338/2023", meta["br"])) if on)
+
+    prohibited = _table(["Practice", "Under", "Status"],
+                        [[m["label"], where(m), "restricted: narrow legal exceptions only" if m["conditional"]
+                          else "prohibited"] for m in RS.PROHIBITED_PRACTICES.values()])
+    areas = _table(["Area", "EU AI Act, Annex III", "PL 2338/2023, art. 17"],
+                   [[m["label"], m["annex_iii"] or "not listed", m["pl_art17"] or "not listed"]
+                    for m in RS.PURPOSE_AREAS.values()])
+    transparency = "\n".join(f"- {o.label}" for o in RS.TRANSPARENCY_OPTIONS if o.value != "none")
+    everything = RS.run({
+        "role": "both", "markets": ["eu", "br"], "purpose_areas": ["essential_services"], "public_sector": "yes",
+        "gpai_provider": "yes", "transparency_triggers": ["chat_interaction"], "prohibited_practices": ["none"],
+        "art63_claim": "yes", "profiling": "no", "ai_techniques": ["machine_learning"], "ai_pipeline": ["scoring"],
+        "model_source": "in_house", "decision_autonomy": "human_override", "human_oversight": "human_decides",
+        "significant_effects": "no", "data_categories": ["none"], "deployment_stage": "development",
+    })
+    obligations = _table(["Code", "Where", "Obligation", "Applies when"],
+                         [[f"`{o['code']}`", "EU AI Act" if o["jurisdiction"] == "EU" else "PL 2338/2023",
+                           o["title"], o["why"]] for o in everything.data["obligations"]])
+    return {
+        "screening_questions": questions, "prohibited_table": prohibited, "areas_table": areas,
+        "transparency_table": transparency, "obligations_table": obligations,
+        "tier_unacceptable": RS.TIER_UNACCEPTABLE, "tier_restricted": RS.TIER_RESTRICTED, "tier_high": RS.TIER_HIGH,
+        "tier_limited": RS.TIER_LIMITED, "tier_minimal": RS.TIER_MINIMAL,
+        "br_excessive": RS.BR_EXCESSIVE, "br_high": RS.BR_HIGH, "br_not_listed": RS.BR_NOT_LISTED,
     }
 
 
@@ -368,34 +420,137 @@ def vocabulary() -> str:
 # ---------------------------------------------------------------------------
 
 
-def static_files(project: Optional[str] = None, created: Optional[str] = None) -> Dict[str, str]:
-    """Every file of the skill except the project folder, by path inside the package."""
-    values = dict(blocks(), project=project or "your project", created=created or "(the date of your download)")
-    out: Dict[str, str] = {}
-    for src in sorted(TEXT.rglob("*.md")):
-        rel = src.relative_to(TEXT).as_posix()
-        dest = rel if rel in ("AGENTS.md", "README_FIRST.md") else f"{SKILL_DIR}/{rel}"
-        out[dest] = fill(src.read_text(encoding="utf-8"), values)
-    out[f"{SKILL_DIR}/references/vocabulary.md"] = vocabulary()
+#: The version of the fixed part. The fixed part is frozen: it is byte-identical
+#: for every project and every download of a version, and nobody edits it after
+#: download. Changing anything in it (the prose in ``text/``, or a vocabulary or
+#: rule the tables are generated from) means a new version here and a new
+#: :data:`FIXED_FINGERPRINT`; ``tests/test_skill.py`` fails until both are set.
+SKILL_VERSION = "2.0.0"
+FIXED_FINGERPRINT = "00399ba6d511f513"
+
+#: The folder (or part of a single file) that holds one project's outputs.
+PROJECT_DIR = "raia-project"
+
+#: The formats the skill is offered in: key -> (label, file extension, what it is).
+FORMATS = {
+    "cursor": ("Cursor", "zip", "a skill folder under .cursor/skills/ and the project folder beside it"),
+    "chatgpt": ("ChatGPT", "zip", "a skill to upload, and the project files to attach"),
+    "claude": ("Claude", "zip", "a skill to upload, and the project files to attach"),
+    "generic": ("One Markdown file (any assistant)", "md", "instructions and project context in one file"),
+}
+
+_FRONTMATTER = re.compile(r"^---\n.*?\n---\n", re.S)
+#: Where the project part starts in the single-file format. Everything before it
+#: is the fixed part; everything from it on is replaced when the project changes.
+GENERIC_PROJECT_MARKER = "<!-- raia-skill: project part. Replace everything from this line down when the project changes. -->"
+
+_REFERENCE_ORDER = ("reading-the-outputs.md", "vocabulary.md", "rai-guidelines.md", "screening.md",
+                    "playbooks.md", "templates.md")
+
+
+def fixed_files() -> Dict[str, str]:
+    """The fixed part: ``SKILL.md`` and its references, by path inside the skill folder.
+
+    No argument, on purpose: nothing about a project, a person or a date can
+    reach these files.
+    """
+    values = blocks()
+    out: Dict[str, str] = {"SKILL.md": fill((TEXT / "SKILL.md").read_text(encoding="utf-8"), values)}
+    for src in sorted((TEXT / "references").glob("*.md")):
+        out[f"references/{src.name}"] = fill(src.read_text(encoding="utf-8"), values)
+    out["references/vocabulary.md"] = vocabulary()
     return out
 
 
+def fingerprint(files: Optional[Dict[str, str]] = None) -> str:
+    """A digest of the fixed part: it changes if and only if a byte of it does."""
+    import hashlib
+
+    files = fixed_files() if files is None else files
+    h = hashlib.sha256()
+    for name in sorted(files):
+        h.update(name.encode("utf-8") + b"\0" + files[name].encode("utf-8") + b"\0")
+    return h.hexdigest()[:16]
+
+
+def fixed_zip() -> bytes:
+    """The fixed part as a zip to upload as a skill: the same bytes every time."""
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, text in sorted(fixed_files().items()):
+            info = zipfile.ZipInfo(f"{SKILL_DIR}/{name}", date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            z.writestr(info, text)
+    return buffer.getvalue()
+
+
+def agents_md() -> str:
+    return fill((TEXT / "AGENTS.md").read_text(encoding="utf-8"), blocks())
+
+
+def install_readme(fmt: str) -> str:
+    """``README_FIRST.md`` for one format: how to install it. The same for every project."""
+    values = dict(blocks())
+    values["use_section"] = fill((TEXT / "install" / "use.md").read_text(encoding="utf-8"), values).rstrip()
+    return fill((TEXT / "install" / f"{fmt}.md").read_text(encoding="utf-8"), values)
+
+
+def project_readme(project: str, created: str) -> str:
+    """The note that opens the project part: whose it is, and when it was taken."""
+    values = dict(blocks(), project=project or "your project", created=created or "(the date of your download)")
+    return fill((TEXT / "install" / "project_readme.md").read_text(encoding="utf-8"), values)
+
+
+def generic_fixed() -> str:
+    """The fixed part as one Markdown document (the single-file format, before the project part)."""
+    files = fixed_files()
+    parts = [install_readme("generic").rstrip(), "", "---", "",
+             f"<!-- raia-skill: fixed part, version {SKILL_VERSION}. Do not edit. -->", "",
+             _FRONTMATTER.sub("", files["SKILL.md"]).strip(), ""]
+    for name in _REFERENCE_ORDER:
+        parts += ["---", "", f"<!-- references/{name} -->", "", files[f"references/{name}"].strip(), ""]
+    return "\n".join(parts) + "\n---\n\n"
+
+
+def generic_markdown(project_part: Optional[str] = None) -> str:
+    """The single-file format: the fixed part, then one project's context (or a note that there is none)."""
+    body = (project_part or "").strip() or (
+        "No project part was included. Screen the product yourself (`references/screening.md`) and say that "
+        "the result is self-assessed.")
+    return generic_fixed() + GENERIC_PROJECT_MARKER + "\n\n# Project part\n\n" + body + "\n"
+
+
 def generated() -> Dict[str, str]:
-    """The static copy kept in docs/ai-skill/, by path relative to it."""
-    files = static_files()
-    files[f"{SKILL_DIR}/project/README.md"] = (
-        "# Project folder\n\nIn a download from RAIA (**Download AI Skill** on a project's Documents tab) this "
+    """The static copy kept in docs/ai-skill/, by path relative to it: the skill without a project."""
+    files = {f"{SKILL_DIR}/{name}": text for name, text in fixed_files().items()}
+    files["AGENTS.md"] = agents_md()
+    for fmt in FORMATS:
+        if fmt != "generic":
+            files[f"install/README_FIRST.{fmt}.md"] = install_readme(fmt)
+    files["raia-skill.md"] = generic_markdown()
+    files[f"{PROJECT_DIR}/README.md"] = (
+        "# Project part\n\nIn a download from RAIA (**Download AI Skill** on a project's Documents tab) this "
         "folder holds `PROJECT_CONTEXT.md` and the project's approved outputs. This copy in the repository "
         "shows the skill without a project.\n")
     return files
 
 
 def main() -> None:
-    for name, text in generated().items():
+    wanted = generated()
+    for name, text in wanted.items():
         path = OUT / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
         print(f"wrote docs/ai-skill/{name}")
+    for path in sorted(OUT.rglob("*")):
+        if path.is_file() and path.relative_to(OUT).as_posix() not in wanted:
+            path.unlink()
+            print(f"removed docs/ai-skill/{path.relative_to(OUT).as_posix()}")
+    print(f"fixed part: version {SKILL_VERSION}, fingerprint {fingerprint()}")
 
 
 if __name__ == "__main__":

@@ -481,14 +481,65 @@ def test_second_example_case() -> None:
     check(sorted(o["code"] for o in r.data["obligations"]) == ["br.governance", "br.rights", "eu.art50"],
           "a deployer of a chat assistant: transparency, governance and rights obligations only")
     check(not any(m["blocking"] for m in r.typed_issues()), "nothing blocks it")
-    check(set(CASES) == {"resume_screening", "support_assistant"} and all(
-        example_for(c, "requirements_reviewer") for c in CASES), "both cases fill every stage")
+    check(set(CASES) == {"b2b_marketplace", "resume_screening", "support_assistant"}, "three example cases")
+    from raia.agents import AGENTS, MODES
+    from raia.fields import missing_required
+    gaps = [(c, k) for c in CASES for k, a in {**AGENTS, **MODES}.items()
+            if not example_for(c, k) or missing_required(a.spec.input_fields, example_for(c, k))]
+    check(not gaps, f"every case fills every stage, with nothing required left empty ({gaps or 'none'})")
+
+
+def test_forms_ask_less_up_front() -> None:
+    print("== the forms ask what most products need, and keep the rest closed or optional ==")
+    from raia.agents import AGENTS
+    from raia.examples import example_for
+    from raia.fields import missing_required
+
+    spec = AGENTS["risk_classifier"].spec
+    rare = [f for f in spec.input_fields if f.group in spec.collapsed_groups]
+    check({f.key for f in rare} == {"public_sector", "gpai_provider", "annex_i_product", "art63_claim", "art63_reason"},
+          "the rarely-needed questions of the Risk Classifier are in one closed group")
+    check(spec.field_groups()[-1] in spec.collapsed_groups and not any(f.required for f in rare),
+          "…the last one on the form, with nothing required in it")
+    check(all(f.default == "no" for f in rare if f.kind == "boolean"), "…and a default answer of no")
+    plain = {k: v for k, v in example_for("resume_screening", "risk_classifier").items()
+             if k not in {f.key for f in rare}}
+    untouched = risk_screen.run(plain)
+    full = risk_screen.run(example_for("resume_screening", "risk_classifier"))
+    check(untouched.verdict == full.verdict and untouched.data["obligations"] == full.data["obligations"],
+          "left closed, they give the same verdict as answering no")
+    rr = AGENTS["requirements_reviewer"].spec
+    answers = {**example_for("b2b_marketplace", "requirements_reviewer"), "requirements": ""}
+    check("Software requirements" not in missing_required(rr.input_fields, answers),
+          "the Requirements Reviewer runs without a written requirements list")
+    upstream = {"risk_classification": {"structured": {**risk_screen.run(
+        example_for("b2b_marketplace", "risk_classifier")).data}}}
+    r = coverage.run(answers, upstream)
+    check(r.verdict["gap_count"] >= 7 and r.verdict["principle_gaps"] == 7,
+          f"…and then every principle is a gap to close ({r.verdict})")
+
+
+def test_third_example_case() -> None:
+    print("== the B2B marketplace example is outside the high-risk lists, and still has work to do ==")
+    from raia.examples import example_for
+
+    r = risk_screen.run(example_for("b2b_marketplace", "risk_classifier"))
+    check(r.verdict["eu_tier"] == risk_screen.TIER_MINIMAL and r.verdict["br_tier"] == risk_screen.BR_NOT_LISTED,
+          "minimal risk in the EU, not in the listed areas in Brazil")
+    check(r.verdict["br_in_scope"] and not r.verdict["eu_in_scope"],
+          "Brazil is a target market and the EU is not: the EU tier is for reference")
+    check(sorted(o["code"] for o in r.data["obligations"]) == ["br.governance", "br.rights"],
+          "only the obligations every AI system carries in Brazil")
+    issues = r.typed_issues()
+    check(len(issues) == 2 and not any(m["blocking"] for m in issues),
+          "two decisions for a person (significant effects, automation against oversight), none blocking")
 
 
 def main() -> None:
     for fn in (test_risk_screen, test_risk_screen_how_the_ai_works, test_coverage, test_suggestions,
                test_recommendation_checks, test_story_map, test_traceability,
-               test_validators, test_second_example_case, test_sanitize, test_principles,
+               test_validators, test_second_example_case, test_third_example_case, test_forms_ask_less_up_front,
+               test_sanitize, test_principles,
                test_temperature_fallback):
         fn()
     print()

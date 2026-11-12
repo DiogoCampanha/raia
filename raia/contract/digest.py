@@ -52,7 +52,14 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from .. import config
 from . import vocab as V
+
+#: How the two legal instruments are named wherever a tier or an obligation is
+#: shown. A proposed source carries its status in its name (config.PROPOSED_SOURCES).
+EU_LABEL = "EU AI Act"
+BR_NAME = "PL 2338/2023"
+BR_LABEL = BR_NAME + (f" ({config.PROPOSED_NOTE})" if "pl_2338_2023" in config.PROPOSED_SOURCES else "")
 
 #: Records that lead with their stories: the Refiner's two modes.
 STORY_KEYS = ("story_refiner", "story_generate")
@@ -323,14 +330,15 @@ def _risk(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, Any]):
         obl_blocks.append({"type": "note", "text": "Notes for codes not in the computed table: " + ", ".join(map(str, extra))})
     sections = [
         {"key": "classification", "title": "Classification", "md_title": "Risk Classification",
-         "conclusion": (f"EU AI Act: {short_tier(v.get('eu_tier'))}. PL 2338/2023: {short_tier(v.get('br_tier'))}."
+         "conclusion": (f"{EU_LABEL}: {short_tier(v.get('eu_tier'))}. {BR_LABEL}: {short_tier(v.get('br_tier'))}."
                         + (" A prohibited or excessive-risk practice was declared." if prohibited else "")),
          "blocks": [_text("Prohibited-practice screen (EU AI Act Art. 5; PL 2338/2023 excessive risk)", ext.get("prohibited_screen")),
                     _text("EU AI Act tier", ext.get("eu_tier_justification")),
-                    _text("PL 2338/2023 tier", ext.get("br_tier_justification"))]},
+                    _text(f"{BR_LABEL} tier", ext.get("br_tier_justification"))]},
         {"key": "obligations", "title": "Legal obligations", "md_title": "Applicable Legal Obligations",
-         "conclusion": (f"{plural(len(obligations), 'legal obligation')} apply ({eu} EU, {br} Brazil)."
-                        if obligations else "No legal obligations were computed for this product."),
+         "conclusion": (f"{plural(len(obligations), 'legal obligation')} apply ({eu} {EU_LABEL}, {br} {BR_LABEL})."
+                        if obligations else "No legal obligations were computed for this product. The "
+                        "requirements of the next stage rest on the seven principles, whatever the tier."),
          "blocks": obl_blocks},
         {"key": "oversight", "title": "Oversight and rights", "md_title": "Human Oversight and Affected Persons",
          "conclusion": first_sentence(ext.get("human_oversight_assessment")) or "No oversight assessment was provided.",
@@ -339,7 +347,7 @@ def _risk(ext: Dict[str, Any], data: Dict[str, Any], record: Dict[str, Any]):
                     _text("Impact assessments required", ext.get("impact_assessments"))]},
     ]
     kpi = {"label": "EU AI Act tier", "value": short_tier(v.get("eu_tier")),
-           "hint": f"PL 2338/2023: {short_tier(v.get('br_tier'))}",
+           "hint": f"{BR_LABEL}: {short_tier(v.get('br_tier'))}",
            "tone": "critical" if prohibited else ("high" if "high" in str(v.get("eu_tier", "")).lower() else "neutral")}
     return sections, kpi
 
@@ -906,21 +914,48 @@ def _br_step(tier: str) -> Optional[int]:
     return None
 
 
+def applicability(v: Dict[str, Any], instrument: str) -> str:
+    """Whether a tier binds this product, in a few words, from the declared markets.
+
+    ``""`` when the record does not say which markets were declared (a record
+    written before the markets were kept with the verdict).
+    """
+    key, place = (("eu_in_scope", "the EU"), ("br_in_scope", "Brazil"))[instrument == "br"]
+    if key not in v:
+        return ""
+    proposed = instrument == "br" and "pl_2338_2023" in config.PROPOSED_SOURCES
+    if not v.get(key):
+        return f"reference only: {place} is not a target market"
+    if proposed:
+        return f"would apply once in force: {place} is a target market"
+    return f"applies: {place} is a target market"
+
+
 def _sig_risk(ext, data, record) -> Optional[Dict[str, Any]]:
     v = record.get("computed_verdict") or {}
     rows = []
-    for name, steps, tier, step in (("EU AI Act", EU_STEPS, str(v.get("eu_tier") or ""), _eu_step),
-                                    ("PL 2338/2023", BR_STEPS, str(v.get("br_tier") or ""), _br_step)):
+    for name, steps, tier, step, inst in ((EU_LABEL, EU_STEPS, str(v.get("eu_tier") or ""), _eu_step, "eu"),
+                                          (BR_LABEL, BR_STEPS, str(v.get("br_tier") or ""), _br_step, "br")):
         at = step(tier)
         if at is not None:
             note = short_tier(tier)
             rows.append({"label": name, "steps": steps, "active": at, "tone": _STEP_TONES[steps[at]],
                          # The step already says it; keep the note only when it adds something.
-                         "note": "" if note.lower().startswith(steps[at].lower()) else note})
+                         "note": "" if note.lower().startswith(steps[at].lower()) else note,
+                         "applies": applicability(v, inst)})
     if not rows:
         return None
-    return {"kind": "scale", "title": "Where the product sits", "rows": rows,
-            "caption": "Tiers computed by the rule engine from the declared answers."}
+    caption = "Tiers computed by the rule engine from the declared answers."
+    # A tier answers one question, whether the law lists this use, and a product
+    # outside the lists reads "minimal" or "not listed". That is where a team
+    # stops reading, so the picture says what the tier does not settle.
+    if all(r["steps"][r["active"]] in ("Minimal", "Limited", "Not listed") for r in rows):
+        n = len(record.get("findings") or [])
+        caption += (" The product is outside the listed high-risk areas. That settles the legal tier, not the risk: "
+                    + (f"{plural(n, 'risk')} to manage {'was' if n == 1 else 'were'} found for this product, and "
+                       if n else "")
+                    + "the next stage sets requirements against the seven principles whatever the tier.")
+    return {"kind": "scale", "title": "Where the product sits", "rows": rows, "caption": caption}
 
 
 def _sig_requirements(ext, data, record) -> Optional[Dict[str, Any]]:
@@ -1030,6 +1065,7 @@ def signature_text(sig: Optional[Dict[str, Any]]) -> str:
     kind = sig["kind"]
     if kind == "scale":
         body = "; ".join(f"{r['label']}: **{r['steps'][r['active']]}** (of {' · '.join(r['steps'])})"
+                         + (f", {r['applies']}" if r.get("applies") else "")
                          for r in sig["rows"])
     elif kind == "cells":
         body = "; ".join(f"{c['label']}: {c['state']}" for c in sig["cells"])
@@ -1189,7 +1225,7 @@ def obligation_groups(record: Dict[str, Any], data: Dict[str, Any]) -> List[Dict
     notes = {o.get("code"): o for o in (record.get("extension") or {}).get("obligations") or []}
     groups: Dict[str, List[Dict[str, Any]]] = {}
     for o in data.get("obligations") or []:
-        where = "EU AI Act" if str(o.get("jurisdiction")).upper() == "EU" else "PL 2338/2023"
+        where = EU_LABEL if str(o.get("jurisdiction")).upper() == "EU" else BR_LABEL
         n = notes.get(o.get("code"), {})
         groups.setdefault(where, []).append({
             "code": o.get("code", ""), "title": o.get("title", ""),

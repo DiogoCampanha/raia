@@ -38,6 +38,118 @@ INTRO = (
     "password); the first time, you are shown what RAIA stores and asked to agree."
 )
 
+#: What to enter. Advice, said once and plainly; RAIA does not police it.
+ADVICE = ("RAIA is a research prototype. Unless your organisation has told you otherwise, it is not "
+          "one of its approved tools: use a demo project, or describe your product in generic terms.")
+
+#: The shortest way through RAIA for someone who will answer the Assessment.
+#: One screen; the numbered steps further down are the detail.
+EVALUATION_PATH_TITLE = "Evaluating RAIA: the short path"
+EVALUATION_PATH_LEAD = ("Going through the software once is enough to answer the Assessment, and a demo "
+                        "project is enough for that. Everything is saved as you go, so you can stop and "
+                        "come back.")
+EVALUATION_PATH: List[Tuple[str, str]] = [
+    ("Create a demo project",
+     "On **Home**, pick the demo closest to your work. Every form in it is pre-filled."),
+    ("Run and approve each stage",
+     "Open the Risk Classifier, press **Run**, read the draft, then **Approve and commit**. "
+     "**Continue to** the next stage and do the same. Reject a card with a reason at least once, "
+     "to see what a rejection does."),
+    ("Work one sprint on the Board",
+     "Once the requirements are approved: generate stories from them, plan a sprint, start it, "
+     "tick a story done, end the sprint and run the Auditor."),
+    ("See what the project now holds",
+     "On the project page: **Action plan**, **Traceability**, **Open issues** and **Documents**."),
+    ("Answer the Assessment",
+     "In the top menu. A stage you did not reach can be answered **Did not use this stage**."),
+]
+
+#: What RAIA is and is not, for someone about to judge it. Each line is a fact
+#: about the build, not an argument for it.
+SCOPE_TITLE = "What RAIA is, and what it is not"
+SCOPE: List[Tuple[str, str]] = [
+    ("A research prototype.",
+     "It was built for a research project and is being evaluated by the people who use it. It "
+     "may change or be unavailable."),
+    ("Drafts for a person to decide on.",
+     "Every output is a draft that someone approves, edits or rejects. It supports legal and "
+     "compliance advice and does not replace it."),
+    ("Four agents in two layers.",
+     "Product and Dev. The architecture also specifies an Ops layer, which monitors a system "
+     "after release; it needs production telemetry and has no agent in this build."),
+    ("Six sources, and only those.",
+     "The EU AI Act, the Brazilian bill PL 2338/2023, IEEE 7000, the NIST AI Risk Management "
+     "Framework, the Microsoft Responsible AI Standard v2 and ECCOLA. Other laws, and your "
+     "organisation's own policies, are outside what RAIA checks."),
+    ("Curated summaries, not the official texts.",
+     "What the agents retrieve and cite are summaries of those six sources prepared for this "
+     "project. The **Evidence** tab of a draft shows the excerpts a run used."),
+    ("One of the two legal sources is a bill.",
+     "PL 2338/2023 has not been enacted. Its tier and obligations are shown as proposed, and "
+     "say what the law would ask if it passes as it stands."),
+    ("As specific as what it is told.",
+     "The structured answers decide the verdict; the text you write decides how concrete the "
+     "rest is. A generic description gets a generic analysis."),
+]
+
+#: The words RAIA uses, in plain terms: (term, meaning, the stages it appears in).
+#: An empty tuple means everywhere. The stage page shows the ones for its stage;
+#: the Guide shows them all. Every identifier follows one pattern: a prefix that
+#: says what it is, then a number.
+ALL: Tuple[str, ...] = ()
+GLOSSARY: List[Tuple[str, str, Tuple[str, ...]]] = [
+    ("Stage", "One agent's turn: you answer its questions, it drafts, you review and approve.", ALL),
+    ("Gate", "The point where a draft waits for a person. Nothing is saved until someone approves.", ALL),
+    ("Blocked in its current form",
+     "The product cannot go ahead as described until a blocking decision is taken. It says nothing about "
+     "the stage or the agent being stuck.", ALL),
+    ("Decision, or open issue (ISSUE-1)",
+     "Something only a person can settle, with its options and who should decide.", ALL),
+    ("Priority", "Critical, high, medium or low. Computed by code from how severe and how likely a risk is; "
+                 "the model never sets it.", ALL),
+    ("Provenance", "The record of how a draft was produced: the model, the excerpts it was given, which "
+                   "attempt was approved and by whom.", ALL),
+    ("Tier", "Where a legal instrument places the product: minimal, limited, high or prohibited in the EU "
+             "AI Act; not listed, high or excessive in the Brazilian bill.", ("risk_classifier",)),
+    ("Obligation (eu.art14, br.rights)",
+     "A legal duty that follows from the tier and your role. The prefix says which instrument: eu for the "
+     "EU AI Act, br for PL 2338/2023, a bill.", ("risk_classifier", "requirements_reviewer")),
+    ("Risk, or finding (RC-F1)",
+     "Something that could go wrong for someone, placed on how severe and how likely it is.",
+     ("risk_classifier", "story_refiner", "auditor")),
+    ("Gap", "An obligation or a principle that no requirement or control of yours covers yet.",
+     ("requirements_reviewer",)),
+    ("Ethical value requirement (EVR-1)",
+     "A requirement that protects a value for a named group of people, written so that it can be checked.",
+     ("requirements_reviewer", "story_refiner", "auditor")),
+    ("Fit criterion", "The test that tells whether a requirement is met: a measurement, a test, an audit or "
+                      "an inspection.", ("requirements_reviewer",)),
+    ("RAI story (RAI-1), product story (US-1)",
+     "An RAI story was written to implement a requirement. A product story is your own, with ethical "
+     "criteria added to it.", ("story_refiner", "auditor")),
+    ("Ethical acceptance criterion (AC-US-1-1)",
+     "A condition added to a story, with a threshold, the evidence that shows it holds and who produces it. "
+     "Your own criteria keep their wording and are numbered US-1-E1, E2 and so on.", ("story_refiner", "auditor")),
+    ("ECCOLA card (#5)",
+     "A set of questions from the ECCOLA method, chosen by what a story touches. The number is the card's.",
+     ("story_refiner",)),
+    ("Goal (F2, T2, A5)",
+     "A goal of the Microsoft Responsible AI Standard v2 that a criterion serves. The letter is the family: "
+     "A accountability, T transparency, F fairness, RS reliability and safety, PS privacy and security, "
+     "I inclusiveness.", ("story_refiner",)),
+    ("Verdict", "Satisfied, partially satisfied, at risk or not verified. Without evidence the answer is "
+                "not verified, whatever was ticked done.", ("auditor",)),
+    ("Opinion", "The audit's overall rating, computed by code and never better than the evidence allows.",
+     ("auditor",)),
+]
+
+
+def glossary_for(stage: str) -> List[Tuple[str, str]]:
+    """The terms a person meets on one stage's page, the general ones last."""
+    own = [(t, m) for t, m, where in GLOSSARY if stage in where]
+    return own + [(t, m) for t, m, where in GLOSSARY if not where]
+
+
 #: (heading, body) — what the menu at the top of the screen holds.
 MENU: List[Tuple[str, str]] = [
     ("Home", "Every project you belong to, with its risk level, progress and next step, and a "
@@ -65,17 +177,20 @@ class Step:
 STEPS: List[Step] = [
     Step(
         "Create a project",
-        "Work happens in **projects**. On **Home**, open **New project** and pick one of the two "
+        "Work happens in **projects**. On **Home**, open **New project** and pick one of the three "
         "demo projects; every form in it is pre-filled, which is the quickest way to see every "
         "stage:\n\n"
-        "- **Resume screening** — a model ranks job applications and rejects the lowest "
-        "automatically. High risk under both laws, and blocked in its current form: you see what "
-        "stops a product and what unblocks it.\n"
+        "- **B2B marketplace** — in an ordering app for small shops, models recommend products and "
+        "choose the promotions each shop sees. Outside the high-risk lists of both instruments: "
+        "you see what is left to manage when the legal tier says minimal.\n"
         "- **Customer-support assistant** — a third-party language model answers customers and "
         "proposes refunds a person confirms. Limited risk: transparency duties, a deployer's "
-        "obligations, and a clean path to sprints.\n\n"
-        "Try one, then the other. You can also create an empty project and describe a product you "
-        "know; on any form, **Load an example** fills in either case.",
+        "obligations, and a clean path to sprints.\n"
+        "- **Resume screening** — a model ranks job applications and rejects the lowest "
+        "automatically. High risk under both instruments, and blocked in its current form: you "
+        "see what stops a product and what unblocks it.\n\n"
+        "Start with the one closest to your work. You can also create an empty project and "
+        "describe a product you know; on any form, **Load an example** fills in any of the cases.",
         ("home", "Go to Home"),
     ),
     Step(
@@ -89,7 +204,11 @@ STEPS: List[Step] = [
         "- **How the AI works** asks which techniques it uses (rules, machine learning, "
         "generative AI...), where in the product the AI acts, and where the model comes from.\n"
         "- The remaining groups are dropdowns and checklists: your role, the markets, the "
-        "purpose, how decisions are made, the data, and the lifecycle stage.\n\n"
+        "purpose, how decisions are made, the data, and the lifecycle stage.\n"
+        "- **Less common situations** is closed, and its answers are \"no\" unless you change "
+        "them. Open it if the product is deployed by a public body, is a general-purpose AI "
+        "model you provide, is a safety component of a regulated product, or if you intend to "
+        "claim the narrow-task exemption.\n\n"
         "Fields marked **\\*** are required. Answers are saved to the project as you type, so "
         "you can leave and come back.",
     ),
@@ -157,7 +276,9 @@ STEPS: List[Step] = [
         "know which one you are working with. Each stage builds on the ones approved before it, "
         "so a stage whose inputs are not approved yet says **Waiting on upstream** and cannot "
         "run. The table below says what each agent asks of you.\n\n"
-        "In the **Requirements Reviewer**, first tick the controls you already have, then press "
+        "In the **Requirements Reviewer**, paste your requirements if you have them written (you "
+        "can leave them empty: every obligation and principle is then a gap), tick the controls "
+        "you already have, then press "
         "**Recommend ethical requirements**. RAIA pre-fills the stakeholder and principle "
         "questions you left empty from the approved classification (each value says why) and "
         "proposes a few candidate requirements for the gaps that remain. **Adopt**, edit or "
@@ -225,10 +346,12 @@ STEPS: List[Step] = [
         "stages (**Decided**). Take an open one, or mark it resolved or accept the risk, noting "
         "what was decided.\n"
         "- **Documents** — each approved artifact with its provenance (model, corpus version, "
-        "attempt, edits, checks), **Download project**, and **Download AI Skill**: a skill your "
-        "own AI assistant can follow to apply these results to a real backlog and Jira. Open "
-        "`README_FIRST.md` and `raia-responsible-ai/SKILL.md` in it; if you can, give it to an "
-        "assistant you use with a few backlog items and see what it does.\n"
+        "attempt, edits, checks), **Download project**, and **Download AI Skill**: instructions "
+        "an AI assistant you are allowed to use can follow to apply these results to a real "
+        "backlog, tickets and product documents. Choose the format (Cursor, ChatGPT, Claude, or "
+        "one Markdown file for any assistant) and open `README_FIRST.md`. The skill has a fixed "
+        "part, the same for every project, and a project part you replace after new approvals. "
+        "It is yours to use freely and is not part of the assessment.\n"
         "- **Activity** — the version history and the project log.",
     ),
     Step(
@@ -239,11 +362,16 @@ STEPS: List[Step] = [
     ),
     Step(
         "Complete the assessment",
-        "Open **Assessment** in the top menu. It asks five required statements (utility, "
-        "completeness, usability, methodological rigor, generalizability), one required statement "
-        "for each stage and one on the AI Skill, optional profile questions, and three open "
-        "questions. About ten minutes; you can "
-        "save a draft and come back. It is the most useful thing you can leave behind.",
+        "Open **Assessment** in the top menu once you have gone through the software; a demo "
+        "project is enough. The page shows what you have used so far. It asks five required "
+        "statements (utility, completeness, usability, methodological rigor, generalizability), "
+        "each with a line saying where to look, and one statement for each stage, which you can "
+        "answer **Did not use this stage**. Three optional profile questions and three open "
+        "questions follow. Negative feedback is as useful as positive, and a reason helps either "
+        "way. About ten minutes; you can save a draft and come back.\n\n"
+        "Your answers are about the software, not about a project: an assessment names no "
+        "project, and it is stored under a participant code apart from your projects. The "
+        "download you may have taken from **Download AI Skill** is not rated.",
         ("assessment", "Open the assessment"),
     ),
     Step(
@@ -409,6 +537,11 @@ def markdown() -> str:
         "",
     ]
     out += [f"- **{head}** — {body}" for head, body in MENU]
+    out += ["", f"## {EVALUATION_PATH_TITLE}", "", EVALUATION_PATH_LEAD, ""]
+    out += [f"{n}. **{head}.** {body}" for n, (head, body) in enumerate(EVALUATION_PATH, 1)]
+    out += ["", ADVICE]
+    out += ["", f"## {SCOPE_TITLE}", ""]
+    out += [f"- **{head}** {body}" for head, body in SCOPE]
     out += ["", "## Step by step", ""]
     for n, step in enumerate(STEPS, 1):
         out += [f"### {n}. {step.title}", "", step.body, ""]
@@ -420,6 +553,8 @@ def markdown() -> str:
     out += [f"| {a} | {b} | {c} | {d} |" for a, b, c, d in agent_rows()]
     out += ["", "Stage statuses:", ""]
     out += [f"- **{s}** — {d}" for s, d in STATUSES]
+    out += ["", "## Words RAIA uses", ""]
+    out += [f"- **{term}** — {meaning}" for term, meaning, _ in GLOSSARY]
     out += ["", "## What to look for", "",
             "These are what the study is asking you about.", ""]
     out += [f"- **{head}** {body}" for head, body in LOOK_FOR]

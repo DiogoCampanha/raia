@@ -104,9 +104,10 @@ artifact.
 
 0. **Sign in and open a project.** *My projects* lists the projects you own or
    were invited to, with each one's progress derived from its approved
-   artifacts. Create one, start from one of the two pre-filled demo projects
-   (resume screening: high risk and blocked; a customer-support assistant:
-   limited risk), or accept an invitation. Everything below happens inside the open project, and your form
+   artifacts. Create one, start from one of the three pre-filled demo projects
+   (a B2B marketplace: outside the high-risk lists; a customer-support
+   assistant: limited risk; resume screening: high risk and blocked), or accept
+   an invitation. Everything below happens inside the open project, and your form
    answers are saved to it as you type.
 1. **See what the stage receives, and fill in the structured form.** From the
    second stage on, *What this stage receives* lists the upstream work it
@@ -151,9 +152,13 @@ artifact.
    their sign-in email as **editor** (runs agents, approves) or **reviewer**
    (reviews and approves, does not run agents), and can require a **second
    approver**, so the person who ran a stage cannot approve it.
-9. **Assessment** — one page in the top menu: consent, optional profile, the
-   evaluation plan's five dimensions on a five-point scale, one required item
-   per stage, one on the AI Skill and open questions, with drafts.
+9. **Assessment** — one page in the top menu, about the software only: what
+   you have used so far, consent, three optional profile questions, the
+   evaluation plan's five dimensions on a five-point scale (each with a line
+   saying where to look), one answer per stage (a score, or *Did not use this
+   stage*) and open questions, with drafts. An assessment names no project: it
+   is stored with what its author used, and leaves in the research export under
+   a participant code of its own.
 10. **Work the action plan** — the Project page gathers every action from every
    approved record, sorted by computed priority, filterable by owner and stage,
    and exports it as CSV or JSON.
@@ -163,14 +168,21 @@ artifact.
 12. **Export a project** — artifacts, structured records, the action plan,
    version history with its integrity check, and pseudonymized activity, in one zip.
 13. **Continue with your own AI assistant** — *Download AI Skill* (Documents
-   tab) packs a portable skill, an `AGENTS.md` for your repository and the
-   project's approved outputs. An assistant your organisation already approves
-   then reads RAIA's records, applies them to your real backlog and Jira
-   (triage, ethical acceptance criteria, sprint suggestions, self-audits,
-   Jira CSV) with RAIA's rules, and says when a change needs a new RAIA run.
-   Teams that can give RAIA only a generic description reconcile it with the
-   real product as the first step. No research data is included. See
-   [`docs/ai-skill/`](docs/ai-skill/).
+   tab), in four formats: Cursor, ChatGPT, Claude, or one Markdown file for any
+   assistant. The skill has two parts. The **fixed part** (`SKILL.md` and its
+   references) is the same for every project and every download of a version,
+   and nobody edits it. The **project part** is this project's approved outputs
+   and `PROJECT_CONTEXT.md`, replaced after new approvals. An assistant a
+   person is allowed to use then applies RAIA's records to the real backlog,
+   tickets and product documents (triage, ethical acceptance criteria, document
+   review, sprint suggestions, self-audits, a one-page brief, tracker export)
+   with RAIA's rules, and says when a change needs a new RAIA run. Teams that
+   can give RAIA only a generic description reconcile it with the real product
+   as the first step. With no RAIA project at all, the assistant screens the
+   product itself with the rule engine's tables and labels the result
+   self-assessed. The text names no assistant and assumes no connection to a
+   tracker. No research data is included, and the skill is not part of the
+   assessment. See [`docs/ai-skill/`](docs/ai-skill/).
 
 ## How Reliability Is Handled
 
@@ -234,7 +246,7 @@ raia/
 ├── raia/
 │   ├── config.py              # env-driven settings; authority + source registries
 │   ├── fields.py              # the structured-intake field model
-│   ├── examples.py            # the two example cases (resume screening, customer-support assistant)
+│   ├── examples.py            # the three example cases (B2B marketplace, customer-support assistant, resume screening)
 │   ├── llm.py                 # provider-agnostic factory, retry, contract-aware mock
 │   ├── rag.py                 # retrieval with pinned excerpts and excerpt ids
 │   ├── rationale/             # the deterministic decision procedures
@@ -274,7 +286,7 @@ raia/
 │   ├── pipeline.py            # the graph: generate → human gate → persist
 │   ├── sanitize.py            # injection screening (EN + PT), flag-never-delete
 │   ├── export.py              # one-zip project export, and the AI Skill download
-│   ├── skill/                 # the AI Skill: instructions and references (text/ + build.py),
+│   ├── skill/                 # the AI Skill: the fixed part and the four formats (text/ + build.py),
 │   │                          #   PROJECT_CONTEXT.md from the blackboard (context.py)
 │   └── agents/                # the four agent specifications (and the Refiner's generate mode)
 ├── corpus/                    # curated normative summaries (extensible)
@@ -282,7 +294,7 @@ raia/
 │   ├── architecture.md        # diagrams and the traceability table
 │   ├── output-contract.md     # the standard record every agent produces
 │   ├── agents/                # one generated agent card per agent
-│   ├── ai-skill/              # the AI Skill as downloaded, without a project (generated)
+│   ├── ai-skill/              # the AI Skill without a project: fixed part, install notes, single file (generated)
 │   ├── schema/                # published JSON Schemas of the record
 │   ├── templates/             # agent card and project-log entry templates
 │   ├── PROJECT_LOG.md         # what was wrong, what was decided, what changed
@@ -296,7 +308,7 @@ raia/
     ├── test_projects.py       # isolation, roles, durability, tamper evidence
     ├── test_backlog.py        # the sprint cycle: generate, plan, tick, audit, close, change control
     ├── test_jira.py           # optional Jira: CSV, push, sync, token privacy (mock Jira)
-    ├── test_skill.py          # the AI Skill: generated from the code, portable, no research data
+    ├── test_skill.py          # the AI Skill: generated from the code, frozen fixed part, four formats, no research data
     └── test_ui.py             # headless walkthrough of the project-based UI
 ```
 
@@ -333,7 +345,7 @@ only when its file really is the official wording.
 | `RAIA_STORE` | `git` locally, `database` with PostgreSQL | where project blackboards live |
 | `RAIA_AUTH` | `google` if `[auth]` is set | `dev` must be set explicitly; with neither, the app refuses to open |
 | `RAIA_ADMIN_EMAILS` | — | may download the pseudonymized research dataset |
-| `RAIA_PSEUDONYM_KEY` | — | keyed participant codes, stable across exports |
+| `RAIA_PSEUDONYM_KEY` | — | keyed participant codes, stable across exports; the research export is refused until it is set |
 | `RAIA_JIRA_KEY` | — | optional: encrypts a person's Jira API token; without it the token is kept for the session only |
 | `RAIA_TRANSCRIPT_KEY` | — | encrypts the exact prompt and raw replies of every run, for reproducibility (comma-separated keys: the first encrypts, all decrypt). Without it only the prompt hash and token use are kept |
 | `RAIA_LOG_LEVEL` | `INFO` | JSON logs on stderr; security-relevant actions also go to the `audit_log` table |

@@ -1,6 +1,6 @@
 # Templates
 
-Use these formats so what you produce can go straight into the backlog, and back into RAIA.
+Use these formats so what you produce can go straight into the backlog or a document, and back into RAIA. The examples use ids from a RAIA project; without a project part, trace to a principle instead.
 
 ## Triage table (P1)
 
@@ -54,7 +54,17 @@ AC-RAI-new-1-1  [T2 · candidates · evidence: notice text + screenshot · owner
 
 ## Ethical acceptance criterion
 
+Full format, for a record or a review:
+
 `AC-<story>-<n>  [<MS goal> · <stakeholder group> · evidence: <artifact> · owner: <role> · <EVR ids>]  <measurable condition with threshold>`
+
+Plain format, for the text of a ticket. The condition in the team's own style (Given / When / Then if that is what they use), then one line that keeps the trace:
+
+```
+Given a shop opens its offers, when an offer was chosen by the model, then the screen says offers are
+personalised and links to how to ask why.
+Evidence: screenshot of the notice. Owner: product.   (AC-US-12-1 · EVR-3 · T2)
+```
 
 ## Decision for a person
 
@@ -81,7 +91,72 @@ Backlog enough? No: EVR-9 (legal, eu.art14) has no story.
 Strengths (max 3, each resting on a satisfied item) · Risks · Next focus (one sentence)
 ```
 
-## Jira
+## Document review (P8)
+
+```
+Review · <document title> · <date>            Rests on: RAIA record | own screen (self-assessed)
+What it proposes: <one sentence>
+
+| # | Gap | Where in the document | Concerns | What would close it |
+|---|---|---|---|---|
+| 1 | Nobody can intervene in an individual offer | "Offer selection" | EVR-7 · human oversight | A sentence naming who can override an offer, and how |
+
+Questions for the author: <what the document does not say and the screen needs>
+Decisions for a person: <table below>
+```
+
+## "Responsible AI" section for a product document (P8)
+
+```
+Responsible AI
+Where AI acts: <what the model produces or decides, and what happens next>
+Who is affected: <users; people affected without using it; groups in a vulnerable position>
+Tier: <per instrument, whether it binds, and whether from a RAIA record or self-assessed>
+Risks we are managing: <up to three, each with the requirement or criterion that answers it>
+Human oversight: <who can intervene in an individual case, and how>
+What people are told: <notice, explanation, how to contest>
+Evidence we will produce: <artifact · owner role>
+Open decisions: <decision · owner role · blocking or not>
+```
+
+## Board check (P9)
+
+```
+Board check · <scope> · <date>
+AI items with no ethical criterion: <n> · EVRs (or principles) with no item: <n> · Held by a decision: <n>
+· RAI stories idle two sprints or more: <n> · Criteria with no evidence named: <n>
+
+| Item | Problem | Concerns | Next step |
+|---|---|---|---|
+
+Next steps (at most five), most pressing first.
+```
+
+## One-page brief (P10)
+
+```
+<Product> · Responsible AI brief · <date>     Rests on: RAIA record (approved <date>) | own screen (self-assessed)
+What it does with AI: <two sentences>
+Where it sits: <instrument: tier, binds or reference only>
+Most pressing risks: 1. … 2. … 3. …
+What answers them: <requirement or criterion · owner role · state>
+Decisions needed: <decision · from whom · blocking or not>
+Evidence: <what exists> / <what is still missing>
+Sources: <the instruments and frameworks behind the above, one line>
+```
+
+## Definition-of-done additions (P11)
+
+Propose only the lines the product's tier and data call for:
+
+- Every story that touches AI has at least one ethical criterion, and each criterion names its evidence.
+- The evidence named in the criteria is attached to the ticket before the story is called done.
+- Where outputs differ between groups of people, the difference was measured and is within the agreed threshold.
+- Anyone affected is told AI is involved, where the story changes what they see.
+- A person can intervene in an individual case, where the story automates a decision about someone.
+- No blocking decision linked to the story is open.
+
+## Tracker export (P6): Jira
 
 Summary: `[<story id>] <title>`. Labels: `raia`, `raia-<story id>`, `raia-<sprint id>` when scheduled, `raia-ethics` for RAI stories. The description carries the story, its requirement links and its criteria, each with its id. A CSV for Jira's importer looks like this (one `Labels` column per label; `Story Points` only when stories are estimated):
 

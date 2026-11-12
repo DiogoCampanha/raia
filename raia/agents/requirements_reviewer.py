@@ -101,9 +101,12 @@ class RequirementsReviewerAgent(BaseAgent):
         verdict_keys=["gap_count"],
         input_fields=[
             InputField(
-                key="requirements", label="Software requirements", group=G_REQS, required=True,
+                key="requirements", label="Software requirements", group=G_REQS,
                 height=220,
-                help="Paste the current functional and non-functional requirements, one per line.",
+                help="Paste the current functional and non-functional requirements, one per line. If "
+                     "none are written yet, leave this empty: every obligation and principle is then a "
+                     "gap, and Recommend ethical requirements proposes candidates you adopt, edit or reject.",
+                placeholder="e.g. R1. The app shall show each shop a ranked list of recommended products.",
             ),
             InputField(
                 key="requirement_format", label="How are they written?", kind="select",
@@ -129,7 +132,7 @@ class RequirementsReviewerAgent(BaseAgent):
                      "address it — your judgement overrides the lexical check.",
             ),
             InputField(
-                key="stakeholders", label="Whose values were elicited?",
+                key="stakeholders", label="Whose views were taken into account when defining the product?",
                 kind="multiselect", group=G_VALUES, required=True,
                 options=coverage.STAKEHOLDER_OPTIONS,
                 help="Value elicitation that omits the people a decision is made about is incomplete, "

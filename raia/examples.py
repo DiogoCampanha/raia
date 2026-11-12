@@ -10,7 +10,7 @@ procedures read. An example that only filled in the text boxes would
 demonstrate the old behaviour — a model inferring everything from prose — which
 is exactly what the walkthrough is meant to show has changed.
 
-Two cases, chosen to sit at opposite ends of every scale:
+Three cases, chosen so that each takes a path through the rules the others never touch:
 
 * **Resume screening** (``resume_screening``, the default) — deliberately a hard
   one: an employment system is high-risk under both regimes, it is fully
@@ -22,6 +22,15 @@ Two cases, chosen to sit at opposite ends of every scale:
   person confirms. Limited risk (transparency duties) in the EU, outside the
   listed high-risk areas in Brazil: it takes the deployer, third-party-model and
   transparency paths the first case never touches, with nothing blocking.
+
+* **B2B marketplace** (``b2b_marketplace``) — an ordering app in which models
+  recommend products to small shops and choose the promotions each shop sees.
+  Outside every listed high-risk area, live in production, sold in Brazil and
+  other markets but not in the EU, fully automated with nobody reviewing an
+  individual offer. It is the case most commercial products resemble: the legal
+  tier says "minimal" and "not listed", nothing blocks, and the work that
+  remains comes from the principles (who gets which discount, and whether a shop
+  can know or ask why) rather than from a list of obligations.
 
 ``EXAMPLES`` is the default case's answers per agent, for callers that only
 need one scenario.
@@ -252,14 +261,129 @@ SUPPORT_ASSISTANT: Dict[str, Dict[str, Any]] = {
     },
 }
 
+B2B_MARKETPLACE: Dict[str, Dict[str, Any]] = {
+    "risk_classifier": {
+        "product_brief": (
+            "ShelfLink is an ordering app that small retailers (corner shops, bars, restaurants) use "
+            "to buy stock from distributors. Machine-learning models recommend products to each shop "
+            "and choose which promotions and discount levels each shop is shown."
+        ),
+        "ai_output": (
+            "A ranked list of recommended products on each shop's home screen, and the promotions and "
+            "discount level offered to that shop. Both are shown automatically; no person reviews what "
+            "an individual shop is offered."
+        ),
+        "intended_use": (
+            "Used in Brazil and other Latin American markets by shop owners and their staff whenever "
+            "they place an order: about 200,000 shops a month. Commercial teams set campaign budgets "
+            "and rules; the models decide which shop sees which offer."
+        ),
+        "target_users": (
+            "Users: shop owners and staff who order through the app. Affected: the same shops, many of "
+            "them sole traders, whose offers differ from their neighbours'; shops in lower-income areas, "
+            "which never see an offer the model does not select for them; and the distributors and "
+            "brands whose products are ranked higher or lower."
+        ),
+        "out_of_scope": (
+            "Not for setting credit limits or payment terms, not for refusing or delaying service to a "
+            "shop, and not for assessing sales staff."
+        ),
+        "ai_techniques": ["machine_learning"],
+        "ai_pipeline": ["scoring", "decision"],
+        "model_source": "in_house",
+        "role": "both",
+        "markets": ["br", "other"],
+        "public_sector": "no",
+        "gpai_provider": "no",
+        "purpose_areas": ["none"],
+        "annex_i_product": "no",
+        "prohibited_practices": ["none"],
+        "transparency_triggers": ["none"],
+        "decision_autonomy": "fully_automated",
+        "significant_effects": "unsure",
+        "human_oversight": "monitoring_only",
+        "data_categories": ["location", "proxies"],
+        "deployment_stage": "production",
+        "profiling": "yes",
+        "art63_claim": "no",
+    },
+    "requirements_reviewer": {
+        "requirements": (
+            "R1. The app shall show each shop a ranked list of recommended products on its home screen.\n"
+            "R2. The promotion engine shall select, for each shop, the offers most likely to increase its order value.\n"
+            "R3. Recommendations and offers shall refresh at least once a day.\n"
+            "R4. Commercial teams shall be able to set a budget and eligibility rules per campaign.\n"
+            "R5. Conversion and discount spend shall be reported per campaign and per region."
+        ),
+        "requirement_format": "numbered",
+        "existing_controls": ["logging", "governance"],
+        "constraints": (
+            "Campaigns are agreed with brand partners a quarter ahead. The data team can run one new "
+            "offline analysis per sprint."
+        ),
+        "values_at_stake": ["fairness", "transparency"],
+        "stakeholders": ["users", "subjects", "vulnerable"],
+    },
+    "story_refiner": {
+        "user_stories": [
+            {"id": "SL-1", "title": "Recommended for your shop",
+             "description": "As a shop owner, I want to see products recommended for my shop so that I can "
+                            "place my order faster.",
+             "acceptance_criteria": "The home screen shows 12 recommended products\n"
+                                    "The list refreshes once a day",
+             "capabilities": ["personalization", "scoring"]},
+            {"id": "SL-2", "title": "Personalised discount",
+             "description": "As a commercial manager, I want each shop to receive the discount level most "
+                            "likely to grow its order so that the campaign budget is spent where it converts.",
+             "acceptance_criteria": "The discount level for each shop is set by the model, with no manual review\n"
+                                    "Shops are not told that offers differ from shop to shop",
+             "capabilities": ["personalization", "automation", "scoring"]},
+            {"id": "SL-3", "title": "Campaign results dashboard",
+             "description": "As a commercial manager, I want conversion and spend per campaign so that I can "
+                            "report results to brand partners.",
+             "acceptance_criteria": "Shows conversion and discount spend per campaign and per region",
+             "capabilities": ["analytics"]},
+        ],
+        "sprint_goal": "Launch personalised discounts for the quarter's campaigns",
+        "definition_of_done": (
+            "Merged behind a feature flag, tests green, offline evaluation attached to the ticket, "
+            "campaign owners briefed."
+        ),
+    },
+    "story_generate": {
+        "scope": "short",
+        "definition_of_done": (
+            "Merged behind a feature flag, tests green, offline evaluation attached to the ticket, "
+            "campaign owners briefed."
+        ),
+    },
+    "auditor": {
+        "sprint_id": "Sprint 14",
+        "sprint_outcomes": (
+            "Delivered the recommendation list (SL-1) with an offline evaluation and a report of discount "
+            "levels by region and by shop size attached to the ticket: the average discount was 9% in the "
+            "highest-income regions and 6% in the lowest. Personalised discounts (SL-2) shipped to 10% of "
+            "shops without the planned check of discount gaps between regions. Logging of which offer "
+            "each shop was shown, and why, was enabled."
+        ),
+        "evidence_types": ["test_results", "disaggregated", "audit_log"],
+        "planned_epics": (
+            "Next: a notice in the app that offers are personalised; a way for a shop to ask why it did "
+            "not receive an offer; a monthly review of discount gaps between regions."
+        ),
+    },
+}
+
 #: The example cases: what each is called, what it shows, and its answers per agent.
+#: Listed from the lightest legal tier to the heaviest, which is also the order
+#: Home offers them in.
 CASES: Dict[str, Dict[str, Any]] = {
-    "resume_screening": {
-        "title": "Resume screening",
-        "project_name": "Demo — resume screening",
-        "summary": "A model ranks job applications and rejects the lowest automatically.",
-        "shows": "High risk and blocked: see what stops a product, and what unblocks it.",
-        "agents": RESUME_SCREENING,
+    "b2b_marketplace": {
+        "title": "B2B marketplace",
+        "project_name": "Demo — B2B marketplace",
+        "summary": "Models recommend products and choose the promotions each small shop sees in an ordering app.",
+        "shows": "Outside the high-risk lists: what is left to manage when the legal tier says minimal.",
+        "agents": B2B_MARKETPLACE,
     },
     "support_assistant": {
         "title": "Customer-support assistant",
@@ -267,6 +391,13 @@ CASES: Dict[str, Dict[str, Any]] = {
         "summary": "A third-party language model answers customers and proposes refunds a person confirms.",
         "shows": "Limited risk: transparency duties, a deployer's obligations, and a clean path to sprints.",
         "agents": SUPPORT_ASSISTANT,
+    },
+    "resume_screening": {
+        "title": "Resume screening",
+        "project_name": "Demo — resume screening",
+        "summary": "A model ranks job applications and rejects the lowest automatically.",
+        "shows": "High risk and blocked: see what stops a product, and what unblocks it.",
+        "agents": RESUME_SCREENING,
     },
 }
 

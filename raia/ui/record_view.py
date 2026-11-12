@@ -174,7 +174,8 @@ def _signature(dg: Dict[str, Any]) -> str:
                             for i, step in enumerate(r["steps"]))
             out.append(f'<div class="sig-scale"><span class="sig-row-label">{esc(r["label"])}</span>'
                        f'<div class="sig-steps">{steps}</div>'
-                       f'<span class="rv-muted sig-note">{esc(r["note"])}</span></div>')
+                       f'<span class="rv-muted sig-note">'
+                       f'{esc(" · ".join(x for x in (r["note"], r.get("applies", "")) if x))}</span></div>')
     elif kind == "cells":
         out.append('<div class="sig-cells">' + "".join(
             f'<div class="sig-cell tone-{esc(c["tone"])}"><div class="l">{esc(c["label"])}</div>'

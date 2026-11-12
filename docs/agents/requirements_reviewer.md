@@ -30,12 +30,12 @@ Reviews the software requirements against the risk classification and derives ve
 
 | Group | Question | Kind | Required |
 |---|---|---|---|
-| Current requirements | Software requirements | textarea | yes |
+| Current requirements | Software requirements | textarea | no |
 | Current requirements | How are they written? | select | no |
 | What already exists | Which of these are already in place? | multiselect | yes |
 | What already exists | Delivery constraints | textarea | no |
 | Values and stakeholders | Which principles does your team believe are at stake? | multiselect | no |
-| Values and stakeholders | Whose values were elicited? | multiselect | yes |
+| Values and stakeholders | Whose views were taken into account when defining the product? | multiselect | yes |
 
 ## 5. What the decision procedure settles in code
 

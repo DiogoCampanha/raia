@@ -188,6 +188,9 @@ class AgentSpec:
     #: A mode of another agent (the Refiner's generate mode): it shares that
     #: agent's identity and place in the pipeline, and has its own record.
     parent: str = ""
+    #: Groups of questions that apply to few products. They are drawn closed, and
+    #: none of their fields may be required: a default answer must be a safe one.
+    collapsed_groups: List[str] = field(default_factory=list)
     mode_label: str = ""
     #: The words on the run button, when "Run <name>" would not say what the
     #: run does (the Refiner's two modes share one name).
