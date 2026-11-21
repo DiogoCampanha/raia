@@ -68,12 +68,18 @@ syncs its status back. See the sprint cycle in [`docs/architecture.md`](docs/arc
 
 ## Quick Start
 
+**Requirements.** Python 3.10 or later (CI tests 3.10 and 3.12) on macOS,
+Windows or Linux, x86-64 or ARM, and an API key for Claude (Anthropic) or
+OpenAI — or neither, in mock mode. `requirements.txt` is a lock that installs
+the same versions everywhere; on x86-64 Linux it also installs a modern SQLite
+for Chroma, which hosted platforms need.
+
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # 1. Configure the LLM
-cp .env.example .env          # add ANTHROPIC_API_KEY
+cp .env.example .env          # add ANTHROPIC_API_KEY (or OPENAI_API_KEY, see "Model providers")
 
 # 2. Build the normative RAG index (first run downloads a small embedding model)
 python ingest.py
@@ -99,6 +105,33 @@ can be exercised offline. What it cannot produce is a real analysis, which is
 why the app **refuses to serve mock output to an evaluator**: a tester who
 could not tell canned text from a real classification would evaluate the wrong
 artifact.
+
+### Model providers
+
+| `RAIA_LLM_PROVIDER` | Key | Default model (`RAIA_LLM_MODEL`) |
+|---|---|---|
+| `anthropic` (default) | `ANTHROPIC_API_KEY` | `claude-sonnet-5-5` — Claude Sonnet 5.5, the reference model |
+| `openai` | `OPENAI_API_KEY` | `gpt-6.2-sol` — GPT-6.2 Sol |
+| `mock` | none | canned records that satisfy the output contract |
+
+Both provider libraries are installed, so switching is a configuration change;
+set `RAIA_LLM_MODEL` to use another model of the same provider. On a hosted
+deployment, an OpenAI key on its own selects the `openai` provider. Provider
+model ids change: check the provider's model list before relying on a default.
+
+**No temperature is sent by default.** Claude Sonnet 5.5 refuses any
+`temperature`, `top_p` or `top_k`, and so do OpenAI's reasoning models, so the
+provider's own sampling applies. For a model that accepts one, set
+`RAIA_LLM_TEMPERATURE` (a low value such as `0.2` aids reproducibility); if the
+model refuses it anyway, RAIA retries once without it. Either way the
+provenance of every draft records the temperature actually sent (`null` when
+none was). Reproducibility therefore rests on the record itself: the prompt
+hash, the excerpt ids, the corpus version and, with `RAIA_TRANSCRIPT_KEY`, the
+sealed prompt and raw reply of every run.
+
+Claude Sonnet 5.5 thinks adaptively before it answers, and that thinking counts
+against `RAIA_LLM_MAX_TOKENS`; a reply cut off at the limit is detected and
+retried once with up to `RAIA_LLM_MAX_TOKENS_CEILING`.
 
 ## Using RAIA
 
@@ -165,8 +198,14 @@ artifact.
 11. **Follow the thread** — the Traceability tab shows, per obligation and
    requirement, which requirement answers it, which stories implement it and
    what the audit verified, gaps highlighted.
-12. **Export a project** — artifacts, structured records, the action plan,
-   version history with its integrity check, and pseudonymized activity, in one zip.
+12. **Export a project, or hand it on** — *Download project* (Documents tab):
+   artifacts, structured records, the action plan, version history with its
+   integrity check, and pseudonymized activity, in one zip. The **One-page
+   brief** beside it sums the project up for a manager, a squad or the legal
+   team — what the product does with AI, the tier per regime and whether it
+   binds, the most pressing risks, the requirements that answer them, the
+   decisions still needed and what has been verified — written by code from the
+   approved records, naming roles rather than people.
 13. **Continue with your own AI assistant** — *Download AI Skill* (Documents
    tab), in four formats: Cursor, ChatGPT, Claude, or one Markdown file for any
    assistant. The skill has two parts. The **fixed part** (`SKILL.md` and its
@@ -221,10 +260,12 @@ artifact.
   account for and declares, per item, `covered`, `not-applicable` or
   `not-grounded` with a reason. Being exhaustive is not the goal; being
   accountable is.
-- **(h) Reproducible provenance** — every artifact records the model,
-  temperature, corpus version, the id of every excerpt in the prompt, a prompt
+- **(h) Reproducible provenance** — every artifact records the provider and
+  model, the temperature actually sent (`null` when none was, the default),
+  the build, the corpus version, the id of every excerpt in the prompt, a prompt
   hash, which attempt was approved, whether a human edited it, the rejection
-  history, and the result of every check.
+  history, and the result of every check. With `RAIA_TRANSCRIPT_KEY` set, the
+  exact prompt and raw replies of each run are also kept, encrypted.
 - **(h′) A standard record** — the model returns JSON that must validate
   against its agent's schema; an invalid reply is sent back once (with its
   validation errors, or, when it was cut off at the token limit, with more room
@@ -238,25 +279,33 @@ artifact.
 ## Project Structure
 
 ```
-raia/
+.
 ├── app.py                     # entry point: sign-in, agreement, page registry (top menu)
+├── ingest.py                  # builds the Chroma normative index from corpus/
 ├── views/                     # one file per page: home, guide, project, stage, agents,
 │                              #   assessment, settings, research, legal, login, consent, signout
-├── ingest.py                  # Builds the Chroma normative index from corpus/
 ├── raia/
-│   ├── config.py              # env-driven settings; authority + source registries
+│   ├── __init__.py            # package version; swaps in a modern sqlite3 where one is installed
+│   ├── config.py              # env-driven settings; provider default models; authority, source,
+│   │                          #   curated-summary and proposed-law registries
+│   ├── deploy.py              # hosted secrets → environment (key aliases), runtime status, friendly errors
 │   ├── fields.py              # the structured-intake field model
 │   ├── examples.py            # the three example cases (B2B marketplace, customer-support assistant, resume screening)
-│   ├── llm.py                 # provider-agnostic factory, retry, contract-aware mock
+│   ├── llm.py                 # provider factory (Claude, OpenAI, mock), retry, temperature fallback
 │   ├── rag.py                 # retrieval with pinned excerpts and excerpt ids
+│   ├── agents/                # the four agent specifications, one module each, and the
+│   │                          #   Refiner's generate mode (story_generate.py); base.py runs the turn
 │   ├── rationale/             # the deterministic decision procedures
 │   │   ├── risk_screen.py     #   prohibitions, risk areas, obligation assembly
-│   │   ├── coverage.py        #   obligation × principle coverage matrix
-│   │   ├── story_map.py       #   ECCOLA card selection, story register
+│   │   ├── coverage.py        #   obligation × principle coverage matrix, suggestions
+│   │   ├── story_map.py       #   ECCOLA card selection, story register (refine mode)
+│   │   ├── story_seed.py      #   which requirements a generate run covers (generate mode)
 │   │   ├── traceability.py    #   evidence matching, NOT VERIFIED by code
-│   │   └── principles.py      #   the seven adopted principles, machine-readable
+│   │   ├── backlog_coverage.py#   whether the backlog covers the ethical risks
+│   │   ├── principles.py      #   the seven adopted principles, machine-readable
+│   │   └── types.py           #   the result every procedure returns (verdict, tables, pins, checklist)
 │   ├── contract/              # the standard RAIA record
-│   │   ├── vocab.py           #   closed vocabularies from the normative sources
+│   │   ├── vocab.py           #   closed vocabularies from the normative sources, record version
 │   │   ├── rubric.py          #   likelihood × magnitude matrix, priority floors
 │   │   ├── schema.py          #   shared core + one extension per agent
 │   │   ├── prompt.py          #   the contract as the model sees it
@@ -266,50 +315,69 @@ raia/
 │   │   ├── checks.py          #   record-level checks
 │   │   ├── review.py          #   card verdicts, overrides, decisions and the status they change
 │   │   ├── actions.py         #   project action plan and its exports
+│   │   ├── mock.py            #   the mock model's contract-conforming replies
 │   │   ├── export_schema.py   #   writes docs/schema/
 │   │   └── agent_cards.py     #   writes docs/agents/
-│   ├── validators.py          # citations, structure, coverage, reconciliation
+│   ├── validators.py          # citations, structure, coverage, reconciliation; check codes and audiences
 │   ├── provenance.py          # the run record stamped into every artifact (with the build id)
+│   ├── sealed.py              # encryption of run transcripts (RAIA_TRANSCRIPT_KEY), with key rotation
 │   ├── handoff.py             # what each stage receives, addresses and hands on; the Traceability thread
 │   ├── progress.py            # which step a running agent is on, for the working screen
 │   ├── repository.py          # blackboard behaviour + the Git backend
 │   ├── storage.py             # backend selection; hash-chained database blackboard
-│   ├── db.py                  # SQLite locally, PostgreSQL hosted — one SQL dialect
-│   ├── projects.py            # people, projects, roles, invitations, authorization
+│   ├── db.py                  # SQLite locally, PostgreSQL hosted — one SQL dialect, migrations
+│   ├── projects.py            # people, projects, roles, invitations, authorization, assessments,
+│   │                          #   research export
+│   ├── people.py              # people named by reference (user:<id>), resolved for display
 │   ├── lineage.py             # stage dependencies and the derived "needs review" flag
 │   ├── backlog.py             # the backlog and sprints registers, and what approvals change
 │   ├── roadmap.py             # computed roadmap, progress, trend, rule-based sprint suggestion
+│   ├── brief.py               # the one-page project brief, written by code
 │   ├── jira.py                # optional: Jira CSV, push and sync (httpx)
-│   ├── ui/                    # routes, theme (CSS + icons), components, approval gate,
-│   │                          #   record view, agent docs, tester guide, assessment, legal page
+│   ├── logs.py                # structured JSON logs and the audit log
 │   ├── auth.py                # Google sign-in via Streamlit, or a local dev identity
-│   ├── pipeline.py            # the graph: generate → human gate → persist
+│   ├── pipeline.py            # the graph: generate → human gate → revise or persist
 │   ├── sanitize.py            # injection screening (EN + PT), flag-never-delete
 │   ├── export.py              # one-zip project export, and the AI Skill download
 │   ├── skill/                 # the AI Skill: the fixed part and the four formats (text/ + build.py),
 │   │                          #   PROJECT_CONTEXT.md from the blackboard (context.py)
-│   └── agents/                # the four agent specifications (and the Refiner's generate mode)
-├── corpus/                    # curated normative summaries (extensible)
+│   └── ui/                    # routes, theme (CSS + icons), components, approval gate, record view,
+│                              #   board and Jira panel, agent docs, guide, assessment, legal page
+├── corpus/                    # curated summaries of the six normative sources (extensible)
 ├── docs/
-│   ├── architecture.md        # diagrams and the traceability table
+│   ├── architecture.md        # UML diagrams and the traceability table
 │   ├── output-contract.md     # the standard record every agent produces
-│   ├── agents/                # one generated agent card per agent
+│   ├── agents/                # one generated agent card per agent and mode
 │   ├── ai-skill/              # the AI Skill without a project: fixed part, install notes, single file (generated)
-│   ├── schema/                # published JSON Schemas of the record
+│   ├── schema/                # published JSON Schemas of the record (generated)
 │   ├── templates/             # agent card and project-log entry templates
+│   ├── images/guide/          # the Guide's screenshots, taken from the app
 │   ├── PROJECT_LOG.md         # what was wrong, what was decided, what changed
-│   ├── legal/PRIVACY_AND_TERMS.md  # public privacy policy and user agreement
+│   ├── legal/PRIVACY_AND_TERMS.md  # public privacy policy and user agreement (also the /privacy page)
 │   └── TESTERS.md             # tester guide, generated from raia/ui/guide.py (also the Guide page)
-└── tests/
-    ├── smoke_test.py          # offline end-to-end, including the invariants
-    ├── test_engines.py        # deterministic unit checks
-    ├── test_contract.py       # the output contract: vocabularies, rubric, records, layout
-    ├── consistency_check.py   # run-to-run agreement of records (use a real model)
-    ├── test_projects.py       # isolation, roles, durability, tamper evidence
-    ├── test_backlog.py        # the sprint cycle: generate, plan, tick, audit, close, change control
-    ├── test_jira.py           # optional Jira: CSV, push, sync, token privacy (mock Jira)
-    ├── test_skill.py          # the AI Skill: generated from the code, frozen fixed part, four formats, no research data
-    └── test_ui.py             # headless walkthrough of the project-based UI
+├── static/fonts/              # the self-hosted fonts and their licences
+├── tests/
+│   ├── test_suites.py         # pytest entry: runs every suite below in its own process, on both stores
+│   ├── smoke_test.py          # offline end-to-end, including the invariants
+│   ├── test_engines.py        # deterministic unit checks, providers and temperature fallback
+│   ├── test_contract.py       # the output contract: vocabularies, rubric, records, layout
+│   ├── test_projects.py       # isolation, roles, durability, tamper evidence
+│   ├── test_backlog.py        # the sprint cycle: generate, plan, tick, audit, close, change control
+│   ├── test_jira.py           # optional Jira: CSV, push, sync, token privacy (mock Jira)
+│   ├── test_skill.py          # the AI Skill: generated from the code, frozen fixed part, four formats, no research data
+│   ├── test_ui.py             # headless walkthrough of the project-based UI
+│   ├── consistency_check.py   # run-to-run agreement of records (use a real model)
+│   ├── browser_check.py       # the page stays still, in headless Chromium (Playwright)
+│   └── guide_screenshots.py   # re-takes the Guide's screenshots (Playwright)
+├── .github/workflows/ci.yml   # tests on Python 3.10 and 3.12 with PostgreSQL 16, coverage, dependency audit
+├── .streamlit/                # theme (config.toml) and the hosted secrets template
+├── .devcontainer/             # a ready Codespaces / dev container (Python 3.12)
+├── requirements.in            # direct dependencies and their allowed ranges
+├── requirements.txt           # the lock generated from it (install from this)
+├── requirements-dev.txt       # test and CI tools
+├── .pip-audit-ignore          # advisories accepted after review, each with its reason
+├── CITATION.cff               # how to cite this software
+└── LICENSE                    # MIT
 ```
 
 ## Extending the Normative Corpus
@@ -321,29 +389,31 @@ Drop a richer `.md` into `corpus/`, register the source key in
 Two cautions. Sections pinned by a decision procedure are matched by their
 exact heading text, so renaming a heading silently removes a pin — the smoke
 test checks every pin still resolves, and it will tell you. And sources listed
-in `config.DERIVED_SOURCES` are labelled in the prompt and at the gate as
-curated summaries rather than official texts; move a source out of that set
-only when its file really is the official wording.
+in `config.DERIVED_SOURCES` are labelled in the prompt, at the gate and in the
+evidence as curated summaries rather than official texts. Today all six files
+are curated summaries, the two legal texts included; move a source out of that
+set only when its file really is the official wording.
 
 ## Configuration Reference
 
 | Var | Default | Notes |
 |---|---|---|
-| `RAIA_LLM_PROVIDER` | `anthropic` | `anthropic` \| `openai` \| `mock` |
-| `RAIA_LLM_MODEL` | `claude-sonnet-5` | |
-| `RAIA_LLM_TEMPERATURE` | `0.2` | low for reproducibility; `none` omits it (models that reject a temperature are also detected and retried without it) |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | — | the key of the provider in use (hosted secrets also accept common aliases, e.g. `LLM_API_KEY`) |
+| `RAIA_LLM_PROVIDER` | `anthropic` | `anthropic` \| `openai` \| `mock`; an OpenAI key on its own selects `openai` on a hosted deployment |
+| `RAIA_LLM_MODEL` | per provider | `claude-sonnet-5-5` (anthropic), `gpt-6.2-sol` (openai) |
+| `RAIA_LLM_TEMPERATURE` | not sent | a number for a model that accepts one; a model that refuses it is retried without it, and provenance records what was sent |
 | `RAIA_LLM_MAX_TOKENS` | `16384` | a standard record for a high-risk system is long; truncation is detected, not tolerated |
 | `RAIA_LLM_MAX_TOKENS_CEILING` | `32000` | the budget one retry may raise to after a reply was cut off |
 | `RAIA_LLM_RETRIES` | `2` | transient provider failures only |
+| `RAIA_LLM_RETRY_BASE_DELAY` | `2.0` | seconds; doubled on each retry |
 | `RAIA_CONTRACT_REPAIRS` | `1` | a reply that does not validate against the record schema is returned with its errors this many times |
 | `RAIA_RAG_TOP_K` | `12` | plus the excerpts each procedure pins |
 | `RAIA_RAG_CHUNK_SIZE` / `_OVERLAP` | `1800` / `200` | chars, at ingestion |
-| `RAIA_MIN_GROUP_SAMPLES` | `30` | below this, a group figure is indicative only |
-| `RAIA_DEFAULT_PARITY_THRESHOLD` | `0.1` | used only when no approved artifact sets one |
 | `RAIA_WORKSPACE_DIR` | `./workspace` | local git blackboards and SQLite registry (git-ignored) |
 | `RAIA_DATABASE_URL` | SQLite under the workspace | PostgreSQL URL (e.g. Neon) for a shared deployment |
 | `RAIA_STORE` | `git` locally, `database` with PostgreSQL | where project blackboards live |
 | `RAIA_AUTH` | `google` if `[auth]` is set | `dev` must be set explicitly; with neither, the app refuses to open |
+| `RAIA_DEV_USER_EMAIL` / `_NAME` | `developer@raia.local` / `Local developer` | the fixed identity of `RAIA_AUTH=dev` |
 | `RAIA_ADMIN_EMAILS` | — | may download the pseudonymized research dataset |
 | `RAIA_PSEUDONYM_KEY` | — | keyed participant codes, stable across exports; the research export is refused until it is set |
 | `RAIA_JIRA_KEY` | — | optional: encrypts a person's Jira API token; without it the token is kept for the session only |
@@ -352,6 +422,8 @@ only when its file really is the official wording.
 | `RAIA_CONTACT_EMAIL` | — | contact shown on the public Privacy & terms page (`/privacy`) |
 | `RAIA_MAX_RUNS_PER_DAY` | `60` | model calls per person per UTC day; `0` = unlimited |
 | `RAIA_CORPUS_DIR` / `RAIA_CHROMA_DIR` | `./corpus` / `./.chroma` | |
+| `RAIA_CHROMA_COLLECTION` | `raia_norms` | |
+| `RAIA_BUILD` | the Git commit | the build id stamped in every artifact and assessment (`<version>+<commit>`); set it where the deployment has no Git metadata |
 | `RAIA_FAKE_EMBED` | `0` | `1` = hash embeddings for CI / offline |
 | `RAIA_PROFILE` | `0` | `1` = log each page run's duration and database round trips (diagnosing a slow deployment) |
 
@@ -376,9 +448,18 @@ client_secret = "<client secret>"
 server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 ```
 
-Plus, recommended: `RAIA_ADMIN_EMAILS` (who may export research data) and
-`RAIA_PSEUDONYM_KEY` (a long random string). Tables are created on first
-start; there is no migration step to run.
+Plus `RAIA_ADMIN_EMAILS` (who may export research data) and
+`RAIA_PSEUDONYM_KEY` (a long random string; the research export refuses to run
+without it), and, as decided for the deployment, `RAIA_TRANSCRIPT_KEY` (keeps
+each run's prompt and raw replies, encrypted) and `RAIA_CONTACT_EMAIL` (shown on
+`/privacy`, the page to give Google's OAuth consent screen). To use OpenAI
+instead of Claude, paste `OPENAI_API_KEY` in place of `ANTHROPIC_API_KEY`.
+
+Choose Python 3.12 in the app's advanced settings (CI tests 3.10 and 3.12).
+Tables are created on first start, and later schema changes are applied
+automatically on start, once each, and recorded in `schema_migrations`; there
+is no migration step to run. The graph checkpointer creates its own tables in
+the same database.
 
 The app **fails closed**: with a database configured and no sign-in, it refuses
 to open rather than serving projects to anyone with the link. A review paused
@@ -419,7 +500,7 @@ python -m raia.skill.build                         # regenerate docs/ai-skill/ a
 python tests/consistency_check.py --agent risk_classifier --runs 5   # with a real provider
 ```
 
-Runs fully offline. Covers ingestion, pinned retrieval, stage gates, required
+The suites run fully offline (mock model, hash embeddings). The smoke test covers ingestion, pinned retrieval, stage gates, required
 inputs, every decision procedure, the human-review interrupt, the rejection
 loop, approval, provenance, sidecars, the open-issues register, restart
 recovery, the export bundle, and the deterministic unit checks. It asserts the
@@ -430,21 +511,34 @@ fabricated citation is detected, removed and recorded.
 
 - [x] Structured intake driving deterministic decision procedures, every agent
 - [x] Citation verification against retrieved excerpts
-- [x] Open Issues register with arbitration
-- [x] Reproducible provenance and structured artifact sidecars
+- [x] Open Issues register with arbitration, decisions taken on the cards
+- [x] Reproducible provenance, structured artifact sidecars and sealed run transcripts
 - [x] Input sanitization against prompt injection, including the artifact path
 - [x] Projects owned by signed-in people, with editor/reviewer invitations and an optional second approver
-- [x] One standard record for every agent, with a project action plan
-- [x] Durable, tamper-evident storage for hosted deployments (PostgreSQL, hash-chained versions)
+- [x] One standard record for every agent, with a project action plan and a one-page brief
+- [x] Durable, tamper-evident storage for hosted deployments (PostgreSQL, hash-chained versions and events)
+- [x] Sprints over one backlog, a project-wide audit and a computed roadmap; optional Jira Cloud (CSV, push, sync)
+- [x] AI Skill: continue with Cursor, ChatGPT, Claude or any assistant
+- [x] Claude and OpenAI as providers
+- [ ] Expert-panel evaluation (Design Science Research)
+- [ ] Python 3.11+, Streamlit 1.67 and Pillow 13 (clears the accepted Pillow advisories)
 - [ ] Ops layer: a fairness-drift monitor fed by production telemetry
 - [ ] Ingest the official legal texts with article-level citation metadata
-- [ ] Jira / Confluence integration via MCP connectors
+- [ ] Confluence, and Jira Server / Data Center
+- [ ] An API with background workers; projection tables and managed migrations; agents as plugins
 - [ ] Least-privilege tool-permission hardening
-- [ ] Expert-panel evaluation (Design Science Research)
 - [ ] Case studies in real development environments
+
+## Versions
+
+RAIA `0.3.0` (the build id adds the commit: `0.3.0+<sha>`) · records
+`raia-record/1.5` · artifact provenance `raia-artifact/1` · AI Skill fixed part
+`2.0.0` · assessment instrument `raia-panel-v3`.
 
 ## Citation & License
 
-MIT. See `docs/architecture.md` for diagrams and the traceability table between
-the architecture and the code, and `docs/PROJECT_LOG.md` for the record of what
-was wrong with earlier versions and what changed.
+MIT — see `LICENSE`. To cite this software, use `CITATION.cff` (GitHub's
+*Cite this repository*). See `docs/architecture.md` for diagrams and the
+traceability table between the architecture and the code, and
+`docs/PROJECT_LOG.md` for the record of what was wrong with earlier versions
+and what changed.

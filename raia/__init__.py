@@ -2,14 +2,14 @@
 RAIA -- Responsible AI Assistant
 ================================
 
-Reference implementation of the multi-agent architecture described in
-"RAIA: A Multi-Agent Architecture to Operationalize Responsible AI across
-the Software Development Life Cycle".
+Reference implementation of the RAIA architecture: a multi-agent, LLM-based
+software architecture that operationalizes Responsible AI across the software
+development life cycle.
 
 Package layout
 --------------
 * :mod:`raia.config`      -- environment-driven configuration.
-* :mod:`raia.llm`         -- provider-agnostic LLM factory (Claude by default).
+* :mod:`raia.llm`         -- provider-agnostic LLM factory (Claude by default, OpenAI supported).
 * :mod:`raia.rag`         -- Chroma RAG over the normative corpus.
 * :mod:`raia.repository`  -- the shared artifact repository (blackboard), Git backend.
 * :mod:`raia.storage`     -- backend selection; hash-chained database blackboard.
@@ -34,4 +34,4 @@ try:  # pragma: no cover - only takes effect on hosted Linux platforms
 except ImportError:
     pass
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "RAIA — Responsible AI Assistant"
+abstract: >-
+  A multi-agent, LLM-based software architecture that operationalizes
+  Responsible AI across the software development life cycle, implemented as a
+  working proof of concept: four agents in two layers (Product and Dev)
+  communicate only through a versioned shared artifact repository, each runs a
+  deterministic decision procedure before the model and validators after it,
+  and every output passes a mandatory human approval gate.
+authors:
+  - family-names: "Campanhã"
+    given-names: "Diogo Luís"
+    affiliation: "Universidade Presbiteriana Mackenzie"
+version: "0.3.0"
+license: MIT
+repository-code: "https://github.com/DiogoCampanha/raia"
+keywords:
+  - responsible AI
+  - AI governance
+  - multi-agent systems
+  - large language models
+  - software development life cycle
+  - EU AI Act
