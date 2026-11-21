@@ -15,15 +15,19 @@ Authlib>=1.3.2
 langgraph>=0.2.60
 langchain-core>=0.3
 
-# Reference LLM. Swap/add providers freely:
+# LLM providers (RAIA_LLM_PROVIDER): Claude is the reference model; OpenAI is
+# supported as well. Both are installed so switching is a configuration change.
 langchain-anthropic>=0.3
-# langchain-openai>=0.2   # uncomment to use OpenAI models
+langchain-openai>=1.0,<1.8   # 1.8 needs a newer langchain-core than the rest of the lock
 
 # RAG vector store
 chromadb>=0.5.5
 # Hosted platforms (Streamlit Community Cloud) ship an old system sqlite3;
-# this provides a modern one, swapped in by raia/__init__.py. Linux-only.
-pysqlite3-binary; sys_platform == "linux"
+# this provides a modern one, swapped in by raia/__init__.py. It publishes
+# wheels for x86-64 Linux only, which is what those platforms run; elsewhere
+# (macOS, Windows, ARM Linux such as a dev container on Apple Silicon) the
+# system sqlite3 is used and is recent enough.
+pysqlite3-binary; sys_platform == "linux" and platform_machine == "x86_64"
 
 # Data handling (the reviewer's record editor)
 pandas>=2.0

@@ -240,7 +240,9 @@ STEPS: List[Step] = [
         "Above the tabs, the **automated checks** speak only when there is something for you to "
         "do (**Before you approve**), each with why RAIA checks it. What code already corrected on "
         "its own — a citation to an excerpt that was not retrieved is removed, for example — is "
-        "listed in the technical log under **What the code computed**. Checks never block you.",
+        "listed in the technical log under **What the code computed**. Checks never stop you, but "
+        "approving over a failed check that needs a person asks for your reason, and the reason is "
+        "recorded with the approval.",
     ),
     Step(
         "Review each card, and take the decisions",
@@ -351,7 +353,10 @@ STEPS: List[Step] = [
         "backlog, tickets and product documents. Choose the format (Cursor, ChatGPT, Claude, or "
         "one Markdown file for any assistant) and open `README_FIRST.md`. The skill has a fixed "
         "part, the same for every project, and a project part you replace after new approvals. "
-        "It is yours to use freely and is not part of the assessment.\n"
+        "It is yours to use freely and is not part of the assessment. Beside them, the **One-page "
+        "brief** sums up the project for a manager, a squad or the legal team: what the product does "
+        "with AI, the most pressing risks, the requirements that answer them and the decisions still "
+        "needed. It is written by code from the approved records and names roles, not people.\n"
         "- **Activity** — the version history and the project log.",
     ),
     Step(
@@ -377,8 +382,8 @@ STEPS: List[Step] = [
     Step(
         "Your data, and signing out",
         "**Account > Settings** lets you download everything RAIA holds about you, or delete "
-        "your account. **Account > Sign out** ends your session. Please send the project "
-        "download and any notes to the study coordinator.",
+        "your account. **Account > Sign out** ends your session. If something did not work, tell "
+        "the study coordinator what you were doing; you never need to send a project.",
         ("settings", "Open Settings"),
     ),
 ]
@@ -500,13 +505,19 @@ def agent_rows() -> List[Tuple[str, str, str, str]]:
     Built from each agent's specification, so a new question or group shows up
     here without anyone editing the guide.
     """
-    from raia.agents import AGENTS
+    from raia.agents import AGENTS, MODES
     from raia.repository import ARTIFACT_FILES
 
     producers = {a.spec.output_key: a.spec.name for a in AGENTS.values()}
     producers["product_brief"] = AGENTS["risk_classifier"].spec.name
+    # Each agent with its modes (the Refiner's generate mode) beside it.
+    ordered = []
+    for key, agent in AGENTS.items():
+        # A mode first: on the Board, stories are generated before a sprint is refined.
+        ordered += [m for m in MODES.values() if m.spec.parent == key]
+        ordered.append(agent)
     rows = []
-    for agent in AGENTS.values():
+    for agent in ordered:
         spec = agent.spec
         groups: List[str] = []
         for f in spec.input_fields:
@@ -514,9 +525,10 @@ def agent_rows() -> List[Tuple[str, str, str, str]]:
             if name not in groups:
                 groups.append(name)
         required = sum(1 for f in spec.input_fields if f.required)
-        asks = f"{', '.join(groups)} ({required} required answers)"
+        asks = f"{', '.join(groups)} ({required} required answer{'' if required == 1 else 's'})"
         needs = ", ".join(dict.fromkeys(producers.get(k, k) for k in spec.required_upstream)) or "nothing"
-        rows.append((f"{spec.name} ({spec.layer})", asks, needs,
+        name = f"{spec.name}: {spec.mode_label}" if spec.mode_label else spec.name
+        rows.append((f"{name} ({spec.layer})", asks, needs,
                      f"`{ARTIFACT_FILES.get(spec.output_key, spec.output_key)}`"))
     return rows
 

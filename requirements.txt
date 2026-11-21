@@ -19,13 +19,13 @@ altair==6.3.0 ; python_full_version >= '3.11'  # via streamlit
 annotated-doc==0.0.5      # via typer
 annotated-types==0.8.0    # via pydantic
 anthropic==2.6.0          # via langchain-anthropic
-anyio==4.16.0             # via anthropic, httpx, httpx2, langsmith, starlette, streamlit, watchfiles
+anyio==4.16.0             # via anthropic, httpx, httpx2, langsmith, openai, starlette, streamlit, watchfiles
 async-timeout==5.0.1 ; python_full_version < '3.11'  # via aiohttp
 attrs==26.1.0             # via aiohttp, jsonschema, referencing
 authlib==1.9.5            # via -r requirements.in
 bcrypt==5.0.0             # via chromadb
 build==1.6.1              # via chromadb
-certifi==2026.10.23       # via httpcore, httpx, kubernetes, langchain-core, requests
+certifi==2026.10.23       # via httpcore, httpx, kubernetes, langchain-core, langchain-openai, requests
 cffi==2.1.1 ; platform_python_implementation != 'PyPy'  # via cryptography
 charset-normalizer==3.5.2  # via requests
 chromadb==1.5.9           # via -r requirements.in
@@ -51,8 +51,8 @@ httpcore2==2.14.0 ; python_full_version < '3.11' and sys_platform != 'emscripten
 httpcore2==2.16.0 ; python_full_version >= '3.11' and sys_platform != 'emscripten'  # via httpx2
 httptools==0.9.0          # via streamlit, uvicorn
 httpx==0.28.1             # via chromadb, langchain-core, langgraph-sdk, -r requirements.in
-httpx2==2.14.0 ; python_full_version < '3.11'  # via anthropic, huggingface-hub, langsmith
-httpx2==2.16.0 ; python_full_version >= '3.11'  # via anthropic, huggingface-hub, langsmith
+httpx2==2.14.0 ; python_full_version < '3.11'  # via anthropic, huggingface-hub, langsmith, openai
+httpx2==2.16.0 ; python_full_version >= '3.11'  # via anthropic, huggingface-hub, langsmith, openai
 httpx2-jsfetch==1.0 ; python_full_version >= '3.12' and sys_platform == 'emscripten'  # via httpx2
 huggingface-hub==2.4.0    # via tokenizers
 humanfriendly==10.0 ; python_full_version < '3.11'  # via coloredlogs
@@ -61,7 +61,7 @@ importlib-metadata==9.0.1 ; python_full_version < '3.10.2'  # via build
 importlib-resources==7.1.0  # via chromadb
 itsdangerous==2.2.0       # via streamlit
 jinja2==3.1.6             # via altair, pydeck
-jiter==0.18.0             # via anthropic
+jiter==0.18.0             # via anthropic, openai
 joserfc==1.7.7 ; python_full_version < '3.11'  # via authlib
 joserfc==1.8.0 ; python_full_version >= '3.11'  # via authlib
 jsonpatch==1.43           # via langchain-core
@@ -70,7 +70,8 @@ jsonschema==4.26.0        # via altair, chromadb
 jsonschema-specifications==2025.9.1  # via jsonschema
 kubernetes==37.0.1        # via chromadb
 langchain-anthropic==1.7.10  # via -r requirements.in
-langchain-core==1.7.6     # via langchain-anthropic, langgraph, langgraph-checkpoint, langgraph-prebuilt, langgraph-sdk, -r requirements.in
+langchain-core==1.7.6     # via langchain-anthropic, langchain-openai, langgraph, langgraph-checkpoint, langgraph-prebuilt, langgraph-sdk, -r requirements.in
+langchain-openai==1.7.4   # via -r requirements.in
 langchain-protocol==0.0.21  # via langchain-core, langgraph-sdk
 langgraph==1.2.20         # via -r requirements.in
 langgraph-checkpoint==4.3.1  # via langgraph, langgraph-checkpoint-postgres, langgraph-prebuilt
@@ -92,6 +93,7 @@ numpy==2.5.4 ; python_full_version >= '3.12'  # via chromadb, onnxruntime, panda
 oauthlib==4.0.1           # via requests-oauthlib
 onnxruntime==1.23.2 ; python_full_version < '3.11'  # via chromadb
 onnxruntime==1.31.1 ; python_full_version >= '3.11'  # via chromadb
+openai==3.57.0            # via langchain-openai
 opentelemetry-api==1.45.2  # via anthropic, chromadb, opentelemetry-exporter-otlp-proto-grpc, opentelemetry-sdk, opentelemetry-semantic-conventions
 opentelemetry-exporter-otlp-common==0.66b2  # via opentelemetry-exporter-otlp-proto-grpc
 opentelemetry-exporter-otlp-proto-common==1.45.2  # via opentelemetry-exporter-otlp-proto-grpc
@@ -116,7 +118,7 @@ pyarrow==25.0.1           # via streamlit
 pybase64==1.5.1           # via chromadb
 pycparser==3.11 ; python_full_version < '3.11' and implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'  # via cffi
 pycparser==3.12 ; python_full_version >= '3.11' and implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'  # via cffi
-pydantic==2.14.3          # via anthropic, chromadb, kubernetes, langchain-anthropic, langchain-core, langgraph, langsmith, pydantic-settings
+pydantic==2.14.3          # via anthropic, chromadb, kubernetes, langchain-anthropic, langchain-core, langgraph, langsmith, openai, pydantic-settings
 pydantic-core==2.50.4     # via pydantic
 pydantic-settings==2.15.0 ; python_full_version < '3.11'  # via chromadb
 pydantic-settings==2.16.2 ; python_full_version >= '3.11'  # via chromadb
@@ -125,7 +127,7 @@ pygments==2.21.0          # via rich
 pypika==0.51.1            # via chromadb
 pyproject-hooks==1.3.3    # via build
 pyreadline3==3.5.6 ; python_full_version < '3.11' and sys_platform == 'win32'  # via humanfriendly
-pysqlite3-binary==0.5.4.post2 ; sys_platform == 'linux'  # via -r requirements.in
+pysqlite3-binary==0.5.4.post2 ; platform_machine == 'x86_64' and sys_platform == 'linux'  # via -r requirements.in
 python-dateutil==3.0.0 ; python_full_version < '3.11'  # via kubernetes, pandas
 python-dateutil==4.0.0 ; python_full_version >= '3.11'  # via kubernetes, pandas
 python-dotenv==1.2.4      # via pydantic-settings, uvicorn, -r requirements.in
@@ -134,7 +136,9 @@ python-multipart==0.0.33 ; python_full_version >= '3.11'  # via streamlit
 pytz==2026.6 ; python_full_version < '3.11'  # via pandas
 pyyaml==6.0.3             # via chromadb, huggingface-hub, kubernetes, langchain-core, uvicorn
 referencing==0.37.0       # via jsonschema, jsonschema-specifications
-requests==2.34.2          # via kubernetes, langsmith, requests-oauthlib, requests-toolbelt, streamlit
+regex==2026.9.29 ; python_full_version < '3.11'  # via tiktoken
+regex==2026.11.19 ; python_full_version >= '3.11'  # via tiktoken
+requests==2.34.2          # via kubernetes, langsmith, requests-oauthlib, requests-toolbelt, streamlit, tiktoken
 requests-oauthlib==2.0.0  # via kubernetes
 requests-toolbelt==1.0.0  # via langsmith
 rich==15.0.0              # via chromadb, typer
@@ -142,19 +146,20 @@ rpds-py==0.30.0 ; python_full_version < '3.11'  # via jsonschema, referencing
 rpds-py==2026.9.1 ; python_full_version >= '3.11'  # via jsonschema, referencing
 shellingham==1.5.4        # via typer
 six==1.17.0 ; python_full_version < '3.11'  # via python-dateutil
-sniffio==1.3.1            # via anthropic, langsmith
+sniffio==1.3.1            # via anthropic, langsmith, openai
 starlette==1.7.0 ; python_full_version < '3.11'  # via streamlit
 starlette==1.10.0 ; python_full_version >= '3.11'  # via streamlit
 streamlit==1.63.0         # via -r requirements.in
 sympy==1.14.0 ; python_full_version < '3.11'  # via onnxruntime
 tenacity==9.2.1           # via chromadb, langchain-core
+tiktoken==0.14.0          # via langchain-openai
 tokenizers==0.23.3        # via chromadb
 toml==0.10.2              # via streamlit
 tomli==2.5.0 ; python_full_version < '3.11'  # via build, huggingface-hub
 tqdm==4.70.1              # via chromadb, huggingface-hub
 truststore==0.10.5 ; sys_platform != 'emscripten'  # via httpcore2, httpx2
 typer==0.27.3             # via chromadb
-typing-extensions==4.16.0  # via aiohttp, aiosignal, altair, anthropic, anyio, chromadb, cryptography, exceptiongroup, grpcio, httpx2, huggingface-hub, kubernetes, langchain-core, langchain-protocol, langsmith, multidict, opentelemetry-api, opentelemetry-exporter-otlp-proto-grpc, opentelemetry-sdk, opentelemetry-semantic-conventions, psycopg, psycopg-pool, pydantic, pydantic-core, pydantic-settings, pypika, referencing, starlette, streamlit, typing-inspection, uvicorn
+typing-extensions==4.16.0  # via aiohttp, aiosignal, altair, anthropic, anyio, chromadb, cryptography, exceptiongroup, grpcio, httpx2, huggingface-hub, kubernetes, langchain-core, langchain-protocol, langsmith, multidict, openai, opentelemetry-api, opentelemetry-exporter-otlp-proto-grpc, opentelemetry-sdk, opentelemetry-semantic-conventions, psycopg, psycopg-pool, pydantic, pydantic-core, pydantic-settings, pypika, referencing, starlette, streamlit, typing-inspection, uvicorn
 typing-inspection==0.4.5  # via pydantic, pydantic-settings
 tzdata==2026.6            # via pandas, psycopg, python-dateutil
 urllib3==2.8.0            # via kubernetes, requests

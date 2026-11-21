@@ -20,9 +20,14 @@ that belong next to the call rather than scattered through the agents:
 
 Supported providers (``RAIA_LLM_PROVIDER``):
 
-* ``anthropic`` — Claude models via ``langchain-anthropic`` (default).
-* ``openai``    — GPT models via ``langchain-openai`` (optional dependency).
+* ``anthropic`` — Claude models via ``langchain-anthropic`` (default,
+  ``claude-sonnet-5-5``).
+* ``openai``    — OpenAI models via ``langchain-openai`` (``gpt-6.2-sol``).
 * ``mock``      — deterministic canned responses, no network, no API key.
+
+Both provider libraries are installed (``requirements.txt``), so switching is a
+configuration change. No temperature is sent unless ``RAIA_LLM_TEMPERATURE``
+sets one: current Claude models and OpenAI's reasoning models refuse it.
 """
 
 import time

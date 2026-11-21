@@ -7,39 +7,50 @@ GitHub.
 
 ## 1. Component Diagram (system overview)
 
-Four agents in two layers communicate **exclusively** through the
-Git-versioned shared artifact repository (blackboard). Every agent output
-passes a mandatory human checkpoint (H) before persistence. The RAIA
-architecture also specifies an Ops layer (fairness-drift monitoring after
-deployment); it is drawn dashed below because this build does not implement
-it: it needs production telemetry that a team designing a product rarely
-holds, and is future work.
+Four agents in two layers communicate **exclusively** through the shared
+artifact repository (blackboard), versioned in Git locally and hash-chained in
+the database on a hosted deployment. Every agent output passes a mandatory
+human checkpoint (H) before persistence. Everything a person does reaches the
+graph and the blackboard through one service layer that authorizes each
+operation. The RAIA architecture also specifies an Ops layer (fairness-drift
+monitoring after deployment); it is drawn dashed below because this build does
+not implement it: it needs production telemetry that a team designing a product
+rarely holds, and is future work.
 
 ```mermaid
 flowchart TB
-    subgraph UI["Streamlit UI (app.py)"]
+    subgraph UI["Streamlit UI (app.py, views/, raia/ui/)"]
         FORM["Structured intake forms<br/>(raia/fields.py)"]
-        REVIEW["Human approval gate<br/>draft · evidence · rationale · checks"]
-        ISSUES["Open Issues register"]
-        TRAIL["Audit trail + provenance"]
+        REVIEW["Human approval gate<br/>draft · edit the record · evidence · computed"]
+        BOARD["Board · backlog · sprints · roadmap"]
+        PROJ["Project page<br/>action plan · traceability · open issues<br/>documents · activity · people"]
+        ASSESS["Guide · Agents · Assessment<br/>Settings · Research export · /privacy"]
     end
 
-    subgraph PIPE["LangGraph Pipeline (raia/pipeline.py)"]
-        GEN["generate node<br/>(intake → rules → model → checks)"]
-        HUM{{"human_review node<br/>interrupt() = H gate"}}
-        PERS["persist node"]
+    subgraph SVC["Service layer"]
+        AUTH["raia/auth.py<br/>Google sign-in · local dev identity"]
+        PS["ProjectService (raia/projects.py)<br/>authorize(user, project, action)<br/>runs · approvals · decisions · board · assessments"]
+        DERIVE["Derived views<br/>lineage · handoff · roadmap · actions · brief"]
+        OUT["Exports<br/>project zip · AI Skill · research export · Jira"]
+    end
+
+    subgraph PIPE["LangGraph pipeline (raia/pipeline.py)"]
+        GEN["generate<br/>(intake → rules → model → contract → checks)"]
+        HUM{{"human_review<br/>interrupt() = H gate"}}
+        REV["revise<br/>(rejection reason → next attempt)"]
+        PERS["persist"]
         GEN --> HUM
         HUM -- approve --> PERS
-        HUM -- reject + feedback --> GEN
+        HUM -- "reject + reason" --> REV --> GEN
     end
 
     subgraph AGENTS["Agents (raia/agents/)"]
         subgraph PROD["🟦 Product layer"]
             RC["Risk Classifier"]
-            RR["Requirements Reviewer"]
+            RR["Requirements Reviewer<br/>(+ recommend requirements)"]
         end
         subgraph DEV["🟩 Dev layer"]
-            SR["User Story Refiner"]
+            SR["User Story Refiner<br/>generate mode · refine mode"]
             AU["Auditor"]
         end
         subgraph OPS["🟧 Ops layer (planned)"]
@@ -47,39 +58,46 @@ flowchart TB
         end
     end
 
-    subgraph REASON["Deterministic reasoning (raia/rationale/, raia/validators.py)"]
-        ENG["Rule engines<br/>risk_screen · coverage · story_map<br/>traceability"]
+    subgraph REASON["Deterministic reasoning (raia/rationale/, raia/contract/, raia/validators.py)"]
+        ENG["Rule engines<br/>risk_screen · coverage · story_seed<br/>story_map · traceability · backlog_coverage"]
+        CON["Output contract<br/>schema · ids · priority · layout · repair"]
         VAL["Validators<br/>citations · structure · coverage<br/>reconciliation · evidence discipline"]
     end
 
     subgraph KNOW["Knowledge layer"]
         RAG["NormativeRetriever<br/>(raia/rag.py)"]
         CHROMA[("Chroma vector store<br/>.chroma/")]
-        CORPUS["Normative corpus (corpus/*.md)<br/>EU AI Act · PL 2338/2023 · IEEE 7000<br/>NIST AI RMF · MS RAI v2 · ECCOLA"]
+        CORPUS["Curated summaries (corpus/*.md)<br/>EU AI Act · PL 2338/2023 (bill) · IEEE 7000<br/>NIST AI RMF · MS RAI v2 · ECCOLA"]
     end
 
-    subgraph STATE["Shared state (blackboard)"]
-        REPO[("ArtifactRepository<br/>workspace/&lt;project&gt;/<br/>Git-versioned Markdown artifacts")]
+    subgraph STATE["Storage (raia/storage.py, raia/db.py)"]
+        REPO[("Blackboard per project<br/>Git repository (local) or<br/>hash-chained database (hosted)")]
+        REG[("Registry and logs<br/>users · projects · members · assessments<br/>events · audit log · sealed transcripts")]
+        CP[("Graph checkpointer<br/>PostgresSaver · MemorySaver")]
     end
 
     LLM["LLM factory (raia/llm.py)<br/>Claude (default) · OpenAI · Mock"]
 
-    FORM --> PIPE
+    UI --> AUTH --> PS
+    UI --> PS
+    PS --> PIPE
+    PS --> DERIVE
+    PS --> OUT
     REVIEW <--> HUM
-    TRAIL --> REPO
-    ISSUES <--> REPO
     GEN --> AGENTS
     AGENTS -- "1. compute what is enumerable" --> ENG
     ENG -- "pinned sections + query facets" --> RAG
-    AGENTS -- "3. check the result" --> VAL
+    AGENTS -- "3. finalise and check the record" --> CON --> VAL
     VAL --> REVIEW
-    ENG --> REVIEW
     AGENTS --> RAG
     RAG --> CHROMA
     CORPUS -- "ingest.py" --> CHROMA
     AGENTS --> LLM
     AGENTS -- "read upstream artifacts" --> REPO
-    PERS -- "git commit (after approval only)" --> REPO
+    PERS -- "one recorded version (after approval only)" --> REPO
+    PIPE --> CP
+    PS --> REG
+    DERIVE --> REPO
     style OPS stroke-dasharray: 5 5
 ```
 
@@ -150,15 +168,24 @@ flowchart LR
     PUB["/privacy<br/>public"]
     LOGIN["Sign in"] --> CONSENT["Accept agreement"] --> HOME
     subgraph MENU["Top menu"]
-      HOME["/ Home<br/>attention list · projects"]
+      HOME["/ Home<br/>attention list · projects · new project"]
+      GUIDE["/guide<br/>tester guide"]
       AGENTS["/agents<br/>architecture · agent docs"]
       ASSESS["/assessment"]
-      SET["/settings"]
+      subgraph ACCOUNT["Account"]
+        SET["/settings<br/>profile · Jira · your data · delete"]
+        RES["/research<br/>admins only"]
+        PRIV["/privacy"]
+        OUT["/signout"]
+      end
     end
-    HOME -->|"?id="| PROJECT["/project<br/>overview · documents · issues · activity · people"]
-    PROJECT -->|"?project=&agent="| STAGE["/stage<br/>run · review gate · read · revise · re-confirm"]
+    HOME -->|"?id="| PROJECT["/project<br/>Board · Overview · Documents · Action plan<br/>Traceability · Open issues · Activity · People and settings"]
+    PROJECT -->|"?project=&agent="| STAGE["/stage<br/>receives · run · review gate · read · revise · re-confirm"]
     STAGE --> PROJECT
 ```
+
+*Sign out* is listed only when there is someone to sign out: the local
+developer identity has no sign-in.
 
 Project progress, including the *Needs review* flag, is derived on every load
 by `raia/lineage.py` from the blackboard and the event log: an approved stage
@@ -183,7 +210,7 @@ flowchart LR
     OPENREPO -->|"RAIA_STORE=git"| GIT[("ArtifactRepository<br/>workspace/&lt;project&gt;/ — Git")]
     OPENREPO -->|"RAIA_STORE=database"| DBR[("DatabaseRepository<br/>append-only, hash-chained")]
     RUN --> CP[("Checkpointer<br/>PostgresSaver · MemorySaver")]
-    SVC --> REG[("Registry tables<br/>users · projects · members<br/>invitations · ratings · usage")]
+    SVC --> REG[("Registry tables<br/>users · projects · members · invitations<br/>assessments · usage · Jira · audit log")]
 ```
 
 ```mermaid
@@ -197,11 +224,21 @@ erDiagram
     PROJECTS ||--o{ INTAKE_DRAFTS : "form answers"
     PROJECTS ||--o{ PROJECT_EVENTS : "decisions and events (hash chain)"
     PROJECTS ||--o{ RUN_TRANSCRIPTS : "sealed prompt and replies per run"
-    USERS ||--o{ EXPERIENCE_RATINGS : submits
-    PROJECTS |o--o{ EXPERIENCE_RATINGS : "is about (optional)"
+    USERS ||--o{ EXPERIENCE_RATINGS : "submits (never linked to a project)"
     EXPERIENCE_RATINGS ||--|{ ASSESSMENT_ITEMS : "one row per answer"
+    USERS ||--o{ USAGE_COUNTERS : "model calls per day"
+    USERS ||--o| JIRA_CONNECTIONS : "own Jira Cloud token (encrypted)"
     USERS ||--o{ AUDIT_LOG : "account-wide actions"
 ```
+
+`PROJECT_FILES`, `PROJECT_COMMITS`, `PENDING_REVIEWS`, `INTAKE_DRAFTS` and
+`PROJECT_EVENTS` hold the database blackboard; with `RAIA_STORE=git` the same
+content lives in each project's Git repository. An assessment is stored with
+what its author used, never with a project: the `project_id` columns of
+`EXPERIENCE_RATINGS` and `ASSESSMENT_ITEMS` remain only for answers recorded
+before instrument `raia-panel-v3` and are never written or exported. The
+graph checkpointer (`PostgresSaver`) creates and manages its own `checkpoint*`
+tables, which are deleted with a project.
 
 Schema changes after the first release are applied once each by the migration
 runner in `raia/db.py` and recorded in `schema_migrations`; an existing
@@ -330,7 +367,51 @@ flowchart TB
   person is needed; what code already corrected (a fabricated citation is
   removed, an upgraded verdict restored) goes to the technical log.
 
+## 1f. Recommend ethical requirements (outside the graph)
+
+The Requirements Reviewer can propose candidate requirements before its stage
+runs. This is a separate, shorter path (`RequirementsReviewerAgent.recommend`,
+reached through `ProjectService.recommend_requirements`), and it persists
+nothing: the candidates go back to the form, where a person adopts, edits or
+rejects each one.
+
+```mermaid
+flowchart LR
+    F["Form answers<br/>(requirements, controls)"] --> G["coverage engine<br/>gaps, computed as in a run"]
+    G --> P["prioritised gaps<br/>(short list, never repeated)"]
+    P --> M["model pass<br/>candidates with fit criteria"]
+    M --> C{"checked in code"}
+    C -- "addresses no computed gap<br/>cites no retrieved excerpt<br/>nothing testable" --> D["dropped, reported"]
+    C -- ok --> H["person: adopt · edit · reject (reason)"]
+    H --> F2["adopted requirements join the form,<br/>marked as recommended"]
+    F2 --> RUN["stage run → H gate as usual"]
+```
+
+Pre-filling the stakeholder and principle questions (`AgentSpec.suggest`) is
+rule-based and calls no model; it fills only empty fields, never the controls in
+place, and each value says why. Every offer and decision is recorded in the
+project's event log, and the approved record says which requirements were
+recommended and adopted. The Risk Classifier has no such path: its answers
+decide the verdict, so they are asked, never suggested.
+
+## 1g. Model providers
+
+`raia/llm.py` is the one place a model is called (`invoke_chat`). The provider
+is configuration: `anthropic` (Claude, the reference model, default
+`claude-sonnet-5-5`), `openai` (default `gpt-6.2-sol`) or `mock` (a test double
+that returns records conforming to the output contract, refused to evaluators).
+Both provider libraries are installed. No sampling temperature is sent unless
+`RAIA_LLM_TEMPERATURE` sets one, because current Claude models and OpenAI's
+reasoning models refuse it; a refused value is dropped and retried once. Each
+provenance record states the provider, the model and the temperature actually
+sent (`null` by default). Transient failures (overload, rate limit, timeout)
+are retried with backoff; nothing else is.
+
 ## 2. Class Diagram (code structure)
+
+The main classes and the methods the rest of the code calls. Agents and modes
+are registered in `raia/agents/__init__.py` (`AGENTS`, `MODES`, `RUNNABLE`);
+the UI reaches the graph and the blackboard only through `ProjectService`.
 
 ```mermaid
 classDiagram
@@ -339,51 +420,91 @@ classDiagram
         +str name
         +str layer
         +str sdlc_phase
+        +str description
         +List~str~ grounding_sources
         +List~str~ upstream_keys
         +List~str~ required_upstream
         +str output_key
         +List~InputField~ input_fields
-        +str task_prompt
+        +Callable engine
+        +Callable suggest
+        +str parent
+        +str mode_label
+        +List~str~ collapsed_groups
     }
 
     class InputField {
         +str key
         +str label
-        +str help
         +str kind
+        +Sequence~Option~ options
+        +bool required
+        +ShowIf show_if
+        +str group
     }
 
     class BaseAgent {
         +AgentSpec spec
         +missing_prerequisites(repo) List~str~
-        +build_retrieval_query(inputs) str
-        +run(repo, inputs, feedback) str
+        +missing_inputs(inputs) List~str~
+        +rationale_for(repo, inputs) RationaleResult
+        +converse(system, user, parse) Turn
+        +run(repo, inputs, feedback) AgentRun
+    }
+
+    class AgentRun {
+        +str draft
+        +dict record
+        +List~NormChunk~ chunks
+        +RationaleResult rationale
+        +ValidationReport validation
+        +dict provenance
+        +dict transcript
+        +to_payload() dict
+    }
+
+    class RationaleResult {
+        +str engine
+        +dict verdict
+        +List~Finding~ findings
+        +List~ChecklistItem~ checklist
+        +List~Pin~ pins
+        +List~str~ open_issues
+        +dict tables
+        +dict data
     }
 
     class RiskClassifierAgent
-    class RequirementsReviewerAgent
+    class RequirementsReviewerAgent {
+        +recommend(repo, inputs, exclude) dict
+    }
     class UserStoryRefinerAgent
+    class StoryGeneratorMode
     class AuditorAgent
 
-    class ArtifactRepository {
-        +str project
-        +Path path
+    class BaseRepository {
+        <<abstract>>
         +read_artifact(key) str
-        +upstream_context(keys) str
-        +save_artifact(key, content, approved_by) str
-        +append_open_issue(issue, raised_by)
-        +history(limit) List
-        +reset()
-        +list_projects() List~str~
+        +read_data(key) dict
+        +upstream_bundle(keys) dict
+        +save_artifact(key, content, approved_by, structured, run_provenance) str
+        +atomic(build) tuple
+        +append_open_issues(issues, raised_by) int
+        +record_event(kind, payload)
+        +save_pending(agent_key, payload)
+        +save_transcript(agent_key, draft_id, transcript)
+        +verify_history() dict
     }
-    note for ArtifactRepository "One instance == one project folder. The hosted
-    evaluation deployment gives each browser session its own project, so a
-    whole panel can test concurrently without sharing a blackboard"
-
+    class ArtifactRepository {
+        Git repository per project
+    }
+    class DatabaseRepository {
+        append-only, hash-chained rows
+    }
 
     class NormativeRetriever {
-        +retrieve(query, top_k, sources) List~NormChunk~
+        +retrieve(query, top_k, sources, pins) List~NormChunk~
+        +fetch_section(source, section) List~NormChunk~
         +format_context(chunks) str
     }
 
@@ -392,28 +513,52 @@ classDiagram
         +str source
         +str authority
         +str section
+        +str chunk_id
+        +bool pinned
+        +bool derived
         +citation() str
     }
 
     class StageRunner {
-        -MemorySaver _checkpointer
-        -CompiledGraph _graph
+        -checkpointer
+        -graph
         +check_gate(project, agent_key) List~str~
-        +start(project, agent_key, inputs) dict
+        +start(project, agent_key, inputs, actor) dict
         +resume(project, agent_key, decision) dict
+        +restore(project, agent_key, payload) dict
+        +draft_at_gate(project, agent_key) dict
+    }
+
+    class ProjectService {
+        +authorize(user, project_id, action) Project
+        +start_run(user, project_id, agent_key, inputs) dict
+        +resume(user, project_id, agent_key, decision) dict
+        +recommend_requirements(user, project_id, agent_key, inputs) dict
+        +decide_issue(user, project_id, issue_id, choice, rationale) bool
+        +board(user, project_id) dict
+        +submit_rating(user, payload)
+        +research_export(user) bytes
     }
 
     BaseAgent <|-- RiskClassifierAgent
     BaseAgent <|-- RequirementsReviewerAgent
     BaseAgent <|-- UserStoryRefinerAgent
+    BaseAgent <|-- StoryGeneratorMode
     BaseAgent <|-- AuditorAgent
+    StoryGeneratorMode ..> UserStoryRefinerAgent : mode of (spec.parent)
     BaseAgent *-- AgentSpec
     AgentSpec *-- InputField
+    BaseAgent ..> RationaleResult : spec.engine computes
     BaseAgent ..> NormativeRetriever : retrieves norms
-    BaseAgent ..> ArtifactRepository : reads upstream state
+    BaseAgent ..> BaseRepository : reads upstream state
+    BaseAgent ..> AgentRun : returns
     NormativeRetriever ..> NormChunk : returns
+    BaseRepository <|-- ArtifactRepository
+    BaseRepository <|-- DatabaseRepository
     StageRunner ..> BaseAgent : runs via graph nodes
-    StageRunner ..> ArtifactRepository : persists after approval
+    StageRunner ..> BaseRepository : persists after approval
+    ProjectService ..> StageRunner : runs and resumes stages
+    ProjectService ..> BaseRepository : open_repository(project)
 ```
 
 ## 3. Sequence Diagram (one agent run with the human checkpoint)
@@ -422,63 +567,79 @@ classDiagram
 sequenceDiagram
     actor Human
     participant UI as Streamlit UI
+    participant PS as ProjectService
     participant SR as StageRunner (LangGraph)
     participant AG as Agent
+    participant ENG as Rule engine
     participant RAG as NormativeRetriever
-    participant LLM as LLM (Claude)
-    participant REPO as ArtifactRepository (Git)
+    participant LLM as LLM (Claude · OpenAI)
+    participant REPO as Blackboard (Git or database)
 
-    Human->>UI: fill stage inputs, click Run
-    UI->>SR: start(project, agent_key, inputs)
-    SR->>SR: check stage gate (required upstream artifacts)
+    Human->>UI: fill the structured form, click Run
+    UI->>PS: start_run(user, project, agent_key, inputs)
+    PS->>PS: authorize "run" · count the call · save the answers
+    PS->>SR: start(project, agent_key, inputs, actor)
+    SR->>SR: stage gate (required upstream approved?)
     SR->>AG: generate node → run(repo, inputs)
-    AG->>REPO: read upstream artifacts (blackboard)
-    AG->>RAG: retrieve(query, sources=grounding)
-    RAG-->>AG: norm excerpts + citations + authority levels
-    AG->>LLM: system + task prompt + excerpts + upstream + inputs
-    LLM-->>AG: draft (every claim cited)
-    AG-->>SR: draft
+    AG->>AG: sanitize free text (flag, never delete)
+    AG->>REPO: read approved upstream records
+    AG->>ENG: decision procedure
+    ENG-->>AG: verdict · tables · ids · pins · checklist · issues
+    AG->>RAG: retrieve(query, sources, pins)
+    RAG-->>AG: pinned + similar excerpts (ids, authority, curated-summary label)
+    AG->>LLM: contract + computed block + excerpts + upstream + inputs
+    LLM-->>AG: one JSON record
+    AG->>AG: parse · repair once if invalid or cut off · finalise<br/>(ids, priority, engine issues, layout) · validators
+    AG-->>SR: draft + evidence + computed + checks + provenance
+    SR->>REPO: keep the pending draft and the sealed transcript
     SR-->>UI: interrupt() — awaiting_review (H gate)
-    UI-->>Human: show editable draft
+    UI-->>Human: draft · edit the record · evidence · what the code computed
 
     alt Human rejects
-        Human->>UI: feedback
-        UI->>SR: resume({action: reject, feedback})
-        SR->>AG: regenerate with feedback
-        AG-->>SR: new draft
+        Human->>UI: reason code + feedback (rejected cards listed)
+        UI->>PS: resume(reject, draft_id)
+        PS->>SR: resume
+        SR->>SR: revise node → generate again with the feedback
         SR-->>UI: awaiting_review again
-    else Human approves (possibly edited)
-        Human->>UI: approve (name recorded)
-        UI->>SR: resume({action: approve, content, approver})
-        SR->>REPO: save_artifact() → git commit
-        REPO-->>SR: commit hash
-        SR-->>UI: approved + commit
-        UI-->>Human: artifact committed, downstream gate opens
+    else Human approves (card verdicts, decisions, field edits)
+        Human->>UI: Approve and commit
+        UI->>PS: resume(approve, draft_id, review, override_reason?)
+        PS->>PS: same draft? second approver? reason for failed checks?<br/>approver = signed-in user (user:id)
+        PS->>SR: resume
+        SR->>SR: persist node: re-finalise, re-render, re-check the approved record
+        SR->>REPO: one version: Markdown + JSON sidecar + provenance,<br/>decisions → open issues, registers updated
+        REPO-->>SR: version id
+        SR-->>UI: approved
+        UI-->>Human: What's next — downstream stages can run
     end
 ```
 
 ## 4. Pipeline / State Diagram (SDLC-wide stage gates)
 
-Agents never trigger each other; a stage only unlocks when the human has
-approved the upstream artifact it requires.
+Agents never trigger each other; a stage only unlocks when a person has
+approved the upstream artifact it requires. The product description is a field
+of the Risk Classifier's form; it is committed as `01_product_brief.md` in the
+same version as the approved classification.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> ProductBrief : human writes brief
-    ProductBrief --> RiskClassification : Risk Classifier + H
+    [*] --> RiskClassification : Risk Classifier + H (writes 01 and 02)
     RiskClassification --> RequirementsReview : Requirements Reviewer + H
-    RequirementsReview --> RaiBacklog : User Story Refiner (generate) + H
-    RaiBacklog --> RefinedStories : sprint planned by a person
-    RequirementsReview --> RefinedStories : User Story Refiner (refine) + H
-    RequirementsReview --> AuditReport : Auditor + H
-    AuditReport --> RefinedStories : next sprint
-    RefinedStories --> AuditReport
+    RequirementsReview --> RaiBacklog : User Story Refiner, generate mode + H
+    RaiBacklog --> SprintPlanned : a person plans the sprint
+    RequirementsReview --> RefinedStories : User Story Refiner, refine mode + H
+    SprintPlanned --> RefinedStories : refine the sprint's product stories
+    SprintPlanned --> AuditReport : sprint ended, Auditor + H
+    RefinedStories --> AuditReport : sprint ended, Auditor + H
+    AuditReport --> SprintPlanned : approval closes the sprint, next sprint
     AuditReport --> [*]
 
     note right of RiskClassification
-        Artifacts are Markdown files
-        committed to Git on approval:
-        02_risk_classification.md, ...
+        Artifacts are Markdown files with a JSON sidecar,
+        recorded on approval: 01_product_brief.md,
+        02_risk_classification.md, 03_requirements_review.md,
+        04a_rai_backlog.md, 04_refined_stories.md,
+        05_audit_report.md; registers 07 to 09
     end note
 ```
 
@@ -504,12 +665,18 @@ stateDiagram-v2
 | Structured human editing | the gate edits record fields; persistence re-finalises, re-renders and re-validates what was approved; free-text edits are refused | code + smoke test |
 | Project action plan | `contract.actions` — every action from every approved record, sorted by computed priority, exported as CSV/JSON | code |
 | Continuing outside RAIA | `raia.skill` + `export.skill_bundle` — a portable skill in two parts: a fixed part (`SKILL.md` and references generated from the code, versioned, identical for every project) and a project part (`PROJECT_CONTEXT.md` computed from the blackboard, with the approved outputs), in four formats (Cursor, ChatGPT, Claude, one Markdown file), so an assistant a person is allowed to use applies the approved records to the real backlog and documents with RAIA's rules, or screens a product itself when there is no project; research data left out | code + test_skill |
-| Reproducible audit trail | `raia/provenance.py` — model, temperature, corpus version, excerpt ids, prompt hash, attempt, edits, rejection history, check results | code |
+| Reproducible audit trail | `raia/provenance.py` — build id, provider and model, the temperature actually sent (`null` when none), corpus version, excerpt ids, prompt hash, attempt, edits, rejection history, check results; with `RAIA_TRANSCRIPT_KEY`, the exact prompt and raw replies sealed per run (`raia/sealed.py`) with their token use | code + smoke test |
 | Data protection | projects are reachable only through a membership, checked in `ProjectService.authorize`; sign-in delegated to Google (no stored passwords); research exports pseudonymized with keyed participant codes; no retraining | code + test_projects |
 | Accountable approval | the approver is the authenticated identity; optional second-approver rule makes the runner ineligible to approve | code + test_projects |
 | Durable review state | `PostgresSaver` checkpointer and stored drafts; a restored review re-enters the gate | code + test_projects |
 | Input sanitization | `raia/sanitize.py` — control characters, length caps, injection patterns in English and Portuguese; applied to form input *and* to the approved artifact | code |
-| Provider-agnostic LLM | `raia/llm.py` factory and a single `invoke_chat` call site | structure |
+| Provider-agnostic LLM | `raia/llm.py` factory and a single `invoke_chat` call site; Claude (default `claude-sonnet-5-5`) and OpenAI (default `gpt-6.2-sol`) both installed; a temperature is sent only when configured, and a refused one is dropped and recorded | structure + test_engines |
+| The sources say what they are | `config.DERIVED_SOURCES` — every corpus file is a curated summary and is labelled so in the prompt, at the gate and in the evidence; `config.PROPOSED_SOURCES` — PL 2338/2023 is a bill and every tier or obligation from it is labelled "bill, not in force"; each tier says whether it binds the product, from the declared markets | code + test_engines, test_ui |
+| Recommendations a person adopts | `RequirementsReviewerAgent.recommend` — candidate requirements for computed gaps only, checked in code before a person sees them, never persisted until adopted in the form; `AgentSpec.suggest` pre-fills context questions by rule; every offer and decision recorded as an event | code + test_engines, test_ui |
+| Approval over failed checks is explained | `ProjectService.resume` refuses an approval over checks a reviewer must act on without a recorded reason (`OverrideRequired`); the reason is kept with the approval | code + test_projects |
+| Accountable use of the system | security-relevant actions with account-wide reach (exports, deletions, refused access) go to the `audit_log` table and to structured JSON logs (`raia/logs.py`); model calls are limited per person per day (`RAIA_MAX_RUNS_PER_DAY`) | code + test_projects |
+| An evaluation that cannot be joined to projects | `raia/ui/assessment.py` (instrument `raia-panel-v3`) — an assessment names no project and is stored with what its author used; the research export gives assessments and project activity separate keyed participant codes and refuses to run without `RAIA_PSEUDONYM_KEY` | code + test_projects, test_ui |
+| Something to hand on | `raia/brief.py` — a one-page brief written by code from the approved records, naming roles, not people | code + test_ui |
 | Iterative development across sprints | a backlog and sprints on the blackboard (`raia/backlog.py`); the Refiner's generate and refine modes write to it only through their gates; the roadmap and the sprint suggestion are computed (`raia/roadmap.py`) | code + test_backlog |
 | The audit covers the whole project | `traceability.run` audits the sprint's items and reports the rest where it stands; `backlog_coverage` checks the backlog against the ethical risks; progress and trend are computed from the final verdicts | code + test_backlog |
 | A person reviews each card | `contract.review` — accept or reject per card with a reason; a rejected model card leaves the record into its review block, a rejected computed card is kept as an override and recorded in the register | code + test_contract, test_ui |
@@ -520,13 +687,18 @@ stateDiagram-v2
 **Not yet implemented** (tracked in the README roadmap): the Ops layer (a
 fairness-drift monitor fed by production telemetry), ingesting the official
 legal texts with article-level citation metadata, Confluence, Jira Server or
-Data Center (Jira Cloud is supported, optionally), and least-privilege
+Data Center (Jira Cloud is supported, optionally), an API with background
+workers in place of model calls on the page's own thread, and least-privilege
 tool-permission hardening.
 
 **Known limitations, stated plainly.** The corpus is a set of curated summaries
-prepared for this project, so a citation resolves to a section of a summary
-rather than to the official wording; sources in `config.DERIVED_SOURCES` are
-labelled as such in the prompt and at the approval gate. Injection detection is
+prepared for this project — all six sources, the two legal texts included — so
+a citation resolves to a section of a summary rather than to the official
+wording; every source is in `config.DERIVED_SOURCES` and labelled as such in
+the prompt and at the approval gate. The default models take no sampling
+temperature, so two runs on the same answers can differ; the rule engine fixes
+what is enumerable, the record makes the rest comparable, and
+`tests/consistency_check.py` measures the agreement with a real model. Injection detection is
 regex-based and will not catch a careful paraphrase — the controls that carry
 the weight are the approval gate and the citation validator, not the pattern
 list. The lexical matchers in the coverage and traceability engines are

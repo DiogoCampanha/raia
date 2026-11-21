@@ -5,7 +5,7 @@ import json
 import streamlit as st
 
 from raia import config
-from raia.agents import AGENTS
+from raia.agents import AGENTS, MODES
 from raia.contract import SCHEMA_VERSION
 from raia.contract.assemble import RECORD_TYPES
 from raia.repository import ARTIFACT_FILES
@@ -158,41 +158,66 @@ for i, (col, (kind, name, body)) in enumerate(zip(cols, TURN), start=1):
 # ---- Agent documentation ----------------------------------------------------------------
 
 st.subheader("Agent documentation", anchor=False)
+
+#: Registers kept by code on the blackboard (not an agent's output), as a reader names them.
+REGISTER_NAMES = {"backlog": "Backlog register", "sprints": "Sprints register", "open_issues": "Open issues register"}
+
+
+def _reads(key: str) -> str:
+    if key in REGISTER_NAMES:
+        return f"{REGISTER_NAMES[key]}, kept by code"
+    return producers.get(key, key)
+
+
+def agent_doc(spec, doc) -> None:
+    """One agent's (or mode's) documentation: the prose, then what its spec declares."""
+    if doc.get("when"):
+        st.markdown(f"**When to use it.** {doc['when']}")
+    c1, c2 = st.columns(2, gap="large")
+    with c1:
+        st.markdown("**What the code settles before the model runs**")
+        for line in doc.get("decides", []):
+            st.markdown(f"- {line}")
+    with c2:
+        st.markdown("**What stays with you**")
+        for line in doc.get("you", []):
+            st.markdown(f"- {line}")
+    with st.container(border=True):
+        g1, g2 = st.columns(2, gap="large")
+        with g1:
+            st.caption("Questions it asks")
+            for group in spec.field_groups():
+                st.markdown(f"- {group.split('·', 1)[-1].strip()}")
+            st.caption("Reads")
+            st.markdown("\n".join(f"- {_reads(u)} — `{ARTIFACT_FILES.get(u, u)}`"
+                                  for u in spec.upstream_keys) or "- Nothing: first stage")
+        with g2:
+            st.caption("Produces")
+            st.markdown(f"- `{ARTIFACT_FILES.get(spec.output_key, spec.output_key)}` — a "
+                        f"{RECORD_TYPES.get(spec.key, 'RAIA record').lower()} (`{SCHEMA_VERSION}`), with "
+                        "sections: " + ", ".join(spec.required_sections))
+            st.caption("Grounded in")
+            st.markdown("\n".join(f"- {config.SOURCE_NAMES.get(g, g)}"
+                                  for g in spec.grounding_sources))
+            st.caption("Requires approved")
+            st.markdown("\n".join(f"- {producers.get(u, u)}" for u in spec.required_upstream)
+                        or "- Nothing")
+
+
 tabs = st.tabs([f"{look(k).material} {a.spec.name}" for k, a in AGENTS.items()])
 for tab, (key, agent) in zip(tabs, AGENTS.items()):
     spec = agent.spec
-    doc = DOCS.get(key, {})
+    modes = [m.spec for m in MODES.values() if m.spec.parent == key]
     with tab:
         agent_header(key, spec.name, spec.description, eyebrow=f"{spec.layer} layer · {spec.sdlc_phase}",
                      compact=True)
-        if doc.get("when"):
-            st.markdown(f"**When to use it.** {doc['when']}")
-        c1, c2 = st.columns(2, gap="large")
-        with c1:
-            st.markdown("**What the code settles before the model runs**")
-            for line in doc.get("decides", []):
-                st.markdown(f"- {line}")
-        with c2:
-            st.markdown("**What stays with you**")
-            for line in doc.get("you", []):
-                st.markdown(f"- {line}")
-        with st.container(border=True):
-            g1, g2 = st.columns(2, gap="large")
-            with g1:
-                st.caption("Questions it asks")
-                for group in spec.field_groups():
-                    st.markdown(f"- {group.split('·', 1)[-1].strip()}")
-                st.caption("Reads")
-                st.markdown("\n".join(f"- {producers.get(u, u)} — `{ARTIFACT_FILES.get(u, u)}`"
-                                      for u in spec.upstream_keys) or "- Nothing: first stage")
-            with g2:
-                st.caption("Produces")
-                st.markdown(f"- `{ARTIFACT_FILES.get(spec.output_key, spec.output_key)}` — a "
-                            f"{RECORD_TYPES.get(spec.key, 'RAIA record').lower()} (`{SCHEMA_VERSION}`), with "
-                            "sections: " + ", ".join(spec.required_sections))
-                st.caption("Grounded in")
-                st.markdown("\n".join(f"- {config.SOURCE_NAMES.get(g, g)}"
-                                      for g in spec.grounding_sources))
-                st.caption("Requires approved")
-                st.markdown("\n".join(f"- {producers.get(u, u)}" for u in spec.required_upstream)
-                            or "- Nothing")
+        if not modes:
+            agent_doc(spec, DOCS.get(key, {}))
+            continue
+        # An agent with modes: each mode has its own form, record and documentation.
+        st.caption(f"{spec.name} works in {len(modes) + 1} modes, each with its own form and record.")
+        for mode in [*modes, spec]:
+            st.markdown(f"#### {mode.mode_label or mode.name}")
+            if mode is not spec and mode.description:
+                st.caption(mode.description)
+            agent_doc(mode, DOCS.get(mode.key, {}))

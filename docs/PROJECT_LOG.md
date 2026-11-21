@@ -174,6 +174,10 @@ Recorded so the log stays honest about its own errors.
 | D84 | Keeping inputs generic is advice, not a control: one line under New project and in the Guide, and the same in the terms. The Privacy Policy (version 1.2) describes the record kept of each run, the audit log, and the assessment as it now is. | RAIA cannot know what a person is allowed to enter, and a warning that guesses wrong teaches people to ignore it. What the software owes people is an accurate account of what it stores. |
 | D85 | The AI Skill has a fixed part and a project part. The fixed part (instructions and references) takes no project, person or date, is byte-identical for every download of a version, and carries a version and a recorded fingerprint. The project part is everything that differs between downloads. Both are offered in four formats from the same text: Cursor, ChatGPT, Claude, and one Markdown file for any assistant. The fixed part names no assistant, assumes no file access and no connection, and works with no RAIA project, labelling its result self-assessed. Extends D64 and D65. | One package per project meant the instructions could differ between two people's downloads and had to be replaced whenever a project changed. Naming one assistant and one tracker made it a tool for one setup. A product manager or scrum master with several products needs it before any of them has been through RAIA. |
 | D86 | The Risk Classifier's five rarely-needed questions sit in a last group drawn closed; they stay on the form with their default of no and are never inferred. The Requirements Reviewer runs with no requirements list. Every identifier and code is explained on the page that uses it. A one-page brief is written by code from the approved records, naming roles. | A first form of 24 questions, several in the vocabulary of the exceptions, and a second form that required a list a person working from a generic description does not have, stopped people before the first result. Pre-filling the classifier's answers from prose was considered and refused: the answers decide the verdict, and they are asked, not guessed (D7, D30). |
+| D87 | Claude Sonnet 5.5 (`claude-sonnet-5-5`) is the default model, and each provider has its own default (`config.DEFAULT_MODELS`; `gpt-6.2-sol` for OpenAI). OpenAI is a supported provider: `langchain-openai` is in the lock, not an optional install. | Claude Sonnet 5 had become a legacy model. OpenAI was documented as a provider but its library was not installed, so choosing it failed; and a deployment with only an OpenAI key switched the provider while keeping a Claude model id. |
+| D88 | No sampling temperature is sent unless `RAIA_LLM_TEMPERATURE` sets one; a refused value is dropped and retried once; provenance records the temperature actually sent. Reproducibility is claimed for the record (prompt hash, excerpt ids, corpus version, sealed transcript), not for the sampling. | Claude Sonnet 5.5 refuses `temperature`, `top_p` and `top_k`, as Sonnet 5 already did, and so do OpenAI's reasoning models: the documented 0.2 had never been applied with the default model, while the documentation still claimed it. |
+| D89 | Every corpus file is listed in `config.DERIVED_SOURCES`, the two legal texts included, so each is labelled a curated summary in the prompt, at the gate and in the evidence. | All six files are curated summaries, and say so in their titles; the two legal ones were missing from the set and reached reviewers without the label. |
+| D90 | The documentation is checked against the code before a release, and what the code can state is written from it: the README's file tree and configuration table list what exists, the UML is redrawn from the classes, tables and routes, retired settings are removed, and the release carries a version (0.3.0) and a citation file. | A review found the class, sequence, state and data-model diagrams describing earlier versions, a Guide step asking testers to send their project to the coordinator, settings of the retired Drift Monitor still documented, and features (the brief, the generate mode, recommended requirements) undocumented. |
 
 ---
 
@@ -182,6 +186,86 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-11-21 — Sonnet 5.5, OpenAI supported, and documentation that matches the code (branch `docs-model-refresh`)
+
+Decisions D87–D90. New finding prefix **DOC-** (documentation): a statement in the README,
+the docs, the UML or the in-app guides that did not match the software.
+
+#### What was wrong
+
+- **DOC-1** The default model, Claude Sonnet 5, had become a legacy model.
+- **DOC-2** The documented temperature (0.2, "for reproducibility") was never sent with the
+  default model, which refuses any temperature; the first call was refused and retried without it.
+- **DOC-3** OpenAI was presented as a provider in the README, both example configurations and
+  the architecture, but `langchain-openai` was not installed. A hosted deployment with only an
+  OpenAI key switched the provider and kept a Claude model id.
+- **DOC-4** The EU AI Act and PL 2338/2023 files are curated summaries but were not in
+  `config.DERIVED_SOURCES`, so they reached prompts and reviewers without that label, while the
+  Guide said all six were summaries.
+- **DOC-5** The Guide's last step asked testers to send their project download to the study
+  coordinator, against the assessment's design (never linked to a project) and the consent text.
+- **DOC-6** The Guide and the output contract said checks never block; approving over a failed
+  check a reviewer must act on needs a written reason.
+- **DOC-7** The class, sequence and state diagrams described earlier versions (an agent run that
+  returned text, an approver name typed at the gate, a browser session per project, a product
+  brief written before the first stage); the data-model diagram still linked assessments to
+  projects and missed four tables; the component diagram and page map missed the service layer,
+  the database store, the board, exports, the Guide, research and sign-out pages.
+- **DOC-8** The README's file tree missed ten modules; two settings of the retired Drift Monitor
+  (`RAIA_MIN_GROUP_SAMPLES`, `RAIA_DEFAULT_PARITY_THRESHOLD`) were documented and set in
+  `.env.example` though nothing read them; six settings in use were not documented; the
+  research-export key was called "recommended" though the export refuses to run without it.
+- **DOC-9** The one-page brief, the Refiner's generate mode and *Recommend ethical requirements*
+  were not documented; the Agents page held prose for the generate mode but never showed it.
+- **DOC-10** `pip install -r requirements.txt` failed on ARM Linux (a dev container on Apple
+  Silicon): `pysqlite3-binary` publishes no wheel there. The dev container used Python 3.11,
+  which CI does not test, and did not open without a sign-in setting.
+- **DOC-11** The README named no supported Python version, its roadmap omitted delivered work,
+  it had a citation heading with no citation, and the package docstring quoted a paper's title.
+
+#### What changed
+
+- `raia/config.py`: `DEFAULT_MODELS` per provider; `RAIA_LLM_MODEL` overrides it; the
+  temperature defaults to not sent; every corpus file is in `DERIVED_SOURCES`; the two
+  retired settings are gone.
+- `requirements.in` / `requirements.txt`: `langchain-openai` (below 1.8, so `langchain-core`
+  stays where the rest of the lock has it; the lock gains `openai`, `tiktoken` and `regex`);
+  `pysqlite3-binary` only on x86-64 Linux.
+- `raia/ui/guide.py` (and `docs/TESTERS.md`): step 12 asks for a problem report, never a project;
+  checks say a failed check needs a reason; the Documents step names the one-page brief; the
+  agents table lists the Refiner's two modes.
+- `views/agents.py`: an agent with modes documents each mode; registers are named as registers.
+- `docs/architecture.md`: component diagram, page map, data model, class, sequence and state
+  diagrams redrawn from the code; new sections on recommended requirements and model providers;
+  design-decision rows for source labels, recommendations, override reasons, audit log and run
+  limits, the assessment's separation from projects, and the brief.
+- `README.md`: requirements and platforms, a model-providers section, the file tree, the
+  configuration table, hosted deployment, roadmap, versions and citation; `docs/output-contract.md`:
+  checks and recommended requirements; `.env.example`, `.streamlit/secrets.toml.example`,
+  `.devcontainer/devcontainer.json` (Python 3.12, local sign-in); `CITATION.cff`; package
+  version 0.3.0.
+
+#### Tests
+
+- `tests/test_engines.py`: each provider builds its client with its default model and sends no
+  temperature; the existing check that a refused temperature is retried once without it stands.
+- Every suite passes on the Git store and the database store (SQLite); the generated documents
+  are up to date.
+
+#### Still open, by decision
+
+- No live run with Claude Sonnet 5.5 or with OpenAI was made in this change (mock model only).
+  Sonnet 5.5 thinks adaptively, and its thinking counts against the token budget; the first real
+  runs should confirm that `RAIA_LLM_MAX_TOKENS` and its ceiling still fit a high-risk record.
+- The OpenAI default (`gpt-6.2-sol`) follows that provider's current model list, which changes
+  often; check it before relying on it.
+- Two Pillow advisories published after the last audit (CVE-2026-128066, CVE-2026-128067: a crafted
+  TIFF when opened, a compressed TIFF when saved) fail the dependency audit. Whether to accept
+  them with the others is the maintainer's decision; the upgrade that clears every Pillow finding
+  is still the move to Python 3.11 and Streamlit 1.67.
+- The GitHub repository's description ("Responsible AI Agents") still uses the superseded name; it
+  is set on GitHub, not in the repository.
+
 ### 2026-11-11 — A new Pillow advisory, accepted with the others (branch `panel-readiness`)
 
 Decision D71 stands; no new decision.

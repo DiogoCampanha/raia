@@ -471,6 +471,38 @@ def test_temperature_fallback() -> None:
         config.LLM_TEMPERATURE, llm.get_chat_model = saved_temp, saved_factory
 
 
+def test_providers() -> None:
+    print("== both providers are installed, each with its own default model ==")
+    import importlib
+    import os
+
+    from raia import config, llm
+
+    check(config.DEFAULT_MODELS["anthropic"] == "claude-sonnet-5-5"
+          and config.DEFAULT_MODELS["openai"].startswith("gpt-"),
+          "each provider has a default model")
+    saved = {k: os.environ.get(k) for k in ("RAIA_LLM_PROVIDER", "RAIA_LLM_MODEL", "RAIA_LLM_TEMPERATURE",
+                                            "ANTHROPIC_API_KEY", "OPENAI_API_KEY")}
+    try:
+        for provider, key in (("anthropic", "ANTHROPIC_API_KEY"), ("openai", "OPENAI_API_KEY")):
+            os.environ.update({"RAIA_LLM_PROVIDER": provider, key: "test-key"})
+            for k in ("RAIA_LLM_MODEL", "RAIA_LLM_TEMPERATURE"):
+                os.environ.pop(k, None)
+            importlib.reload(config)
+            model = llm.get_chat_model()
+            payload = model._get_request_payload([("user", "hi")])
+            check(payload.get("model") == config.DEFAULT_MODELS[provider],
+                  f"{provider}: the provider's default model is used when none is set")
+            check("temperature" not in payload, f"{provider}: no temperature is sent by default")
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        importlib.reload(config)
+
+
 def test_second_example_case() -> None:
     print("== the customer-support example takes the limited-risk path ==")
     from raia.examples import CASES, example_for
@@ -540,7 +572,7 @@ def main() -> None:
                test_recommendation_checks, test_story_map, test_traceability,
                test_validators, test_second_example_case, test_third_example_case, test_forms_ask_less_up_front,
                test_sanitize, test_principles,
-               test_temperature_fallback):
+               test_temperature_fallback, test_providers):
         fn()
     print()
     if FAILURES:

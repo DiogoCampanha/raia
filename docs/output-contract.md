@@ -115,6 +115,13 @@ Each agent's extension is shaped by what its normative source produces.
 | `evrs[]` | One ethical value requirement per assigned id: `value`, `stakeholders`, `statement`, `fit_criterion`, `verification_method`, `traces_to` — traceable, verifiable, contextual, prioritised; computed: `priority`, `priority_basis` and `answers_risks` (the approved risks behind its gap) |
 | `impact_assessment` | `intended_uses`, `harms_and_benefits[]` per stakeholder, `mitigations` (Microsoft RAI Standard v2 goal A1) |
 
+*Recommend ethical requirements* is not a record. It proposes candidate
+requirements for the computed gaps, checked in code (a candidate for a gap that
+was not computed, citing no retrieved excerpt or with nothing testable is
+dropped); the ones a person adopts join the form's requirements, and the record
+marks the coverage that rests on an adopted recommendation. Nothing a person
+did not adopt reaches the record.
+
 ### User Story Refiner — ECCOLA, Microsoft RAI Standard v2 (verifiable requirements)
 
 | Field | Content |
@@ -455,7 +462,9 @@ Run after every generation and again on what a person approves:
 | Engine issues carried, verdict reconciled | fail / warning | technical log; a disagreement is a decision card |
 | Agent-specific: requirement verifiability, criterion ids | warning / fail | something to act on / technical log |
 
-Checks inform and never block; the person at the gate decides. Each check code
+Checks inform; the person at the gate decides. Approving over a failed check that
+is shown as something to act on asks for a reason, which is kept with the
+approval (`OverrideRequired`). Each check code
 has a plain name, why it exists, what to do and an audience in
 `raia.validators.CHECKS`; every result is persisted with the artifact
 whatever its audience.

@@ -33,15 +33,28 @@ load_dotenv(PROJECT_ROOT / ".env")
 #: deterministic outputs without any API call.
 LLM_PROVIDER: str = os.getenv("RAIA_LLM_PROVIDER", "anthropic").lower()
 
-#: Model name for the chosen provider.
-LLM_MODEL: str = os.getenv("RAIA_LLM_MODEL", "claude-sonnet-5")
+#: The model each provider uses when ``RAIA_LLM_MODEL`` is not set. Claude is
+#: the reference model; the OpenAI default is that provider's model with the
+#: same balance of capability and cost. Provider model ids change: check the
+#: provider's model list before relying on a default.
+DEFAULT_MODELS = {
+    "anthropic": "claude-sonnet-5-5",
+    "openai": "gpt-6.2-sol",
+    "mock": "mock",
+}
 
-#: Sampling temperature. Kept low: agents produce normative analyses,
-#: not creative text, so determinism aids reproducibility and auditability.
-#: Some newer models no longer accept a temperature at all. Set
-#: ``RAIA_LLM_TEMPERATURE = "none"`` (or leave it empty) to omit it; if a model
-#: rejects it anyway, :func:`raia.llm.invoke_chat` retries once without it and
-#: the provenance records ``temperature: null`` from then on.
+#: Model name for the chosen provider.
+LLM_MODEL: str = os.getenv("RAIA_LLM_MODEL", "").strip() or DEFAULT_MODELS.get(LLM_PROVIDER, "")
+
+
+#: Sampling temperature. Not sent by default: current Claude models (Sonnet 5.5
+#: among them) and current OpenAI reasoning models refuse any temperature, so
+#: the provider's own sampling applies. Set ``RAIA_LLM_TEMPERATURE`` to a number
+#: for a model that accepts one (a low value aids reproducibility). If a model
+#: rejects the value anyway, :func:`raia.llm.invoke_chat` retries once without
+#: it and the provenance records ``temperature: null`` from then on, so every
+#: record states what was actually sent. Reproducibility rests on the prompt
+#: hash and, with ``RAIA_TRANSCRIPT_KEY``, the sealed transcript of each run.
 def _optional_float(raw: str):
     raw = (raw or "").strip().lower()
     if raw in ("", "none", "null", "default", "omit"):
@@ -49,7 +62,7 @@ def _optional_float(raw: str):
     return float(raw)
 
 
-LLM_TEMPERATURE = _optional_float(os.getenv("RAIA_LLM_TEMPERATURE", "0.2"))
+LLM_TEMPERATURE = _optional_float(os.getenv("RAIA_LLM_TEMPERATURE", ""))
 
 #: Maximum tokens per agent response. Agents now carry a computed rationale
 #: block and a machine-readable summary in addition to their analysis, and a
@@ -181,19 +194,6 @@ TRANSCRIPT_KEY: str = os.getenv("RAIA_TRANSCRIPT_KEY", "")
 JIRA_KEY: str = os.getenv("RAIA_JIRA_KEY", "")
 
 # ---------------------------------------------------------------------------
-# Analysis thresholds
-# ---------------------------------------------------------------------------
-
-#: Below this many observations, a per-group fairness figure is reported but
-#: explicitly labelled as too small to support a conclusion. A parity gap on
-#: twelve rows and one on 120,000 must not render identically.
-MIN_GROUP_SAMPLES: int = int(os.getenv("RAIA_MIN_GROUP_SAMPLES", "30"))
-
-#: Default fairness threshold used when no upstream ethical requirement
-#: defines one. Deliberately conservative and always reported as a default.
-DEFAULT_PARITY_THRESHOLD: float = float(os.getenv("RAIA_DEFAULT_PARITY_THRESHOLD", "0.1"))
-
-# ---------------------------------------------------------------------------
 # Normative authority levels (RAIA conflict-precedence rule)
 # ---------------------------------------------------------------------------
 # Conflicts across levels resolve by precedence: legal > standard > advisory.
@@ -221,7 +221,9 @@ SOURCE_NAMES = {
 #: Sources whose text is a curated summary prepared for this project rather
 #: than a quotable official text. Recorded so the limitation is visible in the
 #: audit trail instead of being implied by the citation's authority level.
-DERIVED_SOURCES = {"ieee_7000", "ms_rai_v2", "nist_ai_rmf", "eccola"}
+#: Every file in ``corpus/`` is such a summary today, the two legal texts
+#: included; remove a key only when its file holds the official wording.
+DERIVED_SOURCES = {"eu_ai_act", "pl_2338_2023", "ieee_7000", "ms_rai_v2", "nist_ai_rmf", "eccola"}
 
 #: Legal sources that are not law yet. PL 2338/2023 is a bill: the Senate
 #: approved it and the Chamber of Deputies has not voted. RAIA screens against

@@ -60,3 +60,11 @@ PYSEC-2026-4343
 # read invalid memory when an application saves attacker-controlled image
 # metadata. RAIA saves no image in any format.
 PYSEC-2026-4363
+#
+# pillow 12.3.0, added 2026-11-21, same reason as the Pillow block above:
+# opening a crafted TIFF/EXIF (parser memory) and saving a compressed TIFF
+# whose metadata sets the size (encoder). RAIA never opens or saves an
+# untrusted image: uploads are read as text and st.image shows only the
+# bundled Guide screenshots.
+CVE-2026-128066
+CVE-2026-128067

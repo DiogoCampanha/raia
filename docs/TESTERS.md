@@ -74,7 +74,7 @@ Press **Run Risk Classifier**. While it works, the page shows only that the agen
 - **Evidence** — the norm excerpts that were actually retrieved. Pick a citation in the draft and check that you can find it here.
 - **What the code computed** — what the rules decided before the model was called. Check that the verdict follows from your answers.
 
-Above the tabs, the **automated checks** speak only when there is something for you to do (**Before you approve**), each with why RAIA checks it. What code already corrected on its own — a citation to an excerpt that was not retrieved is removed, for example — is listed in the technical log under **What the code computed**. Checks never block you.
+Above the tabs, the **automated checks** speak only when there is something for you to do (**Before you approve**), each with why RAIA checks it. What code already corrected on its own — a citation to an excerpt that was not retrieved is removed, for example — is listed in the technical log under **What the code computed**. Checks never stop you, but approving over a failed check that needs a person asks for your reason, and the reason is recorded with the approval.
 
 ![Run the agent and read the draft](images/guide/draft.png)
 
@@ -129,7 +129,7 @@ The project page has tabs for the work the stages produce:
 - **Action plan** — every action from every approved stage, sorted by priority (actions start with the User Story Refiner). Is each one specific enough for someone to pick up?
 - **Traceability** — one row per legal obligation and requirement, from the classification to the audit: which requirement answers it, which stories implement it, what the audit verified. The highlighted rows are the gaps still open.
 - **Open issues** — what only a person can decide, including the decisions taken on the stages (**Decided**). Take an open one, or mark it resolved or accept the risk, noting what was decided.
-- **Documents** — each approved artifact with its provenance (model, corpus version, attempt, edits, checks), **Download project**, and **Download AI Skill**: instructions an AI assistant you are allowed to use can follow to apply these results to a real backlog, tickets and product documents. Choose the format (Cursor, ChatGPT, Claude, or one Markdown file for any assistant) and open `README_FIRST.md`. The skill has a fixed part, the same for every project, and a project part you replace after new approvals. It is yours to use freely and is not part of the assessment.
+- **Documents** — each approved artifact with its provenance (model, corpus version, attempt, edits, checks), **Download project**, and **Download AI Skill**: instructions an AI assistant you are allowed to use can follow to apply these results to a real backlog, tickets and product documents. Choose the format (Cursor, ChatGPT, Claude, or one Markdown file for any assistant) and open `README_FIRST.md`. The skill has a fixed part, the same for every project, and a project part you replace after new approvals. It is yours to use freely and is not part of the assessment. Beside them, the **One-page brief** sums up the project for a manager, a squad or the legal team: what the product does with AI, the most pressing risks, the requirements that answer them and the decisions still needed. It is written by code from the approved records and names roles, not people.
 - **Activity** — the version history and the project log.
 
 ### 10. Optional: work with a colleague
@@ -146,7 +146,7 @@ Your answers are about the software, not about a project: an assessment names no
 
 ### 12. Your data, and signing out
 
-**Account > Settings** lets you download everything RAIA holds about you, or delete your account. **Account > Sign out** ends your session. Please send the project download and any notes to the study coordinator.
+**Account > Settings** lets you download everything RAIA holds about you, or delete your account. **Account > Sign out** ends your session. If something did not work, tell the study coordinator what you were doing; you never need to send a project.
 
 ## The agents at a glance
 
@@ -154,7 +154,8 @@ Your answers are about the software, not about a project: an assessment names no
 |---|---|---|---|
 | Risk Classifier (Product) | The product, How the AI works, Legal footprint, Purpose and practices, How decisions are made, Data, Status, Less common situations (17 required answers) | nothing | `02_risk_classification.md` |
 | Requirements Reviewer (Product) | Current requirements, What already exists, Values and stakeholders (2 required answers) | Risk Classifier | `03_requirements_review.md` |
-| User Story Refiner (Dev) | The stories, The sprint (1 required answers) | Requirements Reviewer | `04_refined_stories.md` |
+| User Story Refiner: Generate from requirements (Dev) | Which requirements, How your team works (0 required answers) | Requirements Reviewer | `04a_rai_backlog.md` |
+| User Story Refiner: Refine sprint stories (Dev) | The stories, The sprint (1 required answer) | Requirements Reviewer | `04_refined_stories.md` |
 | Auditor (Dev) | What happened this sprint, Evidence produced, What comes next (2 required answers) | Requirements Reviewer | `05_audit_report.md` |
 
 Stage statuses:
