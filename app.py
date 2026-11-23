@@ -87,15 +87,35 @@ def _account(identity: auth.Identity):
 
 
 def _run(nav) -> None:
-    """Run the current page, then draw the footer under it.
+    """Run the current page, then draw the footer under it, as part of that page.
 
-    ``finally``: a page that ends early with ``st.stop()`` (an empty project
-    list, a refused page) still gets its footer.
+    Two things keep the footer from piling up at the top of the next page
+    while it loads:
+
+    - It is drawn only when the page ran to its end. A page that leaves with
+      ``st.rerun()``, ``routes.go()`` (``st.switch_page``) or ``st.stop()``
+      raises, and the footer is skipped: drawn there, it would land in the
+      middle of the page being left. (After ``st.stop()`` Streamlit refuses
+      anything more anyway.)
+    - It is drawn under the page's script hash, not the entry point's. On a
+      page change the browser keeps every element the entry point drew and
+      moves it to the top until the new page finishes; a footer drawn by
+      ``app.py`` itself would be kept that way, once per click.
     """
-    try:
-        nav.run()
-    finally:
+    nav.run()
+    with _as_page():
         footer()
+
+
+def _as_page():
+    """Attribute what is drawn inside to the current page, as ``nav.run()`` does."""
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+    ctx = get_script_run_ctx()
+    scoped = getattr(ctx, "run_with_active_hash", None)
+    if ctx is None or scoped is None:
+        return contextlib.nullcontext()
+    return scoped(ctx.page_script_hash)
 
 
 def main() -> None:
