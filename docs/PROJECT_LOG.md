@@ -186,6 +186,28 @@ Recorded so the log stays honest about its own errors.
 Entries are added as work lands. Each names the finding IDs it closes.
 
 <!-- CHANGELOG:START -->
+### 2026-11-23 — The footer no longer piles up above a page while it loads (branch `docs-model-refresh`)
+
+#### What was wrong
+
+- **UI-FOOT-1** Opening a page from another (a project row on Home, a stage card, any
+  `routes.go`) showed the footer several times at the top, faded, before the page drew. Two
+  causes: `app.py` drew the footer in a `finally`, so a page that left with `st.rerun()` or
+  `st.switch_page` still drew one, in the middle of the page being left; and the footer was
+  drawn by the entry point, not the page. On a page change Streamlit's browser keeps every
+  element the entry point drew and moves it to the top until the new page finishes, and runs
+  cut short by a rerun never clear old elements, so each click left one more footer behind.
+
+#### What changed
+
+- The footer is drawn only when the page ran to its end, and under the page's script hash
+  (`ctx.run_with_active_hash`, as `nav.run()` does), so the browser drops it with the rest of the
+  page on navigation. A page that ends with `st.stop()` has no footer, as before: Streamlit
+  draws nothing after it.
+
+Verified: the delta stream on Streamlit 1.63 (footer sent once, with the page's hash; nothing
+sent on a navigating click); `tests/test_ui.py` passes.
+
 ### 2026-11-21 — Sonnet 5.5, OpenAI supported, and documentation that matches the code (branch `docs-model-refresh`)
 
 Decisions D87–D90. New finding prefix **DOC-** (documentation): a statement in the README,
